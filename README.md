@@ -42,20 +42,31 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
 
 ## Installing
 
-Folitex currently builds from source on Linux. You need a C++20 compiler, CMake ≥ 3.24,
-Qt ≥ 6.5 (Widgets, plus the SVG image plugin), Poppler's Qt 6 bindings, and a TeX
-distribution providing `latexmk` and `synctex`.
+Folitex builds from source. It is developed and tested on Linux; Windows is untested
+(see below). You need:
+
+| Needed for | Arch Linux | Debian / Ubuntu (untested) |
+|---|---|---|
+| Compiler and build tool (C++20, CMake ≥ 3.24) | `gcc` `cmake` | `build-essential` `cmake` |
+| Interface (Qt ≥ 6.5) | `qt6-base` | `qt6-base-dev` |
+| SVG icons (tab close, side bar) | `qt6-svg` | `qt6-svg-plugins` |
+| PDF viewer | `poppler-qt6` | `libpoppler-qt6-dev` |
+| Building documents (`latexmk`) | `texlive-binextra` | `latexmk` |
+| TeX engines and `synctex` | `texlive-bin` `texlive-latexextra` | `texlive-latex-extra` |
+| Vietnamese documents (vntex, T5 encoding) | `texlive-langother` | `texlive-lang-other` |
+
+Common problems:
+- Blank icons: the Qt SVG image plugin (`qt6-svg`) is missing.
+- `Encoding scheme 'T5' unknown` or `Unicode character … not set up` when building:
+  the language package for your document (e.g. `texlive-langother`) is missing.
+- No package-name completion: `kpsewhich` (TeX Live) is not on `PATH`.
 
 On Arch Linux:
 
 ```bash
-sudo pacman -S --needed gcc cmake qt6-base qt6-svg poppler-qt6 texlive-binextra texlive-bin
-# Vietnamese documents (vntex / T5 encoding) also need:
-sudo pacman -S --needed texlive-langother
+sudo pacman -S --needed gcc cmake qt6-base qt6-svg poppler-qt6 \
+    texlive-binextra texlive-bin texlive-latexextra texlive-langother
 ```
-
-On Debian/Ubuntu the equivalents should be `build-essential cmake qt6-base-dev
-qt6-svg-plugins libpoppler-qt6-dev latexmk` (untested; reports welcome).
 
 Build, test and install for the current user (no root needed):
 
@@ -70,6 +81,29 @@ This installs `~/.local/bin/folitex`, a desktop entry and an icon, so Folitex ap
 in your application launcher and `folitex paper.tex` works from a terminal
 (make sure `~/.local/bin` is on your `PATH`). For development, `./run.sh [files…]`
 rebuilds when sources changed and starts the app.
+
+### Windows (experimental, untested)
+
+Folitex has not been built on Windows yet. The code avoids Linux-only calls outside
+`#ifdef Q_OS_UNIX`, so a build is expected to work with [MSYS2](https://www.msys2.org/)
+(UCRT64 shell):
+
+```bash
+pacman -S --needed mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,qt6-base,qt6-svg,poppler-qt6}
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+cmake --build build
+```
+
+Install [TeX Live for Windows](https://tug.org/texlive/windows.html), which includes
+Perl, `latexmk`, `synctex` and the `ls-R` database. MiKTeX also works for building, but
+needs a separate Perl (e.g. Strawberry Perl) for `latexmk` and gives no package-name
+completion. Known differences on Windows:
+
+- Stopping a build ends `latexmk` but may leave its `pdflatex` child running.
+- There is no installer yet; run `build/folitex.exe` from the MSYS2 shell, or copy the
+  Qt and Poppler DLLs next to it (`windeployqt`).
+
+Reports of Windows builds — working or not — are welcome as issues.
 
 ## Using Folitex
 
@@ -115,7 +149,7 @@ Folitex is young (0.2) and deliberately smaller than TeXstudio. Known gaps:
 - Very large sources (tens of thousands of lines) use noticeably more memory, because
   the editor keeps pixel-smooth scrolling (Qt `QTextEdit`).
 - Developed on Linux (Arch, Wayland); the automated tests run offscreen at 100 %,
-  125 % and 200 % scale. Other platforms are untested.
+  125 % and 200 % scale. Windows and macOS are untested (see Installing).
 
 ## Documentation
 
