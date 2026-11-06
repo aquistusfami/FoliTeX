@@ -40,49 +40,86 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
 - Outline of sections, labels, included files and TODOs; click to jump.
 - Minimal dark interface with File / Edit / Insert / Build / View menus.
 
-## Installing
+## Installing on Linux
 
-Folitex builds from source. It is developed and tested on Linux; Windows is untested
-(see below). You need:
+Folitex needs **Qt 6.5 or newer**, so it installs on Arch Linux and its derivatives
+(Manjaro, EndeavourOS), Debian 13 and Ubuntu 25.04 or newer. Ubuntu 24.04 LTS and
+Debian 12 ship Qt 6.4 and cannot build it. The steps below were run on clean systems:
+Arch Linux and Debian 13 end to end (install, build, tests, launch), Ubuntu 25.04 up to
+a successful build.
 
-| Needed for | Arch Linux | Debian / Ubuntu (untested) |
-|---|---|---|
-| Compiler and build tool (C++20, CMake ≥ 3.24) | `gcc` `cmake` | `build-essential` `cmake` |
-| Interface (Qt ≥ 6.5) | `qt6-base` | `qt6-base-dev` |
-| SVG icons (tab close, side bar) | `qt6-svg` | `qt6-svg-plugins` |
-| PDF viewer | `poppler-qt6` | `libpoppler-qt6-dev` |
-| Building documents (`latexmk`) | `texlive-binextra` | `latexmk` |
-| TeX engines and `synctex` | `texlive-bin` `texlive-latexextra` | `texlive-latex-extra` |
-| Vietnamese documents (vntex, T5 encoding) | `texlive-langother` | `texlive-lang-other` |
+### 1. Install the dependencies
 
-Common problems:
-- Blank icons: the Qt SVG image plugin (`qt6-svg`) is missing.
-- `Encoding scheme 'T5' unknown` or `Unicode character … not set up` when building:
-  the language package for your document (e.g. `texlive-langother`) is missing.
-- No package-name completion: `kpsewhich` (TeX Live) is not on `PATH`.
-
-On Arch Linux:
+Arch Linux, Manjaro, EndeavourOS:
 
 ```bash
-sudo pacman -S --needed gcc cmake qt6-base qt6-svg poppler-qt6 \
-    texlive-binextra texlive-bin texlive-latexextra texlive-langother
+sudo pacman -S --needed base-devel git cmake qt6-base qt6-svg poppler-qt6 \
+    texlive-bin texlive-binextra texlive-latexextra texlive-langother
 ```
 
-Build, test and install for the current user (no root needed):
+Debian 13, Ubuntu 25.04 and newer:
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+sudo apt install build-essential git cmake pkg-config qt6-base-dev qt6-svg-plugins \
+    libpoppler-qt6-dev latexmk texlive-latex-extra texlive-lang-other
+```
+
+The `texlive-…` packages and `latexmk` are what compile your documents. The
+`langother` / `lang-other` package adds Vietnamese and other languages; skip it if you
+only write in English. A TeX distribution you already have works too, as long as
+`latexmk`, `synctex` and `kpsewhich` are on your `PATH`.
+
+### 2. Download, build and install
+
+```bash
+git clone https://github.com/aquistusfami/Folitex.git
+cd Folitex
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
-ctest --test-dir build --output-on-failure
 cmake --install build --prefix ~/.local
 ```
 
-This installs `~/.local/bin/folitex`, a desktop entry and an icon, so Folitex appears
-in your application launcher and `folitex paper.tex` works from a terminal
-(make sure `~/.local/bin` is on your `PATH`). For development, `./run.sh [files…]`
-rebuilds when sources changed and starts the app.
+No root access is needed for this step. Folitex now appears in your application
+launcher, and `folitex paper.tex` opens a file from a terminal. If the shell says
+`folitex: command not found`, add `~/.local/bin` to your `PATH`.
 
-### Windows (experimental, untested)
+Optionally, check the build with `ctest --test-dir build --output-on-failure`
+(it compiles small documents, so it needs the TeX packages above).
+
+### Updating
+
+```bash
+cd Folitex
+git pull
+cmake --build build --parallel
+cmake --install build --prefix ~/.local
+```
+
+### Uninstalling
+
+```bash
+rm ~/.local/bin/folitex ~/.local/share/applications/folitex.desktop \
+   ~/.local/share/icons/hicolor/scalable/apps/folitex.svg
+rm -r ~/.config/Folitex   # optional: settings
+```
+
+Build output next to your documents lives in `.folitex-build/` folders, which you can
+delete at any time.
+
+### Troubleshooting
+
+| Message or symptom | Fix |
+|---|---|
+| `Could not find a configuration file for package "Qt6" that is compatible with requested version "6.5"` | Your distribution's Qt is too old (Ubuntu 24.04, Debian 12). Use a newer release. |
+| `Could NOT find PkgConfig` | Install `base-devel` (Arch) or `pkg-config` (Debian/Ubuntu). |
+| `CMAKE_CXX_COMPILER not set` or `CMAKE_MAKE_PROGRAM` not found | Install `base-devel` (Arch) or `build-essential` (Debian/Ubuntu). |
+| `No package 'poppler-qt6' found` | Install `poppler-qt6` (Arch) or `libpoppler-qt6-dev` (Debian/Ubuntu). |
+| Icons in the side bar or tabs are blank | Install `qt6-svg` (Arch) or `qt6-svg-plugins` (Debian/Ubuntu). |
+| Building a document fails with `Encoding scheme 'T5' unknown` or `Unicode character … not set up` | Install the language package: `texlive-langother` / `texlive-lang-other`. |
+| F5 shows `Cannot start latexmk` | Install `texlive-binextra` (Arch) or `latexmk` (Debian/Ubuntu). |
+| Folitex does not appear in the launcher | Log out and back in, or run `update-desktop-database ~/.local/share/applications`. |
+
+## Installing on Windows (experimental, untested)
 
 Folitex has not been built on Windows yet. The code avoids Linux-only calls outside
 `#ifdef Q_OS_UNIX`, so a build is expected to work with [MSYS2](https://www.msys2.org/)

@@ -15,6 +15,7 @@
 #include <QTreeWidget>
 #include <QFileSystemModel>
 #include <QClipboard>
+#include <QFontDatabase>
 #include <QAbstractTextDocumentLayout>
 #include <QAbstractItemView>
 #ifdef Q_OS_UNIX
@@ -275,6 +276,8 @@ void Tests::externalEditsReload()
 
 void Tests::pdfInteraction()
 {
+    // Without any installed font QPdfWriter produces no extractable text (minimal containers).
+    if (QFontDatabase::families().isEmpty()) QSKIP("No fonts installed");
     QTemporaryDir dir;
     QString path = dir.filePath("text.pdf");
     {
