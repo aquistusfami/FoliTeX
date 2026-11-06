@@ -133,10 +133,10 @@ static QStringList bibKeys(const QStringList &directories)
     return keys;
 }
 
-SmoothScroll::SmoothScroll(QAbstractScrollArea *area)
-    : QObject(area), m_area(area), m_animation(area->verticalScrollBar(), "value", this)
+SmoothScroll::SmoothScroll(QAbstractScrollArea *area, int wheelStep, double touchpadFactor)
+    : QObject(area), m_area(area), m_animation(area->verticalScrollBar(), "value", this), m_wheelStep(wheelStep),
+      m_touchpadFactor(touchpadFactor)
 {
-    m_animation.setDuration(140);
     m_animation.setEasingCurve(QEasingCurve::OutCubic);
     area->viewport()->installEventFilter(this);
     auto *bar = area->verticalScrollBar();
@@ -145,16 +145,61 @@ SmoothScroll::SmoothScroll(QAbstractScrollArea *area)
 
 bool SmoothScroll::eventFilter(QObject *, QEvent *event)
 {
+    if (event->type() == QEvent::MouseButtonPress) { m_animation.stop(); return false; }
     if (event->type() != QEvent::Wheel) return false;
     auto *wheel = static_cast<QWheelEvent *>(event);
     if (wheel->modifiers().testFlag(Qt::ControlModifier)) return false;
     auto *bar = m_area->verticalScrollBar();
-    if (!wheel->pixelDelta().isNull())
+    qint64 time = qint64(wheel->timestamp());
+    switch (wheel->phase())
     {
-        // Touchpads already provide pixel deltas and kinetic motion; do not animate them twice.
+    case Qt::ScrollBegin:
+        m_animation.stop();
+        m_samples.clear();
+        m_systemMomentum = false;
+        break;
+    case Qt::ScrollMomentum:
+        m_systemMomentum = true; // the platform animates inertia itself (macOS)
+        break;
+    case Qt::ScrollEnd:
+    {
+        // Wayland/libinput stop when the fingers lift; continue with the finger's velocity.
+        qint64 first = m_samples.isEmpty() ? time : m_samples.first().first;
+        bool moving = !m_samples.isEmpty() && time - m_samples.last().first < 60;
+        double pixels = 0;
+        for (const auto &sample : m_samples) pixels += sample.second;
+        double velocity = pixels / std::max<qint64>(16, time - first); // px per ms
+        m_samples.clear();
+        if (!m_systemMomentum && moving && std::abs(velocity) > 0.3)
+        {
+            constexpr int duration = 800;
+            // OutCubic starts at 3 × distance / duration, so this distance matches the finger speed.
+            int target = std::clamp(bar->value() - qRound(velocity * duration / 3), bar->minimum(), bar->maximum());
+            m_animation.stop();
+            m_animation.setDuration(duration);
+            m_animation.setStartValue(bar->value());
+            m_animation.setEndValue(target);
+            m_animation.start();
+        }
+        wheel->accept();
+        return true;
+    }
+    default:
+        break;
+    }
+    // Qt on Wayland gives mouse wheel notches a small pixelDelta (15) as well as angleDelta (120);
+    // only phased events come from touchpads, so unphased notches use the wheel step.
+    bool notch = wheel->phase() == Qt::NoScrollPhase && wheel->angleDelta().y() != 0;
+    if (!wheel->pixelDelta().isNull() && !notch)
+    {
         m_animation.stop();
         if (wheel->pixelDelta().y() != 0)
-            bar->setValue(bar->value() - wheel->pixelDelta().y());
+        {
+            int pixels = qRound(wheel->pixelDelta().y() * m_touchpadFactor);
+            bar->setValue(bar->value() - pixels);
+            m_samples.append({time, pixels});
+            while (m_samples.size() > 1 && time - m_samples.first().first > 100) m_samples.removeFirst();
+        }
         if (wheel->pixelDelta().x() != 0)
         {
             auto *horizontal = m_area->horizontalScrollBar();
@@ -166,9 +211,10 @@ bool SmoothScroll::eventFilter(QObject *, QEvent *event)
     if (wheel->angleDelta().y() == 0) return false;
     int previousTarget = m_animation.state() == QAbstractAnimation::Running
         ? m_animation.endValue().toInt() : bar->value();
-    int distance = qRound(wheel->angleDelta().y() / 120.0 * 72);
+    int distance = qRound(wheel->angleDelta().y() / 120.0 * m_wheelStep);
     int target = std::clamp(previousTarget - distance, bar->minimum(), bar->maximum());
     m_animation.stop();
+    m_animation.setDuration(140);
     m_animation.setStartValue(bar->value());
     m_animation.setEndValue(target);
     m_animation.start();
@@ -664,4 +710,64 @@ void Editor::toggleComment()
         if (block == last) break;
     }
     cursor.endEditBlock();
+}
+
+// Like VS Code: searching wraps around the document.
+bool Editor::findText(const QString &text, QTextDocument::FindFlags flags)
+{
+    if (text.isEmpty()) return false;
+    if (find(text, flags)) return true;
+    auto cursor = textCursor();
+    cursor.movePosition(flags & QTextDocument::FindBackward ? QTextCursor::End : QTextCursor::Start);
+    setTextCursor(cursor);
+    return find(text, flags);
+}
+
+// Replaces the selected match, if any, then selects the next one.
+bool Editor::replaceNext(const QString &text, const QString &with, QTextDocument::FindFlags flags)
+{
+    if (text.isEmpty()) return false;
+    flags &= ~QTextDocument::FindBackward;
+    auto cursor = textCursor();
+    if (cursor.hasSelection())
+    {
+        // The selection counts as a match only if a search from its start finds exactly it.
+        auto match = document()->find(text, cursor.selectionStart(), flags);
+        if (match.selectionStart() == cursor.selectionStart() && match.selectionEnd() == cursor.selectionEnd())
+            cursor.insertText(with);
+    }
+    setTextCursor(cursor);
+    return findText(text, flags);
+}
+
+// One undo step for all replacements.
+int Editor::replaceAll(const QString &text, const QString &with, QTextDocument::FindFlags flags)
+{
+    if (text.isEmpty()) return 0;
+    flags &= ~QTextDocument::FindBackward;
+    int count = 0;
+    QTextCursor edit(document());
+    edit.beginEditBlock();
+    // After insertText the cursor sits behind the replacement, so it is never searched again.
+    for (auto match = document()->find(text, 0, flags); !match.isNull(); match = document()->find(text, match, flags))
+    {
+        match.insertText(with);
+        ++count;
+    }
+    edit.endEditBlock();
+    return count;
+}
+
+// Total matches; *current is the 0-based index of the selected match, or -1.
+int Editor::countMatches(const QString &text, QTextDocument::FindFlags flags, int *current) const
+{
+    if (current) *current = -1;
+    if (text.isEmpty()) return 0;
+    flags &= ~QTextDocument::FindBackward;
+    auto selection = textCursor();
+    int count = 0;
+    for (auto match = document()->find(text, 0, flags); !match.isNull(); match = document()->find(text, match, flags), ++count)
+        if (current && match.selectionStart() == selection.selectionStart() && match.selectionEnd() == selection.selectionEnd())
+            *current = count;
+    return count;
 }

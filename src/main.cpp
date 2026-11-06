@@ -58,6 +58,12 @@ int main(int argc, char **argv)
         QStatusBar { background:#181818; color:#CCCCCC; border-top:1px solid #2B2B2B; min-height:22px; max-height:22px; }
         QStatusBar QLabel { font-size:12px; }
         QWidget#pdfBar { background:#181818; border-bottom:1px solid #2B2B2B; }
+        QWidget#findWidget { background:#202020; border:1px solid #454545; border-top:0; border-radius:0 0 4px 4px; }
+        QWidget#findWidget QToolButton { padding:2px 5px; }
+        QWidget#findWidget QToolButton:checked, QWidget#findWidget QToolButton:checked:hover { background:#04395E; border:1px solid #2488DB; }
+        QWidget#findWidget QLabel { color:#CCCCCC; padding:0 4px; }
+        QWidget#findWidget QToolButton#replaceToggle:checked { background:transparent; border:0; }
+        QWidget#pdfFindBar { background:#181818; border-bottom:1px solid #2B2B2B; }
         QWidget#pdfBar QToolButton { min-width:22px; padding:3px 6px; }
         QWidget#buildCorner QComboBox { background:transparent; border:0; padding:2px 4px; }
         QWidget#buildCorner QComboBox:hover { background:#2B2B2B; }

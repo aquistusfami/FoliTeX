@@ -33,7 +33,9 @@ private slots:
     void workspaceTree();
     void externalEditsReload();
     void pdfInteraction();
+    void findReplace();
     void wordWrap();
+    void kineticScroll();
     void touchpadPixels();
     void wheelAnimation();
     void tiledPdf();
@@ -315,6 +317,69 @@ void Tests::pdfInteraction()
     QCOMPARE(source.size(), 1);
     QCOMPARE(source.first().at(0).toInt(), 1);
     QVERIFY(qAbs(source.first().at(2).toDouble() - 405) < 2);
+    QSignalSpy matches(&viewer, &PdfView::matchChanged);
+    viewer.find("WIDE", false, Poppler::Page::IgnoreCase);
+    QTRY_COMPARE_WITH_TIMEOUT(matches.size(), 1, 5000);
+    QCOMPARE(matches.first().at(1).toInt(), 1);
+    QCOMPARE(viewer.currentMatch(), 0);
+    viewer.find("WIDE", false, Poppler::Page::IgnoreCase); // wraps to the same single match
+    QCOMPARE(viewer.currentMatch(), 0);
+    viewer.find("WIDE"); // case-sensitive: a new search
+    QTRY_COMPARE_WITH_TIMEOUT(matches.size(), 3, 5000);
+    QCOMPARE(matches.last().at(1).toInt(), 0);
+}
+
+void Tests::findReplace()
+{
+    Editor editor;
+    editor.setPlainText("foo bar Foo baz foo");
+    QVERIFY(editor.findText("foo"));
+    QCOMPARE(editor.textCursor().selectionStart(), 0);
+    QVERIFY(editor.replaceNext("foo", "x"));
+    QCOMPARE(editor.toPlainText(), "x bar Foo baz foo");
+    QCOMPARE(editor.textCursor().selectionStart(), 6); // next match selected, case-insensitive
+    QVERIFY(editor.findText("foo", QTextDocument::FindBackward)); // wraps backwards to the last match
+    QCOMPARE(editor.textCursor().selectionStart(), 14);
+    QCOMPARE(editor.replaceAll("foo", "foofoo"), 2);
+    QCOMPARE(editor.toPlainText(), "x bar foofoo baz foofoo");
+    editor.undo();
+    QCOMPARE(editor.toPlainText(), "x bar Foo baz foo");
+    QVERIFY(!editor.findText("absent"));
+    editor.setPlainText("Foo foo food");
+    int current = 0;
+    QCOMPARE(editor.countMatches("foo", {}, &current), 3);
+    QCOMPARE(current, -1);
+    QCOMPARE(editor.countMatches("foo", QTextDocument::FindCaseSensitively | QTextDocument::FindWholeWords), 1);
+    QVERIFY(editor.findText("foo", QTextDocument::FindCaseSensitively));
+    QCOMPARE(editor.countMatches("foo", QTextDocument::FindCaseSensitively, &current), 2);
+    QCOMPARE(current, 0);
+    // A case-sensitive replace leaves a selected "Foo" alone.
+    auto cursor = editor.textCursor();
+    cursor.setPosition(0);
+    cursor.setPosition(3, QTextCursor::KeepAnchor);
+    editor.setTextCursor(cursor);
+    editor.replaceNext("foo", "x", QTextDocument::FindCaseSensitively);
+    QCOMPARE(editor.toPlainText(), "Foo foo food");
+
+    Window window;
+    window.resize(1000, 700);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    window.currentEditor()->setFocus();
+    QTest::keyClick(window.currentEditor(), Qt::Key_H, Qt::ControlModifier);
+    auto *widget = window.findChild<QWidget *>("findWidget");
+    QVERIFY(widget && widget->isVisible());
+    // The widget floats inside the editor area, at its top-right corner.
+    QRect editorArea(window.currentEditor()->mapTo(&window, QPoint()), window.currentEditor()->size());
+    QRect area(widget->mapTo(&window, QPoint()), widget->size());
+    QVERIFY(editorArea.contains(area));
+    QVERIFY(editorArea.right() - area.right() < 40);
+    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Escape);
+    QVERIFY(!widget->isVisible());
+    window.pdfView()->setFocus();
+    QTest::keyClick(window.pdfView(), Qt::Key_F, Qt::ControlModifier);
+    auto *pdfBar = window.findChild<QWidget *>("pdfFindBar");
+    QVERIFY(pdfBar && pdfBar->isVisible() && !widget->isVisible());
 }
 
 void Tests::wordWrap()
@@ -337,6 +402,35 @@ void Tests::wordWrap()
     QVERIFY(window.currentEditor() != first && window.currentEditor()->wordWrap());
     wrap->trigger();
     QVERIFY(!first->wordWrap() && !window.currentEditor()->wordWrap());
+}
+
+void Tests::kineticScroll()
+{
+    Editor editor;
+    editor.resize(600, 300);
+    editor.setPlainText(QString("test line\n").repeated(2000));
+    editor.show();
+    QTest::qWait(30);
+    auto *bar = editor.verticalScrollBar();
+    auto send = [&](QPoint pixels, Qt::ScrollPhase phase, ulong time)
+    {
+        QWheelEvent event(QPointF(30, 30), QPointF(30, 30), pixels, QPoint(), Qt::NoButton, Qt::NoModifier, phase, false);
+        event.setTimestamp(time);
+        QApplication::sendEvent(editor.viewport(), &event);
+    };
+    // A quick flick: five 20 px steps 10 ms apart, fingers lifted right after.
+    send({}, Qt::ScrollBegin, 1000);
+    for (int i = 0; i < 5; ++i) send(QPoint(0, -20), Qt::ScrollUpdate, 1010 + 10 * i);
+    QCOMPARE(bar->value(), 100);
+    send({}, Qt::ScrollEnd, 1058);
+    QTRY_VERIFY_WITH_TIMEOUT(bar->value() > 300, 1000);
+    // Fingers rested before lifting: no inertia.
+    send({}, Qt::ScrollBegin, 5000);
+    int start = bar->value();
+    send(QPoint(0, -20), Qt::ScrollUpdate, 5010);
+    send({}, Qt::ScrollEnd, 5300);
+    QTest::qWait(150);
+    QCOMPARE(bar->value(), start + 20);
 }
 
 void Tests::touchpadPixels()
@@ -368,6 +462,11 @@ void Tests::wheelAnimation()
     QTest::qWait(55);
     QVERIFY(bar->value() > 0 && bar->value() < 72);
     QTRY_COMPARE_WITH_TIMEOUT(bar->value(), 72, 600);
+    // Qt on Wayland sends both deltas for a wheel notch; the notch must use the wheel step, not 15 px.
+    QWheelEvent wayland(QPointF(30, 30), QPointF(30, 30), QPoint(0, -15), QPoint(0, -120), Qt::NoButton,
+        Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(editor.viewport(), &wayland);
+    QTRY_COMPARE_WITH_TIMEOUT(bar->value(), 144, 600);
 }
 
 void Tests::tiledPdf()

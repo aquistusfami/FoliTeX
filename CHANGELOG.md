@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Search in the PDF: Ctrl+F while the PDF has focus opens a find bar above the pages
+  (Case sensitive, Whole words, Enter / Shift+Enter, "3 of 12", all matches highlighted).
+- VS Code-style find widget over the editor (Ctrl+F, Ctrl+H): match case, whole word,
+  match counter, Replace and Replace All (one undo step); Escape closes it.
+
+### Changed
+- Touchpad scrolling keeps gliding after a flick (kinetic scrolling) on Wayland and
+  other systems without built-in inertia, in both the editor and the PDF view.
+### Fixed
+- On Wayland, mouse wheel notches scrolled only 15 px: Qt sends a small pixel delta
+  with each notch, which was mistaken for touchpad input. Notches now scroll 72 px in
+  the editor and 120 px in the PDF view.
+
+### Changed (scrolling)
+- Touchpad movement in the PDF view is doubled.
+- The PDF text test is skipped on systems without any installed font.
+- README: verified Linux install steps, supported distributions and troubleshooting.
+
 ## 0.2.0 — 2026-11-06
 
 First public release, renamed from TeXLite to Folitex.

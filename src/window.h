@@ -4,6 +4,7 @@
 #include <QHash>
 #include <QSet>
 class QLineEdit;
+class QCheckBox;
 class QTreeWidget;
 class QTreeView;
 class QFileSystemModel;
@@ -61,7 +62,12 @@ public:
     QString workspace() const { return m_workspace; }
 protected:
     void closeEvent(QCloseEvent *event) override;
+    bool eventFilter(QObject *object, QEvent *event) override;
 private:
+    QTextDocument::FindFlags findFlags() const;
+    void findInEditor(bool backwards);
+    void updateFindCount();
+    void placeFind();
     Editor *newDocument(const QString &text = {});
     bool save(Editor *editor, bool saveAs = false);
     bool mayClose(Editor *editor);
@@ -93,6 +99,17 @@ private:
     QSplitter *m_vertical;
     QWidget *m_findBar;
     QLineEdit *m_find;
+    QWidget *m_replaceRow;
+    QLineEdit *m_replace;
+    QToolButton *m_replaceToggle;
+    QToolButton *m_findCase;
+    QToolButton *m_findWord;
+    QLabel *m_findCount;
+    QWidget *m_pdfFindBar;
+    QLineEdit *m_pdfFind;
+    QLabel *m_pdfMatches;
+    QCheckBox *m_pdfCase;
+    QCheckBox *m_pdfWord;
     BuildRunner m_runner;
     QFileSystemWatcher m_watcher;
     QTimer m_reload;

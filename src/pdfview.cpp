@@ -115,6 +115,18 @@ void PdfRenderer::inspect(int generation, int number)
     emit inspected(generation, number, text);
 }
 
+// shortcut: searches every page in one call, which delays tile rendering on long documents; split per page if that shows.
+void PdfRenderer::search(int generation, const QString &query, int flags)
+{
+    QList<PdfMatch> matches;
+    if (m_document && generation == m_generation)
+        for (int i = 0; i < m_document->numPages(); ++i)
+            if (auto page = m_document->page(i))
+                for (const QRectF &box : page->search(query, Poppler::Page::SearchFlags(flags)))
+                    matches.append({i, box});
+    emit searched(generation, query, flags, matches);
+}
+
 PdfView::PdfView(QWidget *parent) : QAbstractScrollArea(parent), m_renderer(new PdfRenderer)
 {
     setFrameShape(QFrame::NoFrame);
@@ -123,6 +135,7 @@ PdfView::PdfView(QWidget *parent) : QAbstractScrollArea(parent), m_renderer(new 
     qRegisterMetaType<Tile>();
     qRegisterMetaType<QList<QSizeF>>();
     qRegisterMetaType<PdfPageText>();
+    qRegisterMetaType<QList<PdfMatch>>();
     viewport()->setMouseTracking(true);
     m_renderer->moveToThread(&m_thread);
     connect(&m_thread, &QThread::finished, m_renderer, &QObject::deleteLater);
@@ -145,11 +158,25 @@ PdfView::PdfView(QWidget *parent) : QAbstractScrollArea(parent), m_renderer(new 
         m_textRequested.remove(page);
         m_text.insert(page, new PdfPageText(text));
     });
+    connect(this, &PdfView::searchRequested, m_renderer, &PdfRenderer::search);
+    connect(m_renderer, &PdfRenderer::searched, this, [this](int generation, const QString &query, int flags, const QList<PdfMatch> &matches)
+    {
+        if (generation != m_generation || query != m_query || flags != m_searchFlags) return;
+        m_searching = false;
+        m_matches = matches;
+        // Start at the page in view, as other viewers do.
+        int page = currentPage() - 1;
+        int first = int(std::lower_bound(m_matches.cbegin(), m_matches.cend(), page,
+            [](const PdfMatch &match, int number) { return match.page < number; }) - m_matches.cbegin());
+        m_match = m_matches.isEmpty() ? -1 : (m_searchBackwards ? first - 1 + m_matches.size() : first) % m_matches.size();
+        showMatch();
+    });
     // Zoom and resize steps reuse scaled tiles; one sharp render follows when the steps stop.
     m_dpiTimer.setSingleShot(true);
     m_dpiTimer.setInterval(150);
     connect(&m_dpiTimer, &QTimer::timeout, this, &PdfView::applyDpi);
-    new SmoothScroll(this);
+    // A wheel notch moves about a tenth of a page; touchpad travel is doubled for long documents.
+    new SmoothScroll(this, 120, 2);
     connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this] { emit pageChanged(currentPage()); });
     m_thread.start();
 }
@@ -191,6 +218,7 @@ void PdfView::open(const QString &path)
     m_text.clear();
     m_textRequested.clear();
     m_selectionPage = m_pressPage = -1;
+    clearSearch();
     emit loadRequested(path, m_generation);
     viewport()->update();
 }
@@ -342,6 +370,11 @@ void PdfView::paintEvent(QPaintEvent *)
                     const QRectF &box = text->words[i].box;
                     painter.fillRect(QRectF(onScreen.topLeft() + box.topLeft() * m_scale, box.size() * m_scale), QColor(0, 120, 212, 90));
                 }
+        auto [from, to] = std::equal_range(m_matches.cbegin(), m_matches.cend(), PdfMatch{number, {}},
+            [](const PdfMatch &a, const PdfMatch &b) { return a.page < b.page; });
+        for (auto match = from; match != to; ++match)
+            painter.fillRect(QRectF(onScreen.topLeft() + match->box.topLeft() * m_scale, match->box.size() * m_scale),
+                match - m_matches.cbegin() == m_match ? QColor(255, 140, 0, 150) : QColor(255, 210, 0, 90));
         painter.restore();
         painter.setPen(QColor("#2B2B2B"));
         painter.drawRect(onScreen);
@@ -402,6 +435,47 @@ void PdfView::goToPage(int page, double yPoints)
 {
     if (page < 1 || page > m_pages.size()) return;
     verticalScrollBar()->setValue(qRound(m_pages[page - 1].top() + yPoints * m_scale - 32));
+}
+
+void PdfView::find(const QString &query, bool backwards, Poppler::Page::SearchFlags flags)
+{
+    if (query.isEmpty() || m_pages.isEmpty()) return;
+    if (query != m_query || int(flags) != m_searchFlags)
+    {
+        m_query = query;
+        m_searchFlags = int(flags);
+        m_matches.clear();
+        m_match = -1;
+        m_searching = true;
+        m_searchBackwards = backwards;
+        emit searchRequested(m_generation, query, m_searchFlags);
+        viewport()->update();
+        return;
+    }
+    if (m_searching || m_matches.isEmpty()) return;
+    m_match = (m_match + (backwards ? -1 : 1) + m_matches.size()) % m_matches.size();
+    showMatch();
+}
+
+void PdfView::clearSearch()
+{
+    m_query.clear();
+    m_matches.clear();
+    m_match = -1;
+    m_searching = false;
+    emit matchChanged(-1, -1);
+    viewport()->update();
+}
+
+void PdfView::showMatch()
+{
+    emit matchChanged(m_match, m_matches.size());
+    viewport()->update();
+    if (m_match < 0) return;
+    const auto &match = m_matches[m_match];
+    QPointF center = m_pages[match.page].topLeft() + match.box.center() * m_scale;
+    verticalScrollBar()->setValue(qRound(center.y() - viewport()->height() / 3.0));
+    horizontalScrollBar()->setValue(qRound(center.x() - viewport()->width() / 2.0));
 }
 
 int PdfView::currentPage() const

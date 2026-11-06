@@ -40,6 +40,13 @@ struct PdfPageText
 };
 Q_DECLARE_METATYPE(PdfPageText)
 
+struct PdfMatch
+{
+    int page = 0; // 0-based
+    QRectF box; // points
+};
+Q_DECLARE_METATYPE(PdfMatch)
+
 class PdfRenderer : public QObject
 {
     Q_OBJECT
@@ -47,7 +54,9 @@ public slots:
     void open(const QString &path, int generation);
     void render(Tile tile);
     void inspect(int generation, int page);
+    void search(int generation, const QString &query, int flags); // Poppler::Page::SearchFlags
 signals:
+    void searched(int generation, QString query, int flags, QList<PdfMatch> matches);
     void inspected(int generation, int page, PdfPageText text);
     void loaded(int generation, QList<QSizeF> sizes, QString error);
     void rendered(Tile tile, QImage image);
@@ -80,6 +89,11 @@ public:
     QString selectedText() const;
     void copySelection() const;
     QString path() const { return m_path; }
+    // Searches all pages; repeating the same query steps to the next (or previous) match.
+    void find(const QString &query, bool backwards = false, Poppler::Page::SearchFlags flags = {});
+    void clearSearch();
+    int matchCount() const { return m_matches.size(); }
+    int currentMatch() const { return m_match; }
 signals:
     void loadRequested(QString path, int generation);
     void tileRequested(Tile tile);
@@ -88,6 +102,8 @@ signals:
     void loadFailed(QString error);
     void sourceRequested(int page, double xPoints, double yPoints);
     void pageChanged(int page);
+    void searchRequested(int generation, QString query, int flags);
+    void matchChanged(int index, int count); // count -1: no search
 protected:
     void paintEvent(QPaintEvent *) override;
     void resizeEvent(QResizeEvent *event) override;
@@ -111,6 +127,7 @@ private:
     const PdfPageText *pageText(int page);
     int wordAt(const PdfPageText &text, QPointF local, bool nearest) const;
     void followLink(const PdfLink &link);
+    void showMatch();
     QThread m_thread;
     PdfRenderer *m_renderer;
     QList<QSizeF> m_sizes;
@@ -139,4 +156,10 @@ private:
     int m_pressPage = -1;
     QPointF m_pressPosition;
     bool m_dragging = false;
+    QString m_query; // query of m_matches, or of the search still running
+    QList<PdfMatch> m_matches; // ordered by page
+    int m_match = -1;
+    bool m_searching = false;
+    bool m_searchBackwards = false;
+    int m_searchFlags = 0;
 };

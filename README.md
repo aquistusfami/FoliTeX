@@ -30,8 +30,8 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
 - One-key asynchronous builds through `latexmk` with pdfLaTeX, LuaLaTeX or XeLaTeX;
   `% !TeX root = …` for multi-file projects; output goes to `.folitex-build/`.
 - Two-way SyncTeX: F7 jumps from the source to the PDF, Ctrl+click in the PDF jumps back.
-- PDF viewer: continuous pages, select and copy text, clickable links, zoom, page
-  jump, automatic reload after each build, right-click menu with Jump to Source.
+- PDF viewer: continuous pages, text search, select and copy text, clickable links,
+  zoom, page jump, automatic reload after each build, right-click menu with Jump to Source.
 - Background rendering at the display's native pixel density with a bounded image
   cache; image-heavy pages render in a single Poppler call (≈7× faster than small tiles).
 
@@ -162,7 +162,8 @@ Keyboard shortcuts follow TeXstudio where TeXstudio documents them.
 | Alt+Return | Close the last open environment or brace |
 | Ctrl+/ | Toggle comment |
 | Alt+Z | Toggle word wrap |
-| Ctrl+F / F3 / Shift+F3 / Ctrl+G | Find / next / previous / go to line |
+| Ctrl+F / F3 / Shift+F3 / Ctrl+G | Find (in the PDF when it has focus) / next / previous / go to line |
+| Ctrl+H | Replace, Replace All in the current file |
 | Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+Shift+S / Ctrl+W | New / open / save / save as / close |
 | Ctrl+Shift+E | Open a workspace folder |
 | Ctrl+PgDown / Ctrl+PgUp | Next / previous tab |
@@ -182,7 +183,7 @@ Folitex is young (0.2) and deliberately smaller than TeXstudio. Known gaps:
 - Build errors are shown as the raw log, not as a clickable list.
 - The outline covers the current file only; `\cite` completion reads `.bib` files
   next to open sources.
-- PDF text selection stays within one page; there is no PDF text search yet.
+- PDF text selection stays within one page.
 - Very large sources (tens of thousands of lines) use noticeably more memory, because
   the editor keeps pixel-smooth scrolling (Qt `QTextEdit`).
 - Developed on Linux (Arch, Wayland); the automated tests run offscreen at 100 %,

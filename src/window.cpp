@@ -11,6 +11,8 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QGridLayout>
+#include <QCheckBox>
 #include <QLineEdit>
 #include <QShortcut>
 #include <QCloseEvent>
@@ -193,14 +195,29 @@ Window::Window() : m_runner(this)
     auto insert = [this](const QString &text) { return [this, text] { if (auto *editor = currentEditor()) editor->insertTemplate(text); }; };
     auto find = [this](bool backwards)
     {
+        if (m_pdfFindBar->isVisible() && m_pdfPane->isAncestorOf(QApplication::focusWidget())) emit m_pdfFind->returnPressed();
+        else findInEditor(backwards);
+    };
+    auto showFind = [this](bool replace)
+    {
+        // Ctrl+F inside the PDF pane searches the PDF, elsewhere the current source.
+        if (!replace && m_pdfPane->isAncestorOf(QApplication::focusWidget()))
+        {
+            m_pdfFindBar->show();
+            m_pdfFind->setFocus();
+            m_pdfFind->selectAll();
+            return;
+        }
         auto *editor = currentEditor();
-        if (!editor || m_find->text().isEmpty()) return;
-        auto flags = backwards ? QTextDocument::FindBackward : QTextDocument::FindFlags{};
-        if (editor->find(m_find->text(), flags)) return;
-        auto cursor = editor->textCursor();
-        cursor.movePosition(backwards ? QTextCursor::End : QTextCursor::Start);
-        editor->setTextCursor(cursor);
-        editor->find(m_find->text(), flags);
+        if (!editor) return;
+        if (editor->textCursor().hasSelection() && !editor->textCursor().selectedText().contains(QChar::ParagraphSeparator))
+            m_find->setText(editor->textCursor().selectedText());
+        m_replaceToggle->setChecked(replace);
+        m_findBar->show();
+        placeFind();
+        updateFindCount();
+        m_find->setFocus();
+        m_find->selectAll();
     };
     add("New document", QKeySequence::New, [this] { newDocument(); });
     add("Open TeX or PDF…", QKeySequence::Open, [this]
@@ -224,7 +241,8 @@ Window::Window() : m_runner(this)
     add("Undo", QKeySequence::Undo, [this] { if (auto *editor = currentEditor()) editor->undo(); });
     add("Redo", QKeySequence::Redo, [this] { if (auto *editor = currentEditor()) editor->redo(); });
     menu->addSeparator();
-    add("Find in file", QKeySequence::Find, [this] { m_findBar->show(); m_find->setFocus(); m_find->selectAll(); });
+    add("Find", QKeySequence::Find, [showFind] { showFind(false); });
+    add("Replace", QKeySequence("Ctrl+H"), [showFind] { showFind(true); });
     add("Find next", QKeySequence("F3"), [find] { find(false); });
     add("Find previous", QKeySequence("Shift+F3"), [find] { find(true); });
     add("Go to line…", QKeySequence("Ctrl+G"), [this]
@@ -309,35 +327,167 @@ Window::Window() : m_runner(this)
     pdfButton("−", "Zoom out · Ctrl+-", [this] { m_pdf->setZoom(m_pdf->zoom() / 1.25); });
     pdfButton("+", "Zoom in · Ctrl+=", [this] { m_pdf->setZoom(m_pdf->zoom() * 1.25); });
     pdfButton("Fit width", "Fit PDF width · Ctrl+0", [this] { m_pdf->fitWidth(); });
+    m_pdfFindBar = new QWidget;
+    m_pdfFindBar->setObjectName("pdfFindBar");
+    auto *pdfFindLayout = new QHBoxLayout(m_pdfFindBar);
+    pdfFindLayout->setContentsMargins(8, 4, 8, 4);
+    pdfFindLayout->setSpacing(4);
+    auto *pdfFindClose = new QToolButton;
+    pdfFindClose->setText("×");
+    pdfFindClose->setToolTip("Close · Escape");
+    m_pdfFind = new QLineEdit;
+    m_pdfFind->setPlaceholderText("Find in PDF");
+    m_pdfFind->setToolTip("Enter: next match · Shift+Enter: previous");
+    auto *pdfPrevious = new QToolButton;
+    pdfPrevious->setText("↑");
+    pdfPrevious->setToolTip("Previous match · Shift+Enter");
+    auto *pdfNext = new QToolButton;
+    pdfNext->setText("↓");
+    pdfNext->setToolTip("Next match · Enter");
+    m_pdfCase = new QCheckBox("Case sensitive");
+    m_pdfWord = new QCheckBox("Whole words");
+    m_pdfMatches = new QLabel;
+    auto pdfFind = [this](bool backwards)
+    {
+        Poppler::Page::SearchFlags flags;
+        if (!m_pdfCase->isChecked()) flags |= Poppler::Page::IgnoreCase;
+        if (m_pdfWord->isChecked()) flags |= Poppler::Page::WholeWords;
+        m_pdf->find(m_pdfFind->text(), backwards, flags);
+    };
+    connect(m_pdfFind, &QLineEdit::returnPressed, this, [pdfFind] { pdfFind(QGuiApplication::keyboardModifiers() & Qt::ShiftModifier); });
+    connect(pdfPrevious, &QToolButton::clicked, this, [pdfFind] { pdfFind(true); });
+    connect(pdfNext, &QToolButton::clicked, this, [pdfFind] { pdfFind(false); });
+    connect(m_pdfCase, &QCheckBox::toggled, this, [pdfFind] { pdfFind(false); });
+    connect(m_pdfWord, &QCheckBox::toggled, this, [pdfFind] { pdfFind(false); });
+    connect(pdfFindClose, &QToolButton::clicked, this, [this]
+    {
+        m_pdfFindBar->hide();
+        m_pdf->clearSearch();
+        m_pdf->setFocus();
+    });
+    connect(m_pdf, &PdfView::matchChanged, this, [this](int index, int count)
+    {
+        m_pdfMatches->setText(count < 0 ? QString() : count == 0 ? "No results" : QString("%1 of %2").arg(index + 1).arg(count));
+    });
+    auto *pdfEscape = new QShortcut(QKeySequence(Qt::Key_Escape), m_pdfFindBar);
+    pdfEscape->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(pdfEscape, &QShortcut::activated, pdfFindClose, &QToolButton::click);
+    pdfFindLayout->addWidget(pdfFindClose);
+    pdfFindLayout->addWidget(m_pdfFind, 1);
+    pdfFindLayout->addWidget(pdfPrevious);
+    pdfFindLayout->addWidget(pdfNext);
+    pdfFindLayout->addWidget(m_pdfCase);
+    pdfFindLayout->addWidget(m_pdfWord);
+    pdfFindLayout->addWidget(m_pdfMatches);
+    m_pdfFindBar->hide();
     m_pdfPane = new QWidget;
     auto *pdfLayout = new QVBoxLayout(m_pdfPane);
     pdfLayout->setContentsMargins(0, 0, 0, 0);
     pdfLayout->setSpacing(0);
     pdfLayout->addWidget(pdfBar);
+    pdfLayout->addWidget(m_pdfFindBar);
     pdfLayout->addWidget(m_pdf);
     statusBar()->setSizeGripEnabled(false);
     layout->addLayout(bar);
-    m_findBar = new QWidget;
-    auto *findLayout = new QHBoxLayout(m_findBar);
-    findLayout->setContentsMargins(12, 2, 12, 7);
-    m_find = new QLineEdit;
-    m_find->setPlaceholderText("Find in current file…");
-    findLayout->addWidget(m_find);
-    auto *previous = new QPushButton("↑");
-    auto *next = new QPushButton("↓");
-    auto *close = new QPushButton("×");
-    connect(previous, &QPushButton::clicked, this, [find] { find(true); });
-    connect(next, &QPushButton::clicked, this, [find] { find(false); });
-    connect(m_find, &QLineEdit::returnPressed, this, [find] { find(false); });
-    connect(close, &QPushButton::clicked, m_findBar, &QWidget::hide);
-    findLayout->addWidget(previous); findLayout->addWidget(next); findLayout->addWidget(close);
-    layout->addWidget(m_findBar);
-    m_findBar->hide();
     m_tabs = new QTabWidget;
     m_tabs->setDocumentMode(true);
     m_tabs->tabBar()->setDrawBase(false);
     m_tabs->setTabsClosable(true);
     m_tabs->setMovable(true);
+    // VS Code-style find widget floating over the top-right corner of the editor.
+    m_findBar = new QWidget(m_tabs);
+    m_findBar->setObjectName("findWidget");
+    m_findBar->setAttribute(Qt::WA_StyledBackground);
+    auto *findLayout = new QGridLayout(m_findBar);
+    findLayout->setContentsMargins(4, 4, 6, 4);
+    findLayout->setHorizontalSpacing(4);
+    findLayout->setVerticalSpacing(4);
+    auto toolButton = [](const QString &text, const QString &tip, bool checkable = false)
+    {
+        auto *button = new QToolButton;
+        button->setText(text);
+        button->setToolTip(tip);
+        button->setCheckable(checkable);
+        return button;
+    };
+    m_replaceToggle = toolButton("›", "Toggle Replace · Ctrl+H", true);
+    m_replaceToggle->setObjectName("replaceToggle");
+    m_find = new QLineEdit;
+    m_find->setPlaceholderText("Find");
+    m_find->setMinimumWidth(220);
+    m_findCase = toolButton("Aa", "Match Case", true);
+    m_findWord = toolButton("ab", "Match Whole Word", true);
+    m_findCount = new QLabel;
+    m_findCount->setMinimumWidth(70);
+    auto *previous = toolButton("↑", "Previous Match · Shift+F3");
+    auto *next = toolButton("↓", "Next Match · F3 or Enter");
+    auto *close = toolButton("×", "Close · Escape");
+    m_replace = new QLineEdit;
+    m_replace->setPlaceholderText("Replace");
+    auto *replaceOne = toolButton("Replace", "Replace · Enter");
+    auto *replaceAll = toolButton("All", "Replace All");
+    auto *findRow = new QHBoxLayout;
+    findRow->setSpacing(2);
+    for (QWidget *widget : std::initializer_list<QWidget *>{m_findCase, m_findWord, m_findCount, previous, next, close}) findRow->addWidget(widget);
+    auto *replaceRow = new QHBoxLayout;
+    replaceRow->setSpacing(2);
+    replaceRow->addWidget(replaceOne);
+    replaceRow->addWidget(replaceAll);
+    replaceRow->addStretch();
+    m_replaceRow = new QWidget;
+    m_replaceRow->setLayout(replaceRow);
+    replaceRow->setContentsMargins(0, 0, 0, 0);
+    findLayout->addWidget(m_replaceToggle, 0, 0, Qt::AlignTop);
+    findLayout->addWidget(m_find, 0, 1);
+    findLayout->addLayout(findRow, 0, 2);
+    findLayout->addWidget(m_replace, 1, 1);
+    findLayout->addWidget(m_replaceRow, 1, 2);
+    auto incremental = [this]
+    {
+        // As in VS Code, typing searches again from the start of the current match.
+        auto *editor = currentEditor();
+        if (!editor) return;
+        auto cursor = editor->textCursor();
+        cursor.setPosition(cursor.selectionStart());
+        editor->setTextCursor(cursor);
+        editor->findText(m_find->text(), findFlags());
+        updateFindCount();
+    };
+    connect(m_find, &QLineEdit::textEdited, this, incremental);
+    connect(m_findCase, &QToolButton::toggled, this, incremental);
+    connect(m_findWord, &QToolButton::toggled, this, incremental);
+    connect(m_find, &QLineEdit::returnPressed, this, [this] { findInEditor(QGuiApplication::keyboardModifiers() & Qt::ShiftModifier); });
+    connect(previous, &QToolButton::clicked, this, [this] { findInEditor(true); });
+    connect(next, &QToolButton::clicked, this, [this] { findInEditor(false); });
+    connect(m_replaceToggle, &QToolButton::toggled, this, [this](bool on)
+    {
+        m_replaceToggle->setText(on ? "⌄" : "›");
+        m_replace->setVisible(on);
+        m_replaceRow->setVisible(on);
+        placeFind();
+    });
+    connect(replaceOne, &QToolButton::clicked, this, [this]
+    {
+        if (auto *editor = currentEditor()) editor->replaceNext(m_find->text(), m_replace->text(), findFlags());
+        updateFindCount();
+    });
+    connect(m_replace, &QLineEdit::returnPressed, replaceOne, &QToolButton::click);
+    connect(replaceAll, &QToolButton::clicked, this, [this]
+    {
+        auto *editor = currentEditor();
+        if (!editor) return;
+        m_status->setText(QString("Replaced %1 occurrences").arg(editor->replaceAll(m_find->text(), m_replace->text(), findFlags())));
+        updateFindCount();
+    });
+    connect(close, &QToolButton::clicked, this, [this] { m_findBar->hide(); if (auto *editor = currentEditor()) editor->setFocus(); });
+    auto *escape = new QShortcut(QKeySequence(Qt::Key_Escape), m_findBar);
+    escape->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(escape, &QShortcut::activated, close, &QToolButton::click);
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this] { if (m_findBar->isVisible()) updateFindCount(); });
+    m_replaceToggle->setChecked(true);
+    m_replaceToggle->setChecked(false);
+    m_findBar->hide();
+    m_tabs->installEventFilter(this);
     auto *buildCorner = new QWidget;
     buildCorner->setObjectName("buildCorner");
     auto *cornerLayout = new QHBoxLayout(buildCorner);
@@ -830,4 +980,44 @@ void Window::inverseSync(int page, double x, double y)
         if (QFileInfo(path).isRelative()) path = QDir(QFileInfo(m_pdf->path()).absolutePath()).absoluteFilePath(path);
         if (openSource(QDir::cleanPath(path))) currentEditor()->goToLine(line.captured(1).toInt());
     });
+}
+
+QTextDocument::FindFlags Window::findFlags() const
+{
+    QTextDocument::FindFlags flags;
+    if (m_findCase->isChecked()) flags |= QTextDocument::FindCaseSensitively;
+    if (m_findWord->isChecked()) flags |= QTextDocument::FindWholeWords;
+    return flags;
+}
+
+void Window::findInEditor(bool backwards)
+{
+    auto *editor = currentEditor();
+    if (!editor) return;
+    editor->findText(m_find->text(), findFlags() | (backwards ? QTextDocument::FindBackward : QTextDocument::FindFlags{}));
+    updateFindCount();
+}
+
+void Window::updateFindCount()
+{
+    auto *editor = currentEditor();
+    int current = -1;
+    int count = editor ? editor->countMatches(m_find->text(), findFlags(), &current) : 0;
+    m_findCount->setText(m_find->text().isEmpty() ? QString() : count == 0 ? "No results"
+        : QString("%1 of %2").arg(current < 0 ? QString("?") : QString::number(current + 1)).arg(count));
+}
+
+void Window::placeFind()
+{
+    if (!m_findBar->isVisible()) return;
+    m_findBar->adjustSize();
+    // Left of the editor's vertical scroll bar, just below the tabs.
+    m_findBar->move(std::max(0, m_tabs->width() - m_findBar->width() - 18), m_tabs->tabBar()->height());
+    m_findBar->raise();
+}
+
+bool Window::eventFilter(QObject *object, QEvent *event)
+{
+    if (object == m_tabs && event->type() == QEvent::Resize) placeFind();
+    return QMainWindow::eventFilter(object, event);
 }

@@ -8,12 +8,16 @@ class SmoothScroll : public QObject
 {
     Q_OBJECT
 public:
-    explicit SmoothScroll(QAbstractScrollArea *area);
+    explicit SmoothScroll(QAbstractScrollArea *area, int wheelStep = 72, double touchpadFactor = 1);
 protected:
     bool eventFilter(QObject *object, QEvent *event) override;
 private:
     QAbstractScrollArea *m_area;
     QPropertyAnimation m_animation;
+    int m_wheelStep;
+    double m_touchpadFactor;
+    QList<QPair<qint64, int>> m_samples; // touchpad (timestamp ms, vertical pixels) of the last 100 ms
+    bool m_systemMomentum = false;
 };
 
 class LatexHighlighter : public QSyntaxHighlighter
@@ -41,6 +45,11 @@ public:
     void goToLine(int line, int column = 0);
     int lineNumber() const;
     void toggleComment();
+    // flags: QTextDocument::FindBackward, FindCaseSensitively, FindWholeWords.
+    bool findText(const QString &text, QTextDocument::FindFlags flags = {});
+    bool replaceNext(const QString &text, const QString &with, QTextDocument::FindFlags flags = {});
+    int replaceAll(const QString &text, const QString &with, QTextDocument::FindFlags flags = {});
+    int countMatches(const QString &text, QTextDocument::FindFlags flags, int *current = nullptr) const;
     // Inserts text whose U+2022 marks are placeholders; a selection fills the first one.
     void insertTemplate(QString text);
     void insertEnvironment();
