@@ -1,0 +1,38 @@
+{
+  "TeXstudio binary mappings": {
+    "Rss": 15668,
+    "Pss": 15668,
+    "Private_Clean": 15448,
+    "Private_Dirty": 220
+  },
+  "Other anonymous mappings": {
+    "Rss": 328340,
+    "Pss": 328324,
+    "Private_Clean": 0,
+    "Private_Dirty": 328324
+  },
+  "Heap": {
+    "Rss": 283944,
+    "Pss": 283944,
+    "Private_Clean": 0,
+    "Private_Dirty": 283944
+  },
+  "Qt6 library mappings": {
+    "Rss": 27648,
+    "Pss": 20400,
+    "Private_Clean": 12092,
+    "Private_Dirty": 1060
+  },
+  "Other file mappings": {
+    "Rss": 45028,
+    "Pss": 11520,
+    "Private_Clean": 4124,
+    "Private_Dirty": 2296
+  },
+  "Poppler library mappings": {
+    "Rss": 1336,
+    "Pss": 1336,
+    "Private_Clean": 928,
+    "Private_Dirty": 408
+  }
+}

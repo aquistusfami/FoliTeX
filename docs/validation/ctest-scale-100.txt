@@ -1,0 +1,41 @@
+Start testing: Nov 06 17:59 +07
+----------------------------------------------------------
+1/1 Testing: texlite_tests
+1/1 Test: texlite_tests
+Command: "/tmp/texlite-native/build/texlite_tests"
+Directory: /tmp/texlite-native/build
+"texlite_tests" start time: Nov 06 17:59 +07
+Output:
+----------------------------------------------------------
+********* Start testing of Tests *********
+Config: Using QtTest library 6.12.0, Qt 6.12.0 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 16.2.1 20260810), arch unknown
+PASS   : Tests::initTestCase()
+PASS   : Tests::rootFiles()
+PASS   : Tests::editorCommentUndo()
+PASS   : Tests::touchpadPixels()
+PASS   : Tests::wheelAnimation()
+PASS   : Tests::tiledPdf()
+PASS   : Tests::compilation()
+PASS   : Tests::utf8AndInvalidInput()
+QDEBUG : Tests::pdfErrors() "Error: May not be a PDF file (continuing anyway)"
+QDEBUG : Tests::pdfErrors() "Error: Couldn't find trailer dictionary"
+QDEBUG : Tests::pdfErrors() "Error: Couldn't find trailer dictionary"
+QDEBUG : Tests::pdfErrors() "Error: Couldn't read xref table"
+PASS   : Tests::pdfErrors()
+PASS   : Tests::sourceRoundtrip()
+PASS   : Tests::immediateCancellation()
+PASS   : Tests::largePdfViewport()
+PASS   : Tests::failedTileDoesNotSpin()
+PASS   : Tests::cancellationCleansOrphanCompiler()
+PASS   : Tests::cleanupTestCase()
+Totals: 15 passed, 0 failed, 0 skipped, 0 blacklisted, 4603ms
+********* Finished testing of Tests *********
+<end of output>
+Test time =   4.65 sec
+----------------------------------------------------------
+Test Passed.
+"texlite_tests" end time: Nov 06 17:59 +07
+"texlite_tests" time elapsed: 00:00:04
+----------------------------------------------------------
+
+End testing: Nov 06 17:59 +07

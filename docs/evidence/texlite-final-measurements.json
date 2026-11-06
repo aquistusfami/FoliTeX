@@ -1,0 +1,1247 @@
+[
+  {
+    "binary_sha256": "95f7aecaefc044cf138f0efe402e76bc91a990996336aea05475fd9ada45b328",
+    "scenario": "empty",
+    "trial": 1,
+    "command": [
+      "/tmp/texlite-native/build/texlite"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1002,
+        "VmRSS": 54768,
+        "VmHWM": 54768,
+        "VmSize": 271604,
+        "Threads": 3,
+        "cpu_seconds": 0.09,
+        "Pss_kib": 26814,
+        "Private_kib": 18444
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 61564,
+        "VmHWM": 61564,
+        "VmSize": 277260,
+        "Threads": 3,
+        "cpu_seconds": 0.11,
+        "Pss_kib": 32936,
+        "Private_kib": 24408
+      },
+      {
+        "time_s": 0.5002,
+        "VmRSS": 61564,
+        "VmHWM": 61564,
+        "VmSize": 277260,
+        "Threads": 3,
+        "cpu_seconds": 0.11,
+        "Pss_kib": 32936,
+        "Private_kib": 24408
+      },
+      {
+        "time_s": 1.0001,
+        "VmRSS": 61564,
+        "VmHWM": 61564,
+        "VmSize": 277260,
+        "Threads": 3,
+        "cpu_seconds": 0.11,
+        "Pss_kib": 32936,
+        "Private_kib": 24408
+      },
+      {
+        "time_s": 2.0001,
+        "VmRSS": 61564,
+        "VmHWM": 61564,
+        "VmSize": 277260,
+        "Threads": 3,
+        "cpu_seconds": 0.11,
+        "Pss_kib": 32936,
+        "Private_kib": 24408
+      },
+      {
+        "time_s": 4.0001,
+        "VmRSS": 61564,
+        "VmHWM": 61564,
+        "VmSize": 277260,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 32936,
+        "Private_kib": 24408
+      },
+      {
+        "time_s": 5.0005,
+        "VmRSS": 61564,
+        "VmHWM": 61564,
+        "VmSize": 277260,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 32936,
+        "Private_kib": 24408
+      }
+    ],
+    "stderr_log": "/tmp/texlite-final-benchmark/runs/empty-1/stderr.log"
+  },
+  {
+    "binary_sha256": "95f7aecaefc044cf138f0efe402e76bc91a990996336aea05475fd9ada45b328",
+    "scenario": "empty",
+    "trial": 2,
+    "command": [
+      "/tmp/texlite-native/build/texlite"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 54548,
+        "VmHWM": 54548,
+        "VmSize": 271020,
+        "Threads": 3,
+        "cpu_seconds": 0.08,
+        "Pss_kib": 26689,
+        "Private_kib": 18396
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 61492,
+        "VmHWM": 61492,
+        "VmSize": 277260,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 32914,
+        "Private_kib": 24412
+      },
+      {
+        "time_s": 0.5002,
+        "VmRSS": 61492,
+        "VmHWM": 61492,
+        "VmSize": 277260,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 32914,
+        "Private_kib": 24412
+      },
+      {
+        "time_s": 1.0002,
+        "VmRSS": 61492,
+        "VmHWM": 61492,
+        "VmSize": 277260,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 32914,
+        "Private_kib": 24412
+      },
+      {
+        "time_s": 2.0002,
+        "VmRSS": 61492,
+        "VmHWM": 61492,
+        "VmSize": 277260,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 32914,
+        "Private_kib": 24412
+      },
+      {
+        "time_s": 4.0005,
+        "VmRSS": 61492,
+        "VmHWM": 61492,
+        "VmSize": 277260,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 32914,
+        "Private_kib": 24412
+      },
+      {
+        "time_s": 5.0004,
+        "VmRSS": 61492,
+        "VmHWM": 61492,
+        "VmSize": 277260,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 32914,
+        "Private_kib": 24412
+      }
+    ],
+    "stderr_log": "/tmp/texlite-final-benchmark/runs/empty-2/stderr.log"
+  },
+  {
+    "binary_sha256": "95f7aecaefc044cf138f0efe402e76bc91a990996336aea05475fd9ada45b328",
+    "scenario": "empty",
+    "trial": 3,
+    "command": [
+      "/tmp/texlite-native/build/texlite"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 51808,
+        "VmHWM": 51808,
+        "VmSize": 269948,
+        "Threads": 3,
+        "cpu_seconds": 0.09,
+        "Pss_kib": 25823,
+        "Private_kib": 17736
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 61424,
+        "VmHWM": 61424,
+        "VmSize": 277264,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 32932,
+        "Private_kib": 24476
+      },
+      {
+        "time_s": 0.5001,
+        "VmRSS": 61424,
+        "VmHWM": 61424,
+        "VmSize": 277264,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 32932,
+        "Private_kib": 24476
+      },
+      {
+        "time_s": 1.0002,
+        "VmRSS": 61424,
+        "VmHWM": 61424,
+        "VmSize": 277264,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 32932,
+        "Private_kib": 24476
+      },
+      {
+        "time_s": 2.0002,
+        "VmRSS": 61424,
+        "VmHWM": 61424,
+        "VmSize": 277264,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 32932,
+        "Private_kib": 24476
+      },
+      {
+        "time_s": 4.0002,
+        "VmRSS": 61424,
+        "VmHWM": 61424,
+        "VmSize": 277264,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 32923,
+        "Private_kib": 24476
+      },
+      {
+        "time_s": 5.0001,
+        "VmRSS": 61424,
+        "VmHWM": 61424,
+        "VmSize": 277264,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 32932,
+        "Private_kib": 24476
+      }
+    ],
+    "stderr_log": "/tmp/texlite-final-benchmark/runs/empty-3/stderr.log"
+  },
+  {
+    "binary_sha256": "95f7aecaefc044cf138f0efe402e76bc91a990996336aea05475fd9ada45b328",
+    "scenario": "source_100",
+    "trial": 1,
+    "command": [
+      "/tmp/texlite-native/build/texlite",
+      "/tmp/texstudio-baseline/source-100.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1002,
+        "VmRSS": 55808,
+        "VmHWM": 55808,
+        "VmSize": 271668,
+        "Threads": 3,
+        "cpu_seconds": 0.09,
+        "Pss_kib": 27732,
+        "Private_kib": 19352
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 61812,
+        "VmHWM": 61812,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 33147,
+        "Private_kib": 24692
+      },
+      {
+        "time_s": 0.5001,
+        "VmRSS": 61812,
+        "VmHWM": 61812,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 33190,
+        "Private_kib": 24692
+      },
+      {
+        "time_s": 1.0001,
+        "VmRSS": 61812,
+        "VmHWM": 61812,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 33190,
+        "Private_kib": 24692
+      },
+      {
+        "time_s": 2.0002,
+        "VmRSS": 61812,
+        "VmHWM": 61812,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 33190,
+        "Private_kib": 24692
+      },
+      {
+        "time_s": 4.0002,
+        "VmRSS": 61812,
+        "VmHWM": 61812,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 33190,
+        "Private_kib": 24692
+      },
+      {
+        "time_s": 5.0002,
+        "VmRSS": 61812,
+        "VmHWM": 61812,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 33179,
+        "Private_kib": 24692
+      }
+    ],
+    "stderr_log": "/tmp/texlite-final-benchmark/runs/source_100-1/stderr.log"
+  },
+  {
+    "binary_sha256": "95f7aecaefc044cf138f0efe402e76bc91a990996336aea05475fd9ada45b328",
+    "scenario": "source_100",
+    "trial": 2,
+    "command": [
+      "/tmp/texlite-native/build/texlite",
+      "/tmp/texstudio-baseline/source-100.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 54448,
+        "VmHWM": 54448,
+        "VmSize": 271020,
+        "Threads": 3,
+        "cpu_seconds": 0.09,
+        "Pss_kib": 26576,
+        "Private_kib": 18264
+      },
+      {
+        "time_s": 0.2502,
+        "VmRSS": 61812,
+        "VmHWM": 61812,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.14,
+        "Pss_kib": 33179,
+        "Private_kib": 24656
+      },
+      {
+        "time_s": 0.5002,
+        "VmRSS": 61812,
+        "VmHWM": 61812,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.14,
+        "Pss_kib": 33179,
+        "Private_kib": 24656
+      },
+      {
+        "time_s": 1.0001,
+        "VmRSS": 61816,
+        "VmHWM": 61816,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.14,
+        "Pss_kib": 33183,
+        "Private_kib": 24660
+      },
+      {
+        "time_s": 2.0002,
+        "VmRSS": 61816,
+        "VmHWM": 61816,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.14,
+        "Pss_kib": 33183,
+        "Private_kib": 24660
+      },
+      {
+        "time_s": 4.0002,
+        "VmRSS": 61816,
+        "VmHWM": 61816,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.14,
+        "Pss_kib": 33183,
+        "Private_kib": 24660
+      },
+      {
+        "time_s": 5.0002,
+        "VmRSS": 61816,
+        "VmHWM": 61816,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.14,
+        "Pss_kib": 33183,
+        "Private_kib": 24660
+      }
+    ],
+    "stderr_log": "/tmp/texlite-final-benchmark/runs/source_100-2/stderr.log"
+  },
+  {
+    "binary_sha256": "95f7aecaefc044cf138f0efe402e76bc91a990996336aea05475fd9ada45b328",
+    "scenario": "source_100",
+    "trial": 3,
+    "command": [
+      "/tmp/texlite-native/build/texlite",
+      "/tmp/texstudio-baseline/source-100.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 54672,
+        "VmHWM": 54672,
+        "VmSize": 271604,
+        "Threads": 3,
+        "cpu_seconds": 0.09,
+        "Pss_kib": 26767,
+        "Private_kib": 18476
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 61716,
+        "VmHWM": 61716,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 33099,
+        "Private_kib": 24628
+      },
+      {
+        "time_s": 0.5001,
+        "VmRSS": 61716,
+        "VmHWM": 61716,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 33099,
+        "Private_kib": 24628
+      },
+      {
+        "time_s": 1.0001,
+        "VmRSS": 61720,
+        "VmHWM": 61720,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 33059,
+        "Private_kib": 24632
+      },
+      {
+        "time_s": 2.0002,
+        "VmRSS": 61720,
+        "VmHWM": 61720,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 33103,
+        "Private_kib": 24632
+      },
+      {
+        "time_s": 4.0004,
+        "VmRSS": 61720,
+        "VmHWM": 61720,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 33103,
+        "Private_kib": 24632
+      },
+      {
+        "time_s": 5.0002,
+        "VmRSS": 61720,
+        "VmHWM": 61720,
+        "VmSize": 277548,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 33103,
+        "Private_kib": 24632
+      }
+    ],
+    "stderr_log": "/tmp/texlite-final-benchmark/runs/source_100-3/stderr.log"
+  },
+  {
+    "binary_sha256": "95f7aecaefc044cf138f0efe402e76bc91a990996336aea05475fd9ada45b328",
+    "scenario": "source_5000",
+    "trial": 1,
+    "command": [
+      "/tmp/texlite-native/build/texlite",
+      "/tmp/texstudio-baseline/source-5000.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 54776,
+        "VmHWM": 54776,
+        "VmSize": 271604,
+        "Threads": 3,
+        "cpu_seconds": 0.09,
+        "Pss_kib": 26862,
+        "Private_kib": 18568
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 70004,
+        "VmHWM": 70004,
+        "VmSize": 286224,
+        "Threads": 3,
+        "cpu_seconds": 0.22,
+        "Pss_kib": 41507,
+        "Private_kib": 33036
+      },
+      {
+        "time_s": 0.5001,
+        "VmRSS": 83896,
+        "VmHWM": 83896,
+        "VmSize": 300084,
+        "Threads": 3,
+        "cpu_seconds": 0.36,
+        "Pss_kib": 55323,
+        "Private_kib": 46852
+      },
+      {
+        "time_s": 1.0001,
+        "VmRSS": 83900,
+        "VmHWM": 83900,
+        "VmSize": 300084,
+        "Threads": 3,
+        "cpu_seconds": 0.36,
+        "Pss_kib": 55327,
+        "Private_kib": 46856
+      },
+      {
+        "time_s": 2.0001,
+        "VmRSS": 83904,
+        "VmHWM": 83904,
+        "VmSize": 300084,
+        "Threads": 3,
+        "cpu_seconds": 0.36,
+        "Pss_kib": 55280,
+        "Private_kib": 46860
+      },
+      {
+        "time_s": 4.0002,
+        "VmRSS": 83912,
+        "VmHWM": 83912,
+        "VmSize": 300084,
+        "Threads": 3,
+        "cpu_seconds": 0.37,
+        "Pss_kib": 55330,
+        "Private_kib": 46868
+      },
+      {
+        "time_s": 5.0001,
+        "VmRSS": 83912,
+        "VmHWM": 83912,
+        "VmSize": 300084,
+        "Threads": 3,
+        "cpu_seconds": 0.37,
+        "Pss_kib": 55330,
+        "Private_kib": 46868
+      }
+    ],
+    "stderr_log": "/tmp/texlite-final-benchmark/runs/source_5000-1/stderr.log"
+  },
+  {
+    "binary_sha256": "95f7aecaefc044cf138f0efe402e76bc91a990996336aea05475fd9ada45b328",
+    "scenario": "source_5000",
+    "trial": 2,
+    "command": [
+      "/tmp/texlite-native/build/texlite",
+      "/tmp/texstudio-baseline/source-5000.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 58284,
+        "VmHWM": 58284,
+        "VmSize": 275000,
+        "Threads": 3,
+        "cpu_seconds": 0.09,
+        "Pss_kib": 30296,
+        "Private_kib": 21956
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 74796,
+        "VmHWM": 74796,
+        "VmSize": 290980,
+        "Threads": 3,
+        "cpu_seconds": 0.24,
+        "Pss_kib": 46212,
+        "Private_kib": 37724
+      },
+      {
+        "time_s": 0.5001,
+        "VmRSS": 83836,
+        "VmHWM": 83836,
+        "VmSize": 300088,
+        "Threads": 3,
+        "cpu_seconds": 0.31,
+        "Pss_kib": 55223,
+        "Private_kib": 46736
+      },
+      {
+        "time_s": 1.0002,
+        "VmRSS": 83844,
+        "VmHWM": 83844,
+        "VmSize": 300088,
+        "Threads": 3,
+        "cpu_seconds": 0.31,
+        "Pss_kib": 55232,
+        "Private_kib": 46744
+      },
+      {
+        "time_s": 2.0002,
+        "VmRSS": 83844,
+        "VmHWM": 83844,
+        "VmSize": 300088,
+        "Threads": 3,
+        "cpu_seconds": 0.31,
+        "Pss_kib": 55231,
+        "Private_kib": 46744
+      },
+      {
+        "time_s": 4.0001,
+        "VmRSS": 83852,
+        "VmHWM": 83852,
+        "VmSize": 300088,
+        "Threads": 3,
+        "cpu_seconds": 0.32,
+        "Pss_kib": 55249,
+        "Private_kib": 46752
+      },
+      {
+        "time_s": 5.0002,
+        "VmRSS": 83852,
+        "VmHWM": 83852,
+        "VmSize": 300088,
+        "Threads": 3,
+        "cpu_seconds": 0.32,
+        "Pss_kib": 55248,
+        "Private_kib": 46752
+      }
+    ],
+    "stderr_log": "/tmp/texlite-final-benchmark/runs/source_5000-2/stderr.log"
+  },
+  {
+    "binary_sha256": "95f7aecaefc044cf138f0efe402e76bc91a990996336aea05475fd9ada45b328",
+    "scenario": "source_5000",
+    "trial": 3,
+    "command": [
+      "/tmp/texlite-native/build/texlite",
+      "/tmp/texstudio-baseline/source-5000.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1002,
+        "VmRSS": 55776,
+        "VmHWM": 55776,
+        "VmSize": 271672,
+        "Threads": 3,
+        "cpu_seconds": 0.09,
+        "Pss_kib": 28065,
+        "Private_kib": 19668
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 71224,
+        "VmHWM": 71224,
+        "VmSize": 287412,
+        "Threads": 3,
+        "cpu_seconds": 0.23,
+        "Pss_kib": 42635,
+        "Private_kib": 34100
+      },
+      {
+        "time_s": 0.5001,
+        "VmRSS": 83928,
+        "VmHWM": 83928,
+        "VmSize": 300084,
+        "Threads": 3,
+        "cpu_seconds": 0.35,
+        "Pss_kib": 55287,
+        "Private_kib": 46752
+      },
+      {
+        "time_s": 1.0004,
+        "VmRSS": 83932,
+        "VmHWM": 83932,
+        "VmSize": 300084,
+        "Threads": 3,
+        "cpu_seconds": 0.35,
+        "Pss_kib": 55291,
+        "Private_kib": 46756
+      },
+      {
+        "time_s": 2.0001,
+        "VmRSS": 83936,
+        "VmHWM": 83936,
+        "VmSize": 300084,
+        "Threads": 3,
+        "cpu_seconds": 0.35,
+        "Pss_kib": 55295,
+        "Private_kib": 46760
+      },
+      {
+        "time_s": 4.0002,
+        "VmRSS": 83944,
+        "VmHWM": 83944,
+        "VmSize": 300084,
+        "Threads": 3,
+        "cpu_seconds": 0.35,
+        "Pss_kib": 55246,
+        "Private_kib": 46740
+      },
+      {
+        "time_s": 5.0001,
+        "VmRSS": 83944,
+        "VmHWM": 83944,
+        "VmSize": 300084,
+        "Threads": 3,
+        "cpu_seconds": 0.36,
+        "Pss_kib": 55303,
+        "Private_kib": 46768
+      }
+    ],
+    "stderr_log": "/tmp/texlite-final-benchmark/runs/source_5000-3/stderr.log"
+  },
+  {
+    "binary_sha256": "95f7aecaefc044cf138f0efe402e76bc91a990996336aea05475fd9ada45b328",
+    "scenario": "source_50000",
+    "trial": 1,
+    "command": [
+      "/tmp/texlite-native/build/texlite",
+      "/tmp/texstudio-baseline/source-50000.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 53876,
+        "VmHWM": 53876,
+        "VmSize": 270480,
+        "Threads": 3,
+        "cpu_seconds": 0.09,
+        "Pss_kib": 26289,
+        "Private_kib": 17968
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 80984,
+        "VmHWM": 80984,
+        "VmSize": 299756,
+        "Threads": 3,
+        "cpu_seconds": 0.23,
+        "Pss_kib": 52932,
+        "Private_kib": 44528
+      },
+      {
+        "time_s": 0.5002,
+        "VmRSS": 104596,
+        "VmHWM": 104596,
+        "VmSize": 322592,
+        "Threads": 3,
+        "cpu_seconds": 0.48,
+        "Pss_kib": 76620,
+        "Private_kib": 68216
+      },
+      {
+        "time_s": 1.0002,
+        "VmRSS": 159964,
+        "VmHWM": 159964,
+        "VmSize": 377488,
+        "Threads": 3,
+        "cpu_seconds": 0.97,
+        "Pss_kib": 131465,
+        "Private_kib": 122932
+      },
+      {
+        "time_s": 2.0002,
+        "VmRSS": 291068,
+        "VmHWM": 291068,
+        "VmSize": 508572,
+        "Threads": 3,
+        "cpu_seconds": 1.91,
+        "Pss_kib": 262405,
+        "Private_kib": 253872
+      },
+      {
+        "time_s": 4.0001,
+        "VmRSS": 291068,
+        "VmHWM": 291068,
+        "VmSize": 508572,
+        "Threads": 3,
+        "cpu_seconds": 1.91,
+        "Pss_kib": 262394,
+        "Private_kib": 253872
+      },
+      {
+        "time_s": 5.0002,
+        "VmRSS": 291068,
+        "VmHWM": 291068,
+        "VmSize": 508572,
+        "Threads": 3,
+        "cpu_seconds": 1.91,
+        "Pss_kib": 262405,
+        "Private_kib": 253872
+      }
+    ],
+    "stderr_log": "/tmp/texlite-final-benchmark/runs/source_50000-1/stderr.log"
+  },
+  {
+    "binary_sha256": "95f7aecaefc044cf138f0efe402e76bc91a990996336aea05475fd9ada45b328",
+    "scenario": "source_50000",
+    "trial": 2,
+    "command": [
+      "/tmp/texlite-native/build/texlite",
+      "/tmp/texstudio-baseline/source-50000.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1002,
+        "VmRSS": 67336,
+        "VmHWM": 67336,
+        "VmSize": 283540,
+        "Threads": 3,
+        "cpu_seconds": 0.09,
+        "Pss_kib": 39261,
+        "Private_kib": 30876
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 82316,
+        "VmHWM": 82316,
+        "VmSize": 299756,
+        "Threads": 3,
+        "cpu_seconds": 0.24,
+        "Pss_kib": 54241,
+        "Private_kib": 45856
+      },
+      {
+        "time_s": 0.5002,
+        "VmRSS": 99812,
+        "VmHWM": 109320,
+        "VmSize": 317836,
+        "Threads": 3,
+        "cpu_seconds": 0.48,
+        "Pss_kib": 71553,
+        "Private_kib": 63084
+      },
+      {
+        "time_s": 1.0002,
+        "VmRSS": 173280,
+        "VmHWM": 173280,
+        "VmSize": 390428,
+        "Threads": 3,
+        "cpu_seconds": 0.98,
+        "Pss_kib": 144727,
+        "Private_kib": 136232
+      },
+      {
+        "time_s": 2.0002,
+        "VmRSS": 291456,
+        "VmHWM": 291456,
+        "VmSize": 508568,
+        "Threads": 3,
+        "cpu_seconds": 1.8,
+        "Pss_kib": 262865,
+        "Private_kib": 254360
+      },
+      {
+        "time_s": 4.0005,
+        "VmRSS": 291464,
+        "VmHWM": 291464,
+        "VmSize": 508704,
+        "Threads": 3,
+        "cpu_seconds": 1.8,
+        "Pss_kib": 262873,
+        "Private_kib": 254368
+      },
+      {
+        "time_s": 5.0001,
+        "VmRSS": 291464,
+        "VmHWM": 291464,
+        "VmSize": 508704,
+        "Threads": 3,
+        "cpu_seconds": 1.81,
+        "Pss_kib": 262873,
+        "Private_kib": 254368
+      }
+    ],
+    "stderr_log": "/tmp/texlite-final-benchmark/runs/source_50000-2/stderr.log"
+  },
+  {
+    "binary_sha256": "95f7aecaefc044cf138f0efe402e76bc91a990996336aea05475fd9ada45b328",
+    "scenario": "source_50000",
+    "trial": 3,
+    "command": [
+      "/tmp/texlite-native/build/texlite",
+      "/tmp/texstudio-baseline/source-50000.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 67608,
+        "VmHWM": 67608,
+        "VmSize": 283540,
+        "Threads": 3,
+        "cpu_seconds": 0.09,
+        "Pss_kib": 39523,
+        "Private_kib": 31144
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 82008,
+        "VmHWM": 82008,
+        "VmSize": 299756,
+        "Threads": 3,
+        "cpu_seconds": 0.24,
+        "Pss_kib": 53923,
+        "Private_kib": 45544
+      },
+      {
+        "time_s": 0.5002,
+        "VmRSS": 105004,
+        "VmHWM": 109136,
+        "VmSize": 322444,
+        "Threads": 3,
+        "cpu_seconds": 0.48,
+        "Pss_kib": 76231,
+        "Private_kib": 67672
+      },
+      {
+        "time_s": 1.0002,
+        "VmRSS": 173404,
+        "VmHWM": 173404,
+        "VmSize": 390824,
+        "Threads": 3,
+        "cpu_seconds": 0.97,
+        "Pss_kib": 144807,
+        "Private_kib": 136248
+      },
+      {
+        "time_s": 2.0002,
+        "VmRSS": 291184,
+        "VmHWM": 291184,
+        "VmSize": 508568,
+        "Threads": 3,
+        "cpu_seconds": 1.8,
+        "Pss_kib": 262372,
+        "Private_kib": 253852
+      },
+      {
+        "time_s": 4.0002,
+        "VmRSS": 291188,
+        "VmHWM": 291188,
+        "VmSize": 508568,
+        "Threads": 3,
+        "cpu_seconds": 1.81,
+        "Pss_kib": 262415,
+        "Private_kib": 253856
+      },
+      {
+        "time_s": 5.0001,
+        "VmRSS": 291188,
+        "VmHWM": 291188,
+        "VmSize": 508568,
+        "Threads": 3,
+        "cpu_seconds": 1.81,
+        "Pss_kib": 262415,
+        "Private_kib": 253856
+      }
+    ],
+    "stderr_log": "/tmp/texlite-final-benchmark/runs/source_50000-3/stderr.log"
+  },
+  {
+    "binary_sha256": "95f7aecaefc044cf138f0efe402e76bc91a990996336aea05475fd9ada45b328",
+    "scenario": "pdf_12pages",
+    "trial": 1,
+    "command": [
+      "/tmp/texlite-native/build/texlite",
+      "--pdf-only",
+      "/tmp/texstudio-baseline/fixture.pdf"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1002,
+        "VmRSS": 67412,
+        "VmHWM": 67412,
+        "VmSize": 279316,
+        "Threads": 3,
+        "cpu_seconds": 0.09,
+        "Pss_kib": 38460,
+        "Private_kib": 29880
+      },
+      {
+        "time_s": 0.2502,
+        "VmRSS": 70344,
+        "VmHWM": 70344,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 41392,
+        "Private_kib": 32812
+      },
+      {
+        "time_s": 0.5001,
+        "VmRSS": 70344,
+        "VmHWM": 70344,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 41345,
+        "Private_kib": 32808
+      },
+      {
+        "time_s": 1.0002,
+        "VmRSS": 70344,
+        "VmHWM": 70344,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 41392,
+        "Private_kib": 32812
+      },
+      {
+        "time_s": 2.0002,
+        "VmRSS": 70344,
+        "VmHWM": 70344,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 41392,
+        "Private_kib": 32812
+      },
+      {
+        "time_s": 4.0001,
+        "VmRSS": 70344,
+        "VmHWM": 70344,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 41392,
+        "Private_kib": 32812
+      },
+      {
+        "time_s": 5.0002,
+        "VmRSS": 70344,
+        "VmHWM": 70344,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.12,
+        "Pss_kib": 41392,
+        "Private_kib": 32812
+      }
+    ],
+    "stderr_log": "/tmp/texlite-final-benchmark/runs/pdf_12pages-1/stderr.log"
+  },
+  {
+    "binary_sha256": "95f7aecaefc044cf138f0efe402e76bc91a990996336aea05475fd9ada45b328",
+    "scenario": "pdf_12pages",
+    "trial": 2,
+    "command": [
+      "/tmp/texlite-native/build/texlite",
+      "--pdf-only",
+      "/tmp/texstudio-baseline/fixture.pdf"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 66088,
+        "VmHWM": 66088,
+        "VmSize": 278288,
+        "Threads": 3,
+        "cpu_seconds": 0.1,
+        "Pss_kib": 37279,
+        "Private_kib": 28772
+      },
+      {
+        "time_s": 0.2502,
+        "VmRSS": 70220,
+        "VmHWM": 70220,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 41377,
+        "Private_kib": 32880
+      },
+      {
+        "time_s": 0.5002,
+        "VmRSS": 70220,
+        "VmHWM": 70220,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 41387,
+        "Private_kib": 32880
+      },
+      {
+        "time_s": 1.0004,
+        "VmRSS": 70220,
+        "VmHWM": 70220,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 41387,
+        "Private_kib": 32880
+      },
+      {
+        "time_s": 2.0004,
+        "VmRSS": 70220,
+        "VmHWM": 70220,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 41387,
+        "Private_kib": 32880
+      },
+      {
+        "time_s": 4.0002,
+        "VmRSS": 70220,
+        "VmHWM": 70220,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 41387,
+        "Private_kib": 32880
+      },
+      {
+        "time_s": 5.0001,
+        "VmRSS": 70220,
+        "VmHWM": 70220,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.13,
+        "Pss_kib": 41387,
+        "Private_kib": 32880
+      }
+    ],
+    "stderr_log": "/tmp/texlite-final-benchmark/runs/pdf_12pages-2/stderr.log"
+  },
+  {
+    "binary_sha256": "95f7aecaefc044cf138f0efe402e76bc91a990996336aea05475fd9ada45b328",
+    "scenario": "pdf_12pages",
+    "trial": 3,
+    "command": [
+      "/tmp/texlite-native/build/texlite",
+      "--pdf-only",
+      "/tmp/texstudio-baseline/fixture.pdf"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 54856,
+        "VmHWM": 54856,
+        "VmSize": 271604,
+        "Threads": 3,
+        "cpu_seconds": 0.08,
+        "Pss_kib": 26884,
+        "Private_kib": 18576
+      },
+      {
+        "time_s": 0.2502,
+        "VmRSS": 70128,
+        "VmHWM": 70128,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.15,
+        "Pss_kib": 41335,
+        "Private_kib": 32812
+      },
+      {
+        "time_s": 0.5006,
+        "VmRSS": 70128,
+        "VmHWM": 70128,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.15,
+        "Pss_kib": 41335,
+        "Private_kib": 32812
+      },
+      {
+        "time_s": 1.0001,
+        "VmRSS": 70128,
+        "VmHWM": 70128,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.15,
+        "Pss_kib": 41335,
+        "Private_kib": 32812
+      },
+      {
+        "time_s": 2.0003,
+        "VmRSS": 70128,
+        "VmHWM": 70128,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.15,
+        "Pss_kib": 41335,
+        "Private_kib": 32812
+      },
+      {
+        "time_s": 4.0002,
+        "VmRSS": 70128,
+        "VmHWM": 70128,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.15,
+        "Pss_kib": 41325,
+        "Private_kib": 32812
+      },
+      {
+        "time_s": 5.0001,
+        "VmRSS": 70128,
+        "VmHWM": 70128,
+        "VmSize": 282188,
+        "Threads": 3,
+        "cpu_seconds": 0.15,
+        "Pss_kib": 41325,
+        "Private_kib": 32812
+      }
+    ],
+    "stderr_log": "/tmp/texlite-final-benchmark/runs/pdf_12pages-3/stderr.log"
+  }
+]

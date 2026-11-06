@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.24)
+project(b CXX)
+set(CMAKE_CXX_STANDARD 20)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(P REQUIRED IMPORTED_TARGET poppler-qt6)
+add_executable(b main.cpp)
+target_link_libraries(b Qt6::Core Qt6::Gui PkgConfig::P)

@@ -1,0 +1,12 @@
+== old
+open page 1                       1 ms  renders=  9  cache=  6067 KiB  rss=73 MiB
+jump to page 5 (images)        4985 ms  renders= 12  cache= 14009 KiB  rss=84 MiB
+6 zoom steps -> 220%          10998 ms  renders= 12  cache= 26297 KiB  rss=108 MiB
+scroll 1500 px at 220%         2498 ms  renders= 12  cache= 32497 KiB  rss=111 MiB
+fit width, page 12              418 ms  renders= 12  cache= 32497 KiB  rss=111 MiB
+== new
+open page 1                       1 ms  renders=  1  cache=  6067 KiB  rss=74 MiB
+jump to page 5 (images)         693 ms  renders=  2  cache= 18201 KiB  rss=89 MiB
+6 zoom steps -> 220%            827 ms  renders=  1  cache= 47554 KiB  rss=118 MiB
+scroll 1500 px at 220%            1 ms  renders=  1  cache= 58706 KiB  rss=133 MiB
+fit width, page 12              205 ms  renders=  2  cache= 41487 KiB  rss=112 MiB

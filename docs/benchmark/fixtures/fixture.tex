@@ -1,0 +1,20 @@
+\documentclass{article}
+\usepackage{amsmath}
+\begin{document}
+\section{Native editor baseline}
+This is a generated test document, not a user file.
+\[
+\int_0^1 x^2\,dx=\frac13,\qquad e^{i\pi}+1=0.
+\]
+\newcount\p
+\p=1
+\loop
+\newpage
+\section{Test page \the\p}
+A generated page with selectable text and mathematical content.
+\[
+\sum_{k=1}^n k=\frac{n(n+1)}2.
+\]
+\advance\p by1
+\ifnum\p<12\repeat
+\end{document}

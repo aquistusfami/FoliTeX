@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Folitex
+GenericName=LaTeX Editor
+Comment=Lean LaTeX editor with tiled PDF preview
+Exec=folitex %F
+Icon=folitex
+Terminal=false
+Categories=Office;Publishing;TextEditor;
+MimeType=text/x-tex;
+Keywords=LaTeX;TeX;editor;PDF;
+StartupWMClass=folitex

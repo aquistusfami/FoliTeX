@@ -1,0 +1,8 @@
+/build/
+/.texmf-var/
+**/.texlite-build/
+**/.folitex-build/
+# Local handoff notes and binaries (published through releases, not git)
+/HANDOFF.md
+/bin/
+/artifacts/

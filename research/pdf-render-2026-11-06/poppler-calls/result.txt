@@ -1,0 +1,15 @@
+p1  1489x2105 full=14ms tiles(15)=62ms strips(3)=16ms
+p2  1489x2105 full=6ms tiles(15)=22ms strips(3)=7ms
+p3  1489x2105 full=23ms tiles(15)=158ms strips(3)=41ms
+p4  1489x2105 full=24ms tiles(15)=183ms strips(3)=43ms
+p5  1489x2105 full=869ms tiles(15)=10332ms strips(3)=1721ms
+p6  1489x2105 full=17ms tiles(15)=120ms strips(3)=29ms
+p7  1489x2105 full=20ms tiles(15)=147ms strips(3)=40ms
+p8  1489x2105 full=21ms tiles(15)=139ms strips(3)=35ms
+p9  1489x2105 full=43ms tiles(15)=345ms strips(3)=79ms
+p10 1489x2105 full=15ms tiles(15)=90ms strips(3)=24ms
+p11 1489x2105 full=148ms tiles(15)=972ms strips(3)=218ms
+p12 1489x2105 full=147ms tiles(15)=968ms strips(3)=212ms
+p13 1489x2105 full=146ms tiles(15)=963ms strips(3)=207ms
+p14 1489x2105 full=146ms tiles(15)=960ms strips(3)=213ms
+p15 1489x2105 full=145ms tiles(15)=968ms strips(3)=209ms

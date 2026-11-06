@@ -1,0 +1,1292 @@
+[
+  {
+    "scenario": "empty",
+    "trial": 1,
+    "command": [
+      "/usr/bin/texstudio",
+      "--config",
+      "/tmp/texstudio-baseline/runs/empty-1/config",
+      "--start-always",
+      "--no-session"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1002,
+        "VmRSS": 51984,
+        "VmHWM": 51984,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 25714,
+        "Private_kib": 16816
+      },
+      {
+        "time_s": 0.2502,
+        "VmRSS": 51984,
+        "VmHWM": 51984,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 25714,
+        "Private_kib": 16816
+      },
+      {
+        "time_s": 0.5002,
+        "VmRSS": 51984,
+        "VmHWM": 51984,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 25714,
+        "Private_kib": 16816
+      },
+      {
+        "time_s": 1.0001,
+        "VmRSS": 51984,
+        "VmHWM": 51984,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 25712,
+        "Private_kib": 16816
+      },
+      {
+        "time_s": 2.0002,
+        "VmRSS": 126496,
+        "VmHWM": 126496,
+        "VmSize": 1170936,
+        "Threads": 14,
+        "cpu_seconds": 0.74,
+        "Pss_kib": 87187,
+        "Private_kib": 74388
+      },
+      {
+        "time_s": 4.0001,
+        "VmRSS": 126496,
+        "VmHWM": 126496,
+        "VmSize": 1170936,
+        "Threads": 14,
+        "cpu_seconds": 0.74,
+        "Pss_kib": 87212,
+        "Private_kib": 74388
+      },
+      {
+        "time_s": 5.0001,
+        "VmRSS": 126496,
+        "VmHWM": 126496,
+        "VmSize": 1170936,
+        "Threads": 14,
+        "cpu_seconds": 0.74,
+        "Pss_kib": 87212,
+        "Private_kib": 74388
+      }
+    ],
+    "stderr_log": "/tmp/texstudio-baseline/runs/empty-1/stderr.log"
+  },
+  {
+    "scenario": "empty",
+    "trial": 2,
+    "command": [
+      "/usr/bin/texstudio",
+      "--config",
+      "/tmp/texstudio-baseline/runs/empty-2/config",
+      "--start-always",
+      "--no-session"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 52584,
+        "VmHWM": 52584,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26143,
+        "Private_kib": 17240
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 52584,
+        "VmHWM": 52584,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26143,
+        "Private_kib": 17240
+      },
+      {
+        "time_s": 0.5001,
+        "VmRSS": 52584,
+        "VmHWM": 52584,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26143,
+        "Private_kib": 17240
+      },
+      {
+        "time_s": 1.0001,
+        "VmRSS": 52584,
+        "VmHWM": 52584,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26136,
+        "Private_kib": 17240
+      },
+      {
+        "time_s": 2.0001,
+        "VmRSS": 127036,
+        "VmHWM": 127036,
+        "VmSize": 1170900,
+        "Threads": 14,
+        "cpu_seconds": 0.71,
+        "Pss_kib": 87495,
+        "Private_kib": 74648
+      },
+      {
+        "time_s": 4.0001,
+        "VmRSS": 127036,
+        "VmHWM": 127036,
+        "VmSize": 1170900,
+        "Threads": 14,
+        "cpu_seconds": 0.71,
+        "Pss_kib": 87495,
+        "Private_kib": 74648
+      },
+      {
+        "time_s": 5.0001,
+        "VmRSS": 127036,
+        "VmHWM": 127036,
+        "VmSize": 1170900,
+        "Threads": 14,
+        "cpu_seconds": 0.71,
+        "Pss_kib": 87495,
+        "Private_kib": 74648
+      }
+    ],
+    "stderr_log": "/tmp/texstudio-baseline/runs/empty-2/stderr.log"
+  },
+  {
+    "scenario": "empty",
+    "trial": 3,
+    "command": [
+      "/usr/bin/texstudio",
+      "--config",
+      "/tmp/texstudio-baseline/runs/empty-3/config",
+      "--start-always",
+      "--no-session"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 52584,
+        "VmHWM": 52584,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26184,
+        "Private_kib": 17272
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 52584,
+        "VmHWM": 52584,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26184,
+        "Private_kib": 17272
+      },
+      {
+        "time_s": 0.5001,
+        "VmRSS": 52584,
+        "VmHWM": 52584,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26184,
+        "Private_kib": 17272
+      },
+      {
+        "time_s": 1.0005,
+        "VmRSS": 52584,
+        "VmHWM": 52584,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26184,
+        "Private_kib": 17272
+      },
+      {
+        "time_s": 2.0001,
+        "VmRSS": 126540,
+        "VmHWM": 126540,
+        "VmSize": 1170908,
+        "Threads": 14,
+        "cpu_seconds": 0.72,
+        "Pss_kib": 87003,
+        "Private_kib": 74188
+      },
+      {
+        "time_s": 4.0001,
+        "VmRSS": 126540,
+        "VmHWM": 126540,
+        "VmSize": 1170908,
+        "Threads": 14,
+        "cpu_seconds": 0.72,
+        "Pss_kib": 87032,
+        "Private_kib": 74188
+      },
+      {
+        "time_s": 5.0002,
+        "VmRSS": 126540,
+        "VmHWM": 126540,
+        "VmSize": 1170908,
+        "Threads": 14,
+        "cpu_seconds": 0.72,
+        "Pss_kib": 87032,
+        "Private_kib": 74188
+      }
+    ],
+    "stderr_log": "/tmp/texstudio-baseline/runs/empty-3/stderr.log"
+  },
+  {
+    "scenario": "source_100",
+    "trial": 1,
+    "command": [
+      "/usr/bin/texstudio",
+      "--config",
+      "/tmp/texstudio-baseline/runs/source_100-1/config",
+      "--start-always",
+      "--no-session",
+      "/tmp/texstudio-baseline/source-100.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 52316,
+        "VmHWM": 52316,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26173,
+        "Private_kib": 17276
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 52316,
+        "VmHWM": 52316,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26173,
+        "Private_kib": 17276
+      },
+      {
+        "time_s": 0.5001,
+        "VmRSS": 52316,
+        "VmHWM": 52316,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26173,
+        "Private_kib": 17276
+      },
+      {
+        "time_s": 1.0001,
+        "VmRSS": 52316,
+        "VmHWM": 52316,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26173,
+        "Private_kib": 17276
+      },
+      {
+        "time_s": 2.0001,
+        "VmRSS": 135676,
+        "VmHWM": 135676,
+        "VmSize": 1474808,
+        "Threads": 34,
+        "cpu_seconds": 0.95,
+        "Pss_kib": 96151,
+        "Private_kib": 83156
+      },
+      {
+        "time_s": 4.0001,
+        "VmRSS": 137948,
+        "VmHWM": 137948,
+        "VmSize": 1475892,
+        "Threads": 33,
+        "cpu_seconds": 0.97,
+        "Pss_kib": 98347,
+        "Private_kib": 85352
+      },
+      {
+        "time_s": 5.0001,
+        "VmRSS": 137948,
+        "VmHWM": 137948,
+        "VmSize": 1475892,
+        "Threads": 33,
+        "cpu_seconds": 0.98,
+        "Pss_kib": 98347,
+        "Private_kib": 85352
+      }
+    ],
+    "stderr_log": "/tmp/texstudio-baseline/runs/source_100-1/stderr.log"
+  },
+  {
+    "scenario": "source_100",
+    "trial": 2,
+    "command": [
+      "/usr/bin/texstudio",
+      "--config",
+      "/tmp/texstudio-baseline/runs/source_100-2/config",
+      "--start-always",
+      "--no-session",
+      "/tmp/texstudio-baseline/source-100.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 52660,
+        "VmHWM": 52660,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.02,
+        "Pss_kib": 26218,
+        "Private_kib": 17292
+      },
+      {
+        "time_s": 0.2507,
+        "VmRSS": 52660,
+        "VmHWM": 52660,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.02,
+        "Pss_kib": 26218,
+        "Private_kib": 17292
+      },
+      {
+        "time_s": 0.5001,
+        "VmRSS": 52660,
+        "VmHWM": 52660,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.02,
+        "Pss_kib": 26218,
+        "Private_kib": 17292
+      },
+      {
+        "time_s": 1.0002,
+        "VmRSS": 52660,
+        "VmHWM": 52660,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26218,
+        "Private_kib": 17292
+      },
+      {
+        "time_s": 2.0002,
+        "VmRSS": 138476,
+        "VmHWM": 138476,
+        "VmSize": 1459460,
+        "Threads": 31,
+        "cpu_seconds": 0.96,
+        "Pss_kib": 98720,
+        "Private_kib": 85728
+      },
+      {
+        "time_s": 4.0001,
+        "VmRSS": 138476,
+        "VmHWM": 138476,
+        "VmSize": 1459460,
+        "Threads": 31,
+        "cpu_seconds": 0.96,
+        "Pss_kib": 98720,
+        "Private_kib": 85728
+      },
+      {
+        "time_s": 5.0005,
+        "VmRSS": 138476,
+        "VmHWM": 138476,
+        "VmSize": 1459460,
+        "Threads": 31,
+        "cpu_seconds": 0.96,
+        "Pss_kib": 98713,
+        "Private_kib": 85728
+      }
+    ],
+    "stderr_log": "/tmp/texstudio-baseline/runs/source_100-2/stderr.log"
+  },
+  {
+    "scenario": "source_100",
+    "trial": 3,
+    "command": [
+      "/usr/bin/texstudio",
+      "--config",
+      "/tmp/texstudio-baseline/runs/source_100-3/config",
+      "--start-always",
+      "--no-session",
+      "/tmp/texstudio-baseline/source-100.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 52852,
+        "VmHWM": 52852,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26390,
+        "Private_kib": 17472
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 52852,
+        "VmHWM": 52852,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26396,
+        "Private_kib": 17472
+      },
+      {
+        "time_s": 0.5001,
+        "VmRSS": 52852,
+        "VmHWM": 52852,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.04,
+        "Pss_kib": 26396,
+        "Private_kib": 17472
+      },
+      {
+        "time_s": 1.0001,
+        "VmRSS": 52852,
+        "VmHWM": 52852,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.04,
+        "Pss_kib": 26396,
+        "Private_kib": 17472
+      },
+      {
+        "time_s": 2.0002,
+        "VmRSS": 136040,
+        "VmHWM": 136040,
+        "VmSize": 1474752,
+        "Threads": 34,
+        "cpu_seconds": 0.96,
+        "Pss_kib": 96207,
+        "Private_kib": 83164
+      },
+      {
+        "time_s": 4.0001,
+        "VmRSS": 138728,
+        "VmHWM": 138728,
+        "VmSize": 1475852,
+        "Threads": 33,
+        "cpu_seconds": 1.0,
+        "Pss_kib": 98906,
+        "Private_kib": 85852
+      },
+      {
+        "time_s": 5.0002,
+        "VmRSS": 138728,
+        "VmHWM": 138728,
+        "VmSize": 1475852,
+        "Threads": 33,
+        "cpu_seconds": 1.0,
+        "Pss_kib": 98906,
+        "Private_kib": 85852
+      }
+    ],
+    "stderr_log": "/tmp/texstudio-baseline/runs/source_100-3/stderr.log"
+  },
+  {
+    "scenario": "source_5000",
+    "trial": 1,
+    "command": [
+      "/usr/bin/texstudio",
+      "--config",
+      "/tmp/texstudio-baseline/runs/source_5000-1/config",
+      "--start-always",
+      "--no-session",
+      "/tmp/texstudio-baseline/source-5000.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1002,
+        "VmRSS": 52724,
+        "VmHWM": 52724,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.02,
+        "Pss_kib": 26239,
+        "Private_kib": 17332
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 52724,
+        "VmHWM": 52724,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.02,
+        "Pss_kib": 26239,
+        "Private_kib": 17332
+      },
+      {
+        "time_s": 0.5002,
+        "VmRSS": 52724,
+        "VmHWM": 52724,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.02,
+        "Pss_kib": 26239,
+        "Private_kib": 17332
+      },
+      {
+        "time_s": 1.0002,
+        "VmRSS": 52724,
+        "VmHWM": 52724,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26239,
+        "Private_kib": 17332
+      },
+      {
+        "time_s": 2.0001,
+        "VmRSS": 138712,
+        "VmHWM": 138712,
+        "VmSize": 1402116,
+        "Threads": 26,
+        "cpu_seconds": 1.02,
+        "Pss_kib": 103330,
+        "Private_kib": 91176
+      },
+      {
+        "time_s": 4.0002,
+        "VmRSS": 187724,
+        "VmHWM": 187724,
+        "VmSize": 1484644,
+        "Threads": 31,
+        "cpu_seconds": 1.5,
+        "Pss_kib": 148033,
+        "Private_kib": 135064
+      },
+      {
+        "time_s": 5.0003,
+        "VmRSS": 187724,
+        "VmHWM": 187724,
+        "VmSize": 1484644,
+        "Threads": 31,
+        "cpu_seconds": 1.5,
+        "Pss_kib": 148033,
+        "Private_kib": 135064
+      }
+    ],
+    "stderr_log": "/tmp/texstudio-baseline/runs/source_5000-1/stderr.log"
+  },
+  {
+    "scenario": "source_5000",
+    "trial": 2,
+    "command": [
+      "/usr/bin/texstudio",
+      "--config",
+      "/tmp/texstudio-baseline/runs/source_5000-2/config",
+      "--start-always",
+      "--no-session",
+      "/tmp/texstudio-baseline/source-5000.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1003,
+        "VmRSS": 52724,
+        "VmHWM": 52724,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.02,
+        "Pss_kib": 26286,
+        "Private_kib": 17380
+      },
+      {
+        "time_s": 0.2506,
+        "VmRSS": 52724,
+        "VmHWM": 52724,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.02,
+        "Pss_kib": 26286,
+        "Private_kib": 17380
+      },
+      {
+        "time_s": 0.5002,
+        "VmRSS": 52724,
+        "VmHWM": 52724,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26286,
+        "Private_kib": 17380
+      },
+      {
+        "time_s": 1.0002,
+        "VmRSS": 52724,
+        "VmHWM": 52724,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26286,
+        "Private_kib": 17380
+      },
+      {
+        "time_s": 2.0001,
+        "VmRSS": 138836,
+        "VmHWM": 138836,
+        "VmSize": 1402084,
+        "Threads": 26,
+        "cpu_seconds": 1.01,
+        "Pss_kib": 103290,
+        "Private_kib": 91092
+      },
+      {
+        "time_s": 4.0001,
+        "VmRSS": 187984,
+        "VmHWM": 187984,
+        "VmSize": 1492844,
+        "Threads": 32,
+        "cpu_seconds": 1.51,
+        "Pss_kib": 147859,
+        "Private_kib": 135028
+      },
+      {
+        "time_s": 5.0001,
+        "VmRSS": 187984,
+        "VmHWM": 187984,
+        "VmSize": 1492844,
+        "Threads": 32,
+        "cpu_seconds": 1.51,
+        "Pss_kib": 148073,
+        "Private_kib": 135056
+      }
+    ],
+    "stderr_log": "/tmp/texstudio-baseline/runs/source_5000-2/stderr.log"
+  },
+  {
+    "scenario": "source_5000",
+    "trial": 3,
+    "command": [
+      "/usr/bin/texstudio",
+      "--config",
+      "/tmp/texstudio-baseline/runs/source_5000-3/config",
+      "--start-always",
+      "--no-session",
+      "/tmp/texstudio-baseline/source-5000.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 52720,
+        "VmHWM": 52720,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26186,
+        "Private_kib": 17244
+      },
+      {
+        "time_s": 0.2502,
+        "VmRSS": 52720,
+        "VmHWM": 52720,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26186,
+        "Private_kib": 17244
+      },
+      {
+        "time_s": 0.5005,
+        "VmRSS": 52720,
+        "VmHWM": 52720,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26186,
+        "Private_kib": 17244
+      },
+      {
+        "time_s": 1.0002,
+        "VmRSS": 52720,
+        "VmHWM": 52720,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26186,
+        "Private_kib": 17244
+      },
+      {
+        "time_s": 2.0001,
+        "VmRSS": 138840,
+        "VmHWM": 138840,
+        "VmSize": 1402168,
+        "Threads": 26,
+        "cpu_seconds": 1.01,
+        "Pss_kib": 103440,
+        "Private_kib": 91260
+      },
+      {
+        "time_s": 4.0002,
+        "VmRSS": 188000,
+        "VmHWM": 188000,
+        "VmSize": 1484648,
+        "Threads": 31,
+        "cpu_seconds": 1.49,
+        "Pss_kib": 148258,
+        "Private_kib": 135252
+      },
+      {
+        "time_s": 5.0001,
+        "VmRSS": 188000,
+        "VmHWM": 188000,
+        "VmSize": 1484648,
+        "Threads": 31,
+        "cpu_seconds": 1.49,
+        "Pss_kib": 148257,
+        "Private_kib": 135252
+      }
+    ],
+    "stderr_log": "/tmp/texstudio-baseline/runs/source_5000-3/stderr.log"
+  },
+  {
+    "scenario": "source_50000",
+    "trial": 1,
+    "command": [
+      "/usr/bin/texstudio",
+      "--config",
+      "/tmp/texstudio-baseline/runs/source_50000-1/config",
+      "--start-always",
+      "--no-session",
+      "/tmp/texstudio-baseline/source-50000.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 52860,
+        "VmHWM": 52860,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26413,
+        "Private_kib": 17480
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 52860,
+        "VmHWM": 52860,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26413,
+        "Private_kib": 17480
+      },
+      {
+        "time_s": 0.5001,
+        "VmRSS": 52860,
+        "VmHWM": 52860,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26413,
+        "Private_kib": 17480
+      },
+      {
+        "time_s": 1.0002,
+        "VmRSS": 52860,
+        "VmHWM": 52860,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26413,
+        "Private_kib": 17480
+      },
+      {
+        "time_s": 2.0001,
+        "VmRSS": 162828,
+        "VmHWM": 162828,
+        "VmSize": 837124,
+        "Threads": 9,
+        "cpu_seconds": 0.98,
+        "Pss_kib": 127641,
+        "Private_kib": 115524
+      },
+      {
+        "time_s": 4.0001,
+        "VmRSS": 361284,
+        "VmHWM": 361284,
+        "VmSize": 1545256,
+        "Threads": 26,
+        "cpu_seconds": 3.35,
+        "Pss_kib": 326119,
+        "Private_kib": 313900
+      },
+      {
+        "time_s": 5.0001,
+        "VmRSS": 645528,
+        "VmHWM": 645528,
+        "VmSize": 1850192,
+        "Threads": 31,
+        "cpu_seconds": 5.08,
+        "Pss_kib": 605721,
+        "Private_kib": 592672
+      }
+    ],
+    "stderr_log": "/tmp/texstudio-baseline/runs/source_50000-1/stderr.log"
+  },
+  {
+    "scenario": "source_50000",
+    "trial": 2,
+    "command": [
+      "/usr/bin/texstudio",
+      "--config",
+      "/tmp/texstudio-baseline/runs/source_50000-2/config",
+      "--start-always",
+      "--no-session",
+      "/tmp/texstudio-baseline/source-50000.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1002,
+        "VmRSS": 52864,
+        "VmHWM": 52864,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26346,
+        "Private_kib": 17416
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 52864,
+        "VmHWM": 52864,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26346,
+        "Private_kib": 17416
+      },
+      {
+        "time_s": 0.5002,
+        "VmRSS": 52864,
+        "VmHWM": 52864,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26346,
+        "Private_kib": 17416
+      },
+      {
+        "time_s": 1.0002,
+        "VmRSS": 52816,
+        "VmHWM": 52816,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26344,
+        "Private_kib": 17416
+      },
+      {
+        "time_s": 2.0001,
+        "VmRSS": 161808,
+        "VmHWM": 161808,
+        "VmSize": 836200,
+        "Threads": 9,
+        "cpu_seconds": 0.98,
+        "Pss_kib": 126601,
+        "Private_kib": 114492
+      },
+      {
+        "time_s": 4.0001,
+        "VmRSS": 320680,
+        "VmHWM": 320680,
+        "VmSize": 1508484,
+        "Threads": 26,
+        "cpu_seconds": 3.31,
+        "Pss_kib": 285221,
+        "Private_kib": 273012
+      },
+      {
+        "time_s": 5.0001,
+        "VmRSS": 607636,
+        "VmHWM": 607636,
+        "VmSize": 1802240,
+        "Threads": 31,
+        "cpu_seconds": 4.96,
+        "Pss_kib": 567914,
+        "Private_kib": 554880
+      }
+    ],
+    "stderr_log": "/tmp/texstudio-baseline/runs/source_50000-2/stderr.log"
+  },
+  {
+    "scenario": "source_50000",
+    "trial": 3,
+    "command": [
+      "/usr/bin/texstudio",
+      "--config",
+      "/tmp/texstudio-baseline/runs/source_50000-3/config",
+      "--start-always",
+      "--no-session",
+      "/tmp/texstudio-baseline/source-50000.tex"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 52652,
+        "VmHWM": 52652,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26335,
+        "Private_kib": 17436
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 52652,
+        "VmHWM": 52652,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26335,
+        "Private_kib": 17436
+      },
+      {
+        "time_s": 0.5001,
+        "VmRSS": 52652,
+        "VmHWM": 52652,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26335,
+        "Private_kib": 17436
+      },
+      {
+        "time_s": 1.0002,
+        "VmRSS": 52652,
+        "VmHWM": 52652,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26335,
+        "Private_kib": 17436
+      },
+      {
+        "time_s": 2.0001,
+        "VmRSS": 162140,
+        "VmHWM": 162140,
+        "VmSize": 836848,
+        "Threads": 9,
+        "cpu_seconds": 0.97,
+        "Pss_kib": 126998,
+        "Private_kib": 114916
+      },
+      {
+        "time_s": 4.0001,
+        "VmRSS": 341708,
+        "VmHWM": 341708,
+        "VmSize": 1528984,
+        "Threads": 26,
+        "cpu_seconds": 3.37,
+        "Pss_kib": 306546,
+        "Private_kib": 294356
+      },
+      {
+        "time_s": 5.0001,
+        "VmRSS": 647868,
+        "VmHWM": 647868,
+        "VmSize": 1852920,
+        "Threads": 31,
+        "cpu_seconds": 5.07,
+        "Pss_kib": 608089,
+        "Private_kib": 595076
+      }
+    ],
+    "stderr_log": "/tmp/texstudio-baseline/runs/source_50000-3/stderr.log"
+  },
+  {
+    "scenario": "pdf_12pages",
+    "trial": 1,
+    "command": [
+      "/usr/bin/texstudio",
+      "--config",
+      "/tmp/texstudio-baseline/runs/pdf_12pages-1/config",
+      "--start-always",
+      "--no-session",
+      "--pdf-viewer-only",
+      "/tmp/texstudio-baseline/fixture.pdf"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 52740,
+        "VmHWM": 52740,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26341,
+        "Private_kib": 17440
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 52740,
+        "VmHWM": 52740,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26341,
+        "Private_kib": 17440
+      },
+      {
+        "time_s": 0.5001,
+        "VmRSS": 52740,
+        "VmHWM": 52740,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26341,
+        "Private_kib": 17440
+      },
+      {
+        "time_s": 1.0002,
+        "VmRSS": 52740,
+        "VmHWM": 52740,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26342,
+        "Private_kib": 17440
+      },
+      {
+        "time_s": 2.0001,
+        "VmRSS": 151404,
+        "VmHWM": 151404,
+        "VmSize": 1368764,
+        "Threads": 22,
+        "cpu_seconds": 0.77,
+        "Pss_kib": 111690,
+        "Private_kib": 98792
+      },
+      {
+        "time_s": 4.0002,
+        "VmRSS": 151404,
+        "VmHWM": 151404,
+        "VmSize": 1368764,
+        "Threads": 22,
+        "cpu_seconds": 0.77,
+        "Pss_kib": 111741,
+        "Private_kib": 98840
+      },
+      {
+        "time_s": 5.0001,
+        "VmRSS": 151404,
+        "VmHWM": 151404,
+        "VmSize": 1368764,
+        "Threads": 22,
+        "cpu_seconds": 0.77,
+        "Pss_kib": 111741,
+        "Private_kib": 98840
+      }
+    ],
+    "stderr_log": "/tmp/texstudio-baseline/runs/pdf_12pages-1/stderr.log"
+  },
+  {
+    "scenario": "pdf_12pages",
+    "trial": 2,
+    "command": [
+      "/usr/bin/texstudio",
+      "--config",
+      "/tmp/texstudio-baseline/runs/pdf_12pages-2/config",
+      "--start-always",
+      "--no-session",
+      "--pdf-viewer-only",
+      "/tmp/texstudio-baseline/fixture.pdf"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 52716,
+        "VmHWM": 52716,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26250,
+        "Private_kib": 17332
+      },
+      {
+        "time_s": 0.2501,
+        "VmRSS": 52716,
+        "VmHWM": 52716,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26250,
+        "Private_kib": 17332
+      },
+      {
+        "time_s": 0.5002,
+        "VmRSS": 52716,
+        "VmHWM": 52716,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26250,
+        "Private_kib": 17332
+      },
+      {
+        "time_s": 1.0002,
+        "VmRSS": 52716,
+        "VmHWM": 52716,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.03,
+        "Pss_kib": 26244,
+        "Private_kib": 17332
+      },
+      {
+        "time_s": 2.0006,
+        "VmRSS": 150656,
+        "VmHWM": 150656,
+        "VmSize": 1368360,
+        "Threads": 22,
+        "cpu_seconds": 0.78,
+        "Pss_kib": 111011,
+        "Private_kib": 98116
+      },
+      {
+        "time_s": 4.0002,
+        "VmRSS": 150592,
+        "VmHWM": 150592,
+        "VmSize": 1368360,
+        "Threads": 22,
+        "cpu_seconds": 0.78,
+        "Pss_kib": 110947,
+        "Private_kib": 98052
+      },
+      {
+        "time_s": 5.0001,
+        "VmRSS": 150592,
+        "VmHWM": 150592,
+        "VmSize": 1368360,
+        "Threads": 22,
+        "cpu_seconds": 0.79,
+        "Pss_kib": 110947,
+        "Private_kib": 98052
+      }
+    ],
+    "stderr_log": "/tmp/texstudio-baseline/runs/pdf_12pages-2/stderr.log"
+  },
+  {
+    "scenario": "pdf_12pages",
+    "trial": 3,
+    "command": [
+      "/usr/bin/texstudio",
+      "--config",
+      "/tmp/texstudio-baseline/runs/pdf_12pages-3/config",
+      "--start-always",
+      "--no-session",
+      "--pdf-viewer-only",
+      "/tmp/texstudio-baseline/fixture.pdf"
+    ],
+    "exit_before_stop": null,
+    "samples": [
+      {
+        "time_s": 0.1001,
+        "VmRSS": 52476,
+        "VmHWM": 52476,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.02,
+        "Pss_kib": 26152,
+        "Private_kib": 17256
+      },
+      {
+        "time_s": 0.2504,
+        "VmRSS": 52476,
+        "VmHWM": 52476,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.02,
+        "Pss_kib": 26152,
+        "Private_kib": 17256
+      },
+      {
+        "time_s": 0.5001,
+        "VmRSS": 52476,
+        "VmHWM": 52476,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.02,
+        "Pss_kib": 26152,
+        "Private_kib": 17256
+      },
+      {
+        "time_s": 1.0001,
+        "VmRSS": 52476,
+        "VmHWM": 52476,
+        "VmSize": 376076,
+        "Threads": 4,
+        "cpu_seconds": 0.02,
+        "Pss_kib": 26152,
+        "Private_kib": 17256
+      },
+      {
+        "time_s": 2.0003,
+        "VmRSS": 149220,
+        "VmHWM": 149220,
+        "VmSize": 1360132,
+        "Threads": 21,
+        "cpu_seconds": 0.76,
+        "Pss_kib": 109593,
+        "Private_kib": 96720
+      },
+      {
+        "time_s": 4.0001,
+        "VmRSS": 149220,
+        "VmHWM": 149220,
+        "VmSize": 1360132,
+        "Threads": 21,
+        "cpu_seconds": 0.77,
+        "Pss_kib": 109593,
+        "Private_kib": 96720
+      },
+      {
+        "time_s": 5.0002,
+        "VmRSS": 149220,
+        "VmHWM": 149220,
+        "VmSize": 1360132,
+        "Threads": 21,
+        "cpu_seconds": 0.77,
+        "Pss_kib": 109593,
+        "Private_kib": 96720
+      }
+    ],
+    "stderr_log": "/tmp/texstudio-baseline/runs/pdf_12pages-3/stderr.log"
+  }
+]
