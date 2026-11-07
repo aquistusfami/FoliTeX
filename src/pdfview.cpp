@@ -293,10 +293,10 @@ void PdfView::applyDpi()
 void PdfView::paintEvent(QPaintEvent *)
 {
     QPainter painter(viewport());
-    painter.fillRect(viewport()->rect(), QColor("#1F1F1F"));
+    painter.fillRect(viewport()->rect(), QColor("#16181B"));
     if (m_pages.isEmpty())
     {
-        painter.setPen(QColor("#9D9D9D"));
+        painter.setPen(QColor("#8793A2"));
         painter.drawText(viewport()->rect().adjusted(24, 24, -24, -24), Qt::AlignCenter,
             !m_error.isEmpty() ? m_error : m_path.isEmpty() ? "The PDF appears here after building.\nF5 to build · F7 to jump to the PDF" : "Opening PDF…");
         return;
@@ -376,7 +376,7 @@ void PdfView::paintEvent(QPaintEvent *)
             painter.fillRect(QRectF(onScreen.topLeft() + match->box.topLeft() * m_scale, match->box.size() * m_scale),
                 match - m_matches.cbegin() == m_match ? QColor(255, 140, 0, 150) : QColor(255, 210, 0, 90));
         painter.restore();
-        painter.setPen(QColor("#2B2B2B"));
+        painter.setPen(QColor("#22272E"));
         painter.drawRect(onScreen);
     }
     if (!m_busy && !m_pending.isEmpty()) QTimer::singleShot(0, this, &PdfView::nextTile);

@@ -68,6 +68,8 @@ private:
     void findInEditor(bool backwards);
     void updateFindCount();
     void placeFind();
+    void updateTabButtons();
+    void updateTabHints();
     Editor *newDocument(const QString &text = {});
     bool save(Editor *editor, bool saveAs = false);
     bool mayClose(Editor *editor);
@@ -124,9 +126,12 @@ private:
     QWidget *m_noFolder;
     QToolButton *m_filesButton;
     QToolButton *m_outlineButton;
+    QToolButton *m_rootButton;
     QTreeView *m_files;
     QFileSystemModel *m_fileModel;
     QString m_workspace;
+    int m_hoverTab = -1;
+    int m_tabScroll = 0; // wheel travel not yet turned into a tab step
     int m_pendingPage = 0;
     double m_pendingY = 0;
 };

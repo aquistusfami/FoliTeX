@@ -5,6 +5,7 @@
 #include <QRegularExpression>
 #include <QKeyEvent>
 #include <QAbstractItemView>
+#include <QListView>
 #include <QFontDatabase>
 #include <QApplication>
 #include <QStringListModel>
@@ -16,9 +17,12 @@
 #include <QHash>
 #include <QProcess>
 #include <QPainter>
+#include <future>
+#include "completiondata.h"
 #include <QMenu>
 #include <QAbstractTextDocumentLayout>
 #include <algorithm>
+#include <cmath>
 
 // U+2022 marks a placeholder in completion templates; it is never inserted into the source.
 static const QChar placeholderMark(0x2022);
@@ -85,28 +89,89 @@ static const QStringList builtinEnvironments = {
     "subfigure{•}", "lstlisting", "minted{•}", "titlepage"
 };
 
-// Package and class names come from the TeX Live ls-R databases, read once on first use.
-static QStringList texFiles(const QString &suffix)
+// Package and class names (and where each .sty lives) from the TeX Live ls-R databases.
+struct TexTree
 {
-    static QHash<QString, QStringList> cache;
-    if (cache.isEmpty())
+    QStringList styles, classes;
+    QHash<QString, QString> styleDirectories; // package name -> directory; directory strings are shared
+};
+
+static TexTree loadTexTree()
+{
+    TexTree tree;
+    QProcess kpsewhich;
+    kpsewhich.start("kpsewhich", {"--all", "ls-R"});
+    if (!kpsewhich.waitForFinished(3000)) return tree;
+    for (const auto &path : QString::fromLocal8Bit(kpsewhich.readAllStandardOutput()).split('\n', Qt::SkipEmptyParts))
     {
-        cache.insert(".sty", {}); // Non-empty from here on, so a missing kpsewhich is not retried on every keystroke.
-        QProcess kpsewhich;
-        kpsewhich.start("kpsewhich", {"--all", "ls-R"});
-        if (!kpsewhich.waitForFinished(3000)) return {};
-        for (const auto &path : QString::fromLocal8Bit(kpsewhich.readAllStandardOutput()).split('\n', Qt::SkipEmptyParts))
+        QFile file(path.trimmed());
+        if (!file.open(QIODevice::ReadOnly)) continue;
+        QString root = QFileInfo(file.fileName()).absolutePath(), directory = root;
+        // ls-R lists "path:" lines followed by the names in that directory.
+        while (!file.atEnd())
         {
-            QFile file(path.trimmed());
-            if (!file.open(QIODevice::ReadOnly)) continue;
-            while (!file.atEnd())
+            QString name = QString::fromUtf8(file.readLine()).trimmed();
+            if (name.endsWith(':')) directory = QDir::cleanPath(root + '/' + name.chopped(1));
+            else if (name.endsWith(".sty") && !tree.styleDirectories.contains(name.chopped(4)))
             {
-                QString name = QString::fromUtf8(file.readLine()).trimmed();
-                if (name.endsWith(".sty") || name.endsWith(".cls")) cache[name.right(4)] << name.chopped(4);
+                tree.styles << name.chopped(4);
+                tree.styleDirectories.insert(name.chopped(4), directory);
             }
+            else if (name.endsWith(".cls")) tree.classes << name.chopped(4);
         }
     }
-    return cache.value(suffix);
+    return tree;
+}
+
+// Started in the background by the first editor, so the first \usepackage{ does not wait for it.
+static std::shared_future<TexTree> &texTreeLoad()
+{
+    static std::shared_future<TexTree> load = std::async(std::launch::async, loadTexTree).share();
+    return load;
+}
+
+static const TexTree &texTree() { return texTreeLoad().get(); }
+
+// Public commands and environments of a package without curated data: \newcommand-style
+// definitions in its .sty and in the packages it requires (one level). \def and @-names are skipped.
+static PackageWords scannedPackage(const QString &name, int depth = 0)
+{
+    static QHash<QString, PackageWords> cache;
+    if (auto found = cache.constFind(name); found != cache.cend()) return *found;
+    PackageWords words;
+    QString directory = texTree().styleDirectories.value(name);
+    QFile file(directory + '/' + name + ".sty");
+    if (!directory.isEmpty() && file.open(QIODevice::ReadOnly))
+    {
+        static const QRegularExpression definition(
+            R"(\\(newcommand|providecommand|DeclareRobustCommand|DeclareMathOperator|NewDocumentCommand|DeclareDocumentCommand|NewExpandableDocumentCommand)\*?\s*\{?\s*\\([A-Za-z]+)(?![A-Za-z@])\s*\}?\s*(?:\[(\d)\]|\{([^{}]*)\})?)"
+            R"(|\\(?:newenvironment|NewDocumentEnvironment)\*?\s*\{([A-Za-z*]+)\})"
+            R"(|\\RequirePackage(?:\[[^\]]*\])?\{([^{}]+)\})");
+        QString text = QString::fromLatin1(file.readAll());
+        for (auto it = definition.globalMatch(text); it.hasNext();)
+        {
+            auto match = it.next();
+            if (match.hasCaptured(2))
+            {
+                // [n] counts arguments; an xparse spec counts its mandatory "m" arguments.
+                int arguments = match.captured(3).toInt();
+                if (match.captured(1).contains("DocumentCommand")) arguments = match.captured(4).count('m');
+                words.commands << "\\" + match.captured(2) + QString("{•}").repeated(arguments);
+            }
+            else if (match.hasCaptured(5)) words.environments << match.captured(5);
+            else if (depth == 0)
+                for (const auto &required : match.captured(6).split(',', Qt::SkipEmptyParts))
+                {
+                    PackageWords inner = scannedPackage(required.trimmed(), 1);
+                    words.commands += inner.commands;
+                    words.environments += inner.environments;
+                }
+        }
+        words.commands.removeDuplicates();
+        words.environments.removeDuplicates();
+    }
+    cache.insert(name, words);
+    return words;
 }
 
 // shortcut: only .bib files next to open sources are read, upgrade by resolving \bibliography/\addbibresource paths.
@@ -241,7 +306,7 @@ void LatexHighlighter::highlightBlock(const QString &text)
     mark(commands, QColor("#569CD6"));
     mark(braces, QColor("#FFD700"));
     auto match = comment.match(text);
-    if (match.hasMatch()) setFormat(match.capturedStart(), match.capturedLength(), QColor("#6A9955"));
+    if (match.hasMatch()) setFormat(match.capturedStart(), match.capturedLength(), QColor("#8793A2"));
 }
 
 Editor::Editor(QWidget *parent) : QTextEdit(parent)
@@ -264,10 +329,26 @@ Editor::Editor(QWidget *parent) : QTextEdit(parent)
     connect(verticalScrollBar(), &QScrollBar::valueChanged, m_gutter, qOverload<>(&QWidget::update));
     connect(this, &QTextEdit::textChanged, m_gutter, qOverload<>(&QWidget::update));
     connect(this, &QTextEdit::cursorPositionChanged, this, [this] { m_gutter->update(); updateHighlights(); });
+    // Wrapped lines continue under the first non-blank character; applied after the edit settles.
+    connect(document(), &QTextDocument::contentsChange, this, [this](int position, int, int added)
+    {
+        int from = document()->findBlock(position).blockNumber();
+        int to = document()->findBlock(position + added).blockNumber();
+        if (to < 0) to = document()->blockCount() - 1;
+        if (m_indentFrom < 0) QTimer::singleShot(0, this, &Editor::applyWrapIndent);
+        m_indentFrom = m_indentFrom < 0 ? from : std::min(m_indentFrom, from);
+        m_indentTo = std::max(m_indentTo, to);
+    });
     refreshGutter();
     updateHighlights();
+    texTreeLoad(); // starts reading TeX Live's file lists in the background
+    m_scanTimer.setSingleShot(true);
+    m_scanTimer.setInterval(400);
+    connect(&m_scanTimer, &QTimer::timeout, this, &Editor::scan);
+    connect(document(), &QTextDocument::contentsChanged, this, [this] { if (document()->blockCount() >= 5000) m_scanTimer.start(); });
     m_completion = new QCompleter(new QStringListModel(this), this);
     m_completion->setWidget(this);
+    if (auto *list = qobject_cast<QListView *>(m_completion->popup())) list->setUniformItemSizes(true); // no per-row measuring
     m_completion->setCaseSensitivity(Qt::CaseSensitive);
     m_completion->setModelSorting(QCompleter::CaseSensitivelySortedModel);
     m_completion->setCompletionMode(QCompleter::PopupCompletion);
@@ -383,17 +464,19 @@ void Editor::scan()
 {
     if (m_scanRevision == document()->revision()) return;
     m_scanRevision = document()->revision();
-    m_macros.clear(); m_environments.clear(); m_labels.clear();
+    m_macros.clear(); m_environments.clear(); m_labels.clear(); m_packages.clear();
     static const QRegularExpression definition(
         R"(\\(?:(?:re)?newcommand|providecommand|DeclareMathOperator)\*?\s*\{?\s*(\\[A-Za-z@]+)\s*\}?\s*(?:\[(\d)\])?)"
-        R"(|\\def\s*(\\[A-Za-z@]+)|\\newenvironment\*?\s*\{([A-Za-z*]+)\}\s*(?:\[(\d)\])?|\\label\{([^{}]+)\})");
+        R"(|\\def\s*(\\[A-Za-z@]+)|\\newenvironment\*?\s*\{([A-Za-z*]+)\}\s*(?:\[(\d)\])?|\\label\{([^{}]+)\})"
+        R"(|\\(?:usepackage|RequirePackage|documentclass)(?:\[[^\]]*\])?\{([^{}]+)\})");
     for (auto it = definition.globalMatch(toPlainText()); it.hasNext();)
     {
         auto match = it.next();
         if (match.hasCaptured(1)) m_macros << match.captured(1) + QString("{•}").repeated(match.captured(2).toInt());
         else if (match.hasCaptured(3)) m_macros << match.captured(3);
         else if (match.hasCaptured(4)) m_environments << match.captured(4) + QString("{•}").repeated(match.captured(5).toInt());
-        else m_labels << match.captured(6);
+        else if (match.hasCaptured(6)) m_labels << match.captured(6);
+        else for (const auto &name : match.captured(7).split(',', Qt::SkipEmptyParts)) m_packages << name.trimmed();
     }
 }
 
@@ -413,15 +496,28 @@ void Editor::updateCompletion(bool request)
     auto collect = [&editors](QStringList Editor::*list)
     {
         QStringList all;
-        for (auto *editor : editors) { editor->scan(); all += editor->*list; }
+        for (auto *editor : editors)
+        {
+            // Small documents are rescanned at once; large ones when typing pauses (m_scanTimer).
+            if (editor->m_scanRevision < 0 || editor->document()->blockCount() < 5000) editor->scan();
+            all += editor->*list;
+        }
         return all;
     };
     QStringList words;
     QRegularExpressionMatch match;
+    // Words of the packages and classes the open documents load: curated, else read from the .sty.
+    auto packageWords = [&](QStringList PackageWords::*list)
+    {
+        QStringList all;
+        for (const auto &name : collect(&Editor::m_packages))
+            all += curatedPackages().contains(name) ? curatedPackages().value(name).*list : scannedPackage(name).*list;
+        return all;
+    };
     if ((match = environment.match(before)).hasMatch())
     {
         m_context = Context::Environment;
-        words = builtinEnvironments + collect(&Editor::m_environments);
+        words = builtinEnvironments + collect(&Editor::m_environments) + packageWords(&PackageWords::environments);
     }
     else if ((match = reference.match(before)).hasMatch())
     {
@@ -441,17 +537,17 @@ void Editor::updateCompletion(bool request)
     else if ((match = package.match(before)).hasMatch())
     {
         m_context = Context::Name;
-        words = texFiles(".sty");
+        words = texTree().styles;
     }
     else if ((match = documentClass.match(before)).hasMatch())
     {
         m_context = Context::Name;
-        words = texFiles(".cls");
+        words = texTree().classes;
     }
     else if ((match = command.match(before)).hasMatch() && (request || match.capturedLength() >= 3))
     {
         m_context = Context::Command;
-        words = builtinCommands + collect(&Editor::m_macros);
+        words = builtinCommands + collect(&Editor::m_macros) + packageWords(&PackageWords::commands);
     }
     else
     {
@@ -470,7 +566,13 @@ void Editor::updateCompletion(bool request)
     }
     auto *popup = m_completion->popup();
     QRect rect = cursorRect();
-    rect.setWidth(popup->sizeHintForColumn(0) + popup->verticalScrollBar()->sizeHint().width() + 16);
+    // Width from the first rows only: measuring all ~6,000 package names took ~50 ms.
+    int width = 0;
+    QFontMetrics metrics(popup->font());
+    auto *matches = m_completion->completionModel();
+    for (int row = 0; row < std::min(matches->rowCount(), 200); ++row)
+        width = std::max(width, metrics.horizontalAdvance(matches->index(row, 0).data().toString()));
+    rect.setWidth(width + popup->verticalScrollBar()->sizeHint().width() + 24);
     m_completion->complete(rect);
     popup->setCurrentIndex(m_completion->completionModel()->index(0, 0));
 }
@@ -485,12 +587,18 @@ void Editor::keyPressEvent(QKeyEvent *event)
     }
     bool control = event->modifiers() == Qt::ControlModifier;
     if (event->key() == Qt::Key_Escape) { m_placeholders.clear(); m_placeholder = -1; }
+    if (event->key() == Qt::Key_Backtab) { shiftLines(true); return; }
+    auto selection = textCursor();
+    bool lines = selection.hasSelection() && document()->findBlock(selection.selectionStart()) != document()->findBlock(selection.selectionEnd());
+    if (event->key() == Qt::Key_Tab && !event->modifiers() && lines) { shiftLines(false); return; }
     if (((event->key() == Qt::Key_Tab && !event->modifiers()) || (control && event->key() == Qt::Key_Right)) && jumpPlaceholder(1))
         return;
     if (control && event->key() == Qt::Key_Left && jumpPlaceholder(-1)) return;
     if (event->key() == Qt::Key_Tab && !event->modifiers())
     {
-        textCursor().insertText("    ");
+        // Up to the next multiple of four columns, as in VS Code.
+        int column = selection.selectionStart() - document()->findBlock(selection.selectionStart()).position();
+        selection.insertText(QString(4 - column % 4, ' '));
         return;
     }
     static const QString opening = "{[(", closing = "}])";
@@ -572,7 +680,7 @@ void Editor::paintGutter()
     {
         QRectF rect = layout->blockBoundingRect(block).translated(0, -scroll);
         if (rect.top() > m_gutter->height()) break;
-        painter.setPen(block.blockNumber() == current ? QColor("#CCCCCC") : QColor("#6E7681"));
+        painter.setPen(block.blockNumber() == current ? QColor("#B9C3CF") : QColor("#68727F"));
         painter.drawText(QRectF(0, rect.top(), m_gutter->width() - 12, rect.height()), Qt::AlignRight | Qt::AlignTop,
             QString::number(block.blockNumber() + 1));
     }
@@ -599,7 +707,7 @@ void Editor::updateHighlights()
 {
     QList<QTextEdit::ExtraSelection> selections;
     QTextEdit::ExtraSelection line;
-    line.format.setBackground(QColor("#282828"));
+    line.format.setBackground(QColor("#1D2024"));
     line.format.setProperty(QTextFormat::FullWidthSelection, true);
     line.cursor = textCursor();
     line.cursor.clearSelection();
@@ -657,6 +765,44 @@ QList<OutlineEntry> Editor::outline(const QString &text)
     return entries;
 }
 
+// Hanging indent: margin = leading whitespace, first line pulled back by the same amount, so
+// unwrapped lines look unchanged. Block formats never reach the saved text (toPlainText).
+void Editor::applyWrapIndent()
+{
+    int from = m_indentFrom, to = std::min(m_indentTo, document()->blockCount() - 1);
+    m_indentFrom = m_indentTo = -1;
+    QFontMetricsF metrics(font());
+    // shortcut: indents wider than 40 columns are capped so deep nesting keeps a usable width.
+    double cap = metrics.horizontalAdvance(' ') * 40;
+    bool modified = document()->isModified();
+    bool fresh = !document()->isUndoAvailable() && !document()->isRedoAvailable();
+    QTextCursor cursor(document());
+    bool editing = false;
+    for (auto block = document()->findBlockByNumber(std::max(0, from)); block.isValid() && block.blockNumber() <= to; block = block.next())
+    {
+        double width = 0;
+        for (QChar ch : block.text())
+        {
+            if (ch == '\t') width = (std::floor(width / tabStopDistance()) + 1) * tabStopDistance();
+            else if (ch == ' ') width += metrics.horizontalAdvance(' ');
+            else break;
+        }
+        width = std::min(width, cap);
+        if (qAbs(block.blockFormat().leftMargin() - width) < 0.01) continue;
+        // Joined to the edit that caused it, so undo restores text and indent together.
+        if (!editing) { fresh ? cursor.beginEditBlock() : cursor.joinPreviousEditBlock(); editing = true; }
+        cursor.setPosition(block.position());
+        QTextBlockFormat format = block.blockFormat();
+        format.setLeftMargin(width);
+        format.setTextIndent(-width);
+        cursor.setBlockFormat(format);
+    }
+    if (!editing) return;
+    cursor.endEditBlock();
+    if (fresh) document()->clearUndoRedoStacks(); // a freshly loaded file starts with an empty undo history
+    document()->setModified(modified);
+}
+
 void Editor::setWordWrap(bool on)
 {
     setLineWrapMode(on ? QTextEdit::WidgetWidth : QTextEdit::NoWrap);
@@ -710,6 +856,37 @@ void Editor::toggleComment()
         if (block == last) break;
     }
     cursor.endEditBlock();
+}
+
+void Editor::shiftLines(bool outdent)
+{
+    auto cursor = textCursor();
+    int start = cursor.selectionStart(), end = cursor.selectionEnd();
+    auto first = document()->findBlock(start), last = document()->findBlock(end);
+    // A selection ending at the start of a line does not include that line.
+    if (end > start && last.position() == end && last != first) last = last.previous();
+    bool multiLine = first != last;
+    cursor.beginEditBlock();
+    for (auto block = first; block.isValid(); block = block.next())
+    {
+        QTextCursor line(block);
+        QString text = block.text();
+        if (!outdent && (!text.isEmpty() || !multiLine)) line.insertText("    ");
+        if (outdent)
+        {
+            int remove = text.startsWith('\t') ? 1 : 0;
+            while (remove < 4 && remove < text.size() && text[remove] == ' ' && !text.startsWith('\t')) ++remove;
+            line.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, remove);
+            line.removeSelectedText();
+        }
+        if (block == last) break;
+    }
+    cursor.endEditBlock();
+    if (!multiLine) return;
+    // Keep whole lines selected so Tab / Shift+Tab can be repeated.
+    cursor.setPosition(first.position());
+    cursor.setPosition(last.position() + last.length() - 1, QTextCursor::KeepAnchor);
+    setTextCursor(cursor);
 }
 
 // Like VS Code: searching wraps around the document.

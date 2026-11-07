@@ -16,7 +16,11 @@ Folitex is a single Qt Widgets application. All logic lives in a static library,
   Templates mark placeholders with U+2022; the mark is never inserted into the source,
   placeholder positions are tracked with `QTextCursor`s instead. User macros, labels and
   environments are rescanned per document revision; `.bib` keys are cached by file
-  modification time; package and class names come once from TeX Live's `ls-R` files.
+  modification time; package and class names come from TeX Live's `ls-R` files, read on a
+  background thread when the first editor opens.
+- Commands of loaded packages: `src/completiondata.cpp` holds curated entries per package;
+  other packages are scanned once for `\newcommand`-style definitions (plus the packages
+  they require, one level). Documents over 5,000 lines are rescanned only when typing pauses.
 - `Editor::outline()` and `Editor::closingFor()` are pure functions over text, which
   keeps them easy to test.
 

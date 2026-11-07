@@ -16,6 +16,10 @@
 #include <QLineEdit>
 #include <QShortcut>
 #include <QCloseEvent>
+#include <QMouseEvent>
+#include <QWheelEvent>
+#include <QPainter>
+#include <QPainterPath>
 #include <QStandardPaths>
 #include <QDir>
 #include <QDateTime>
@@ -29,6 +33,7 @@
 #include <QHeaderView>
 #include <QTreeView>
 #include <QFileSystemModel>
+#include <QAbstractFileIconProvider>
 #include <QSettings>
 #include <QStackedWidget>
 #include <QImageReader>
@@ -170,6 +175,84 @@ static QPixmap svgPixmap(const char *svg, const char *color, int size)
     return pixmap;
 }
 
+// Glyphs and colours in the style of VS Code's Seti icon theme (drawn for Folitex, not copied).
+static QIcon fileIcon(const QString &fileName)
+{
+    static QHash<QString, QIcon> icons;
+    QString suffix = QFileInfo(fileName).suffix().toLower();
+    if (auto found = icons.constFind(suffix); found != icons.cend()) return *found;
+    static const char *tex = R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M3 3.5h10v2.2H9.2V13H6.8V5.7H3z" fill="currentColor"/></svg>)";
+    static const char *bib = R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M4 2.5h8v9H5.6A1.6 1.6 0 0 0 4 13.1zM5.6 12.3H12v1.2H5.6a.6.6 0 0 1 0-1.2z" fill="currentColor"/></svg>)";
+    static const char *style = R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"><rect x="2.5" y="4" width="11" height="1.4" rx=".7"/><rect x="2.5" y="7.3" width="11" height="1.4" rx=".7"/><rect x="2.5" y="10.6" width="11" height="1.4" rx=".7"/><circle cx="5.5" cy="4.7" r="1.7"/><circle cx="10.5" cy="8" r="1.7"/><circle cx="7" cy="11.3" r="1.7"/></svg>)";
+    static const char *pdf = R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M4 2h5.5L12.5 5v9H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6 8.5h4.5M6 11h3" stroke="currentColor" stroke-width="1.3"/></svg>)";
+    static const char *image = R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3.5 11.5l3-3.5 2.2 2.3 1.6-1.5 2.2 2.7z" fill="currentColor"/></svg>)";
+    static const char *other = R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3.5 5h9M3.5 8h9M3.5 11h6"/></svg>)";
+    static const QHash<QString, std::pair<const char *, const char *>> kinds = {
+        {"tex", {tex, "#8DC149"}}, {"ltx", {tex, "#8DC149"}}, {"bib", {bib, "#CBCB41"}},
+        {"sty", {style, "#A074C4"}}, {"cls", {style, "#A074C4"}}, {"pdf", {pdf, "#CC3E44"}},
+        {"png", {image, "#A074C4"}}, {"jpg", {image, "#A074C4"}}, {"jpeg", {image, "#A074C4"}}, {"svg", {image, "#A074C4"}}};
+    auto [svg, color] = kinds.value(suffix, {other, "#68727F"});
+    QIcon icon(svgPixmap(svg, color, 16));
+    icons.insert(suffix, icon);
+    return icon;
+}
+
+namespace
+{
+// Rounded panels (VS Code 1.145): paints the gap colour outside a rounded rectangle and a 1 px
+// border on top of a panel. Its mask keeps it to the corners and the edge, so the panel's own
+// square painting (editor viewport, PDF pages) stays untouched and clicks pass through.
+class RoundedCorners : public QWidget
+{
+public:
+    explicit RoundedCorners(QWidget *panel) : QWidget(panel)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        panel->installEventFilter(this);
+        place();
+    }
+protected:
+    bool eventFilter(QObject *, QEvent *event) override
+    {
+        if (event->type() == QEvent::Resize) place();
+        else if (event->type() == QEvent::ChildAdded) raise(); // stay above widgets added later
+        return false;
+    }
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        QPainterPath outside, inside;
+        outside.addRect(rect());
+        inside.addRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), radius, radius);
+        painter.fillPath(outside.subtracted(inside), QColor("#0E1013"));
+        painter.setPen(QColor("#22272E"));
+        painter.drawPath(inside);
+    }
+private:
+    static constexpr int radius = 6;
+    void place()
+    {
+        QRect area = parentWidget()->rect();
+        setGeometry(area);
+        QRegion mask = QRegion(area) - QRegion(area.adjusted(1, 1, -1, -1));
+        for (QPoint corner : {area.topLeft(), QPoint(area.right() - radius, area.top()),
+                              QPoint(area.left(), area.bottom() - radius), QPoint(area.right() - radius, area.bottom() - radius)})
+            mask += QRect(corner, QSize(radius + 1, radius + 1));
+        setMask(mask);
+        raise();
+    }
+};
+
+// No folder icons, only chevrons, like VS Code's explorer.
+class FileIconProvider : public QAbstractFileIconProvider
+{
+public:
+    QIcon icon(IconType) const override { return {}; }
+    QIcon icon(const QFileInfo &info) const override { return info.isDir() ? QIcon() : fileIcon(info.fileName()); }
+};
+}
+
 Window::Window() : m_runner(this)
 {
     setWindowTitle("Folitex");
@@ -301,7 +384,7 @@ Window::Window() : m_runner(this)
     bar->addStretch();
     // Each control sits with what it acts on: Build with the editor tabs, zoom and pages with the PDF.
     // VS Code-style editor action: outlined run triangle, a stop square while building.
-    m_runIcon = QIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M4.5 2.8v10.4L12.8 8z"/></svg>)", "#CCCCCC", 16));
+    m_runIcon = QIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M4.5 2.8v10.4L12.8 8z"/></svg>)", "#ADB7C4", 16));
     m_stopIcon = QIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect x="3.5" y="3.5" width="9" height="9" rx="1" fill="currentColor"/></svg>)", "#F48771", 16));
     m_build = new QPushButton;
     m_build->setObjectName("editorAction");
@@ -405,9 +488,17 @@ Window::Window() : m_runner(this)
     statusBar()->setSizeGripEnabled(false);
     layout->addLayout(bar);
     m_tabs = new QTabWidget;
+    m_tabs->setObjectName("editorTabs");
+    m_tabs->setAttribute(Qt::WA_StyledBackground); // otherwise the corner beside the tabs shows the window gap colour
     m_tabs->setDocumentMode(true);
     m_tabs->tabBar()->setDrawBase(false);
-    m_tabs->setTabsClosable(true);
+    m_tabs->setIconSize(QSize(16, 16));
+    // Crowded tabs keep their full names and scroll sideways, like VS Code. Qt's scroll arrows
+    // get zero width in the style sheet; the wheel drives them instead (see eventFilter).
+    m_tabs->setUsesScrollButtons(true);
+    m_tabs->setElideMode(Qt::ElideNone);
+    m_tabs->tabBar()->setMouseTracking(true);
+    m_tabs->tabBar()->installEventFilter(this);
     m_tabs->setMovable(true);
     // VS Code-style find widget floating over the top-right corner of the editor.
     m_findBar = new QWidget(m_tabs);
@@ -512,13 +603,14 @@ Window::Window() : m_runner(this)
     cornerLayout->addWidget(m_engine);
     cornerLayout->addWidget(m_build);
     m_tabs->setCornerWidget(buildCorner, Qt::TopRightCorner);
-    connect(m_tabs, &QTabWidget::tabCloseRequested, this, &Window::closeTab);
-    connect(m_tabs, &QTabWidget::currentChanged, this, [this] { if (currentEditor()) setTabTitle(currentEditor()); refreshOutline(); });
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this] { if (currentEditor()) setTabTitle(currentEditor()); refreshOutline(); updateTabButtons(); });
     m_outline = new QTreeWidget;
     m_outline->setHeaderHidden(true);
-    m_outline->setIndentation(12);
+    m_outline->setIndentation(16);
     m_outline->setFrameShape(QFrame::NoFrame);
     m_fileModel = new QFileSystemModel(this);
+    static FileIconProvider iconProvider;
+    m_fileModel->setIconProvider(&iconProvider);
     m_fileModel->setFilter(QDir::AllDirs | QDir::Files | QDir::NoDotAndDotDot); // no QDir::Hidden: hides .folitex-build
     m_fileModel->setNameFilters({"*.tex", "*.bib", "*.sty", "*.cls", "*.pdf"});
     m_fileModel->setNameFilterDisables(false);
@@ -526,7 +618,7 @@ Window::Window() : m_runner(this)
     m_files->setModel(m_fileModel);
     m_files->setHeaderHidden(true);
     for (int column = 1; column < m_fileModel->columnCount(); ++column) m_files->hideColumn(column);
-    m_files->setIndentation(12);
+    m_files->setIndentation(16);
     m_files->setFrameShape(QFrame::NoFrame);
     connect(m_files, &QTreeView::clicked, this, [this](const QModelIndex &index)
     {
@@ -548,7 +640,26 @@ Window::Window() : m_runner(this)
     noFolderLayout->addStretch();
     m_sideStack = new QStackedWidget;
     m_sideStack->addWidget(m_noFolder);
-    m_sideStack->addWidget(m_files);
+    // VS Code's root folder row: bold name with a chevron that collapses the tree.
+    auto *filesPage = new QWidget;
+    auto *filesLayout = new QVBoxLayout(filesPage);
+    filesLayout->setContentsMargins(0, 0, 0, 0);
+    filesLayout->setSpacing(0);
+    m_rootButton = new QToolButton;
+    m_rootButton->setObjectName("rootButton");
+    m_rootButton->setCheckable(true);
+    m_rootButton->setChecked(true);
+    m_rootButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_rootButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    QIcon chevrons(":/chevron-right.svg");
+    chevrons.addFile(":/chevron-down.svg", {}, QIcon::Normal, QIcon::On);
+    m_rootButton->setIcon(chevrons);
+    m_rootButton->setIconSize(QSize(16, 16));
+    connect(m_rootButton, &QToolButton::toggled, m_files, &QWidget::setVisible);
+    filesLayout->addWidget(m_rootButton);
+    filesLayout->addWidget(m_files, 1);
+    filesLayout->addStretch(); // keeps the root row at the top while the tree is collapsed
+    m_sideStack->addWidget(filesPage);
     m_sideStack->addWidget(m_outline);
     m_sideTitle = new QLabel;
     m_sideTitle->setObjectName("sideTitle");
@@ -563,7 +674,7 @@ Window::Window() : m_runner(this)
     auto icon = [](const char *svg)
     {
         QIcon result;
-        for (auto [color, state] : {std::pair{"#868686", QIcon::Off}, std::pair{"#D7D7D7", QIcon::On}})
+        for (auto [color, state] : {std::pair{"#68727F", QIcon::Off}, std::pair{"#D2D7DE", QIcon::On}})
             result.addPixmap(svgPixmap(svg, color, 24), QIcon::Normal, state);
         return result;
     };
@@ -598,29 +709,34 @@ Window::Window() : m_runner(this)
     m_outlineTimer.setSingleShot(true);
     m_outlineTimer.setInterval(300);
     connect(&m_outlineTimer, &QTimer::timeout, this, &Window::refreshOutline);
+    m_log = new QPlainTextEdit;
+    m_log->setReadOnly(true);
+    m_log->setMaximumBlockCount(1500);
+    m_log->setFont(QFont("monospace", 10));
+    m_log->hide();
+    // The build log opens under the editor only, like VS Code's panel inside the editor column.
+    m_vertical = new QSplitter(Qt::Vertical);
+    m_vertical->addWidget(m_tabs);
+    m_vertical->addWidget(m_log);
+    m_vertical->setStretchFactor(0, 1);
+    m_vertical->setStretchFactor(1, 0);
+    m_vertical->setChildrenCollapsible(false);
     m_horizontal = new QSplitter;
     m_horizontal->addWidget(m_side);
-    m_horizontal->addWidget(m_tabs);
+    m_horizontal->addWidget(m_vertical);
     m_horizontal->addWidget(m_pdfPane);
     m_horizontal->setSizes({200, 540, 540});
     m_horizontal->setStretchFactor(0, 0);
     m_horizontal->setStretchFactor(1, 1);
     m_horizontal->setStretchFactor(2, 1);
     m_horizontal->setChildrenCollapsible(false);
-    m_log = new QPlainTextEdit;
-    m_log->setReadOnly(true);
-    m_log->setMaximumBlockCount(1500);
-    m_log->setFont(QFont("monospace", 10));
-    m_log->hide();
-    m_vertical = new QSplitter(Qt::Vertical);
-    m_vertical->addWidget(m_horizontal);
-    m_vertical->addWidget(m_log);
-    m_vertical->setStretchFactor(0, 1);
-    m_vertical->setStretchFactor(1, 0);
+    for (auto *splitter : {m_horizontal, m_vertical}) splitter->setHandleWidth(6);
+    for (QWidget *panel : std::initializer_list<QWidget *>{m_side, m_tabs, m_log, m_pdfPane}) new RoundedCorners(panel);
     auto *row = new QHBoxLayout;
     row->setSpacing(0);
     row->addWidget(activity);
-    row->addWidget(m_vertical);
+    row->setContentsMargins(0, 0, 6, 6);
+    row->addWidget(m_horizontal);
     layout->addLayout(row);
     setCentralWidget(central);
     connect(&m_runner, &BuildRunner::output, this, [this](const QString &text)
@@ -758,7 +874,7 @@ void Window::refreshOutline()
             while (!parents.isEmpty() && parents.last().first >= entry.level) parents.removeLast();
         auto *item = parents.isEmpty() ? new QTreeWidgetItem(m_outline) : new QTreeWidgetItem(parents.last().second);
         static const QStringList prefixes = {"", "label  ", "file  ", "TODO  "};
-        static const QStringList colors = {"#CCCCCC", "#4FC1FF", "#C586C0", "#CCA700"};
+        static const QStringList colors = {"#ADB7C4", "#4FC1FF", "#C586C0", "#CCA700"};
         item->setText(0, prefixes[entry.kind] + (entry.title.isEmpty() ? "…" : entry.title));
         item->setForeground(0, QColor(colors[entry.kind]));
         item->setData(0, Qt::UserRole, entry.line);
@@ -774,8 +890,10 @@ void Window::openWorkspace(const QString &directory)
 {
     QFileInfo info(directory);
     if (!info.isDir()) return;
-    m_workspace = info.absoluteFilePath();
+    m_workspace = QDir::cleanPath(info.absoluteFilePath()); // no trailing slash, so the folder has a name
     m_files->setRootIndex(m_fileModel->setRootPath(m_workspace));
+    m_rootButton->setText(QFileInfo(m_workspace).fileName());
+    m_rootButton->setToolTip(m_workspace);
     showSide(m_files, false);
     if (auto *editor = currentEditor()) setTabTitle(editor);
 }
@@ -783,11 +901,11 @@ void Window::openWorkspace(const QString &directory)
 // Like VS Code's activity bar: clicking the active view's button closes the side bar.
 void Window::showSide(QWidget *page, bool toggle)
 {
-    QWidget *shown = page == m_files && m_workspace.isEmpty() ? m_noFolder : page;
+    QWidget *shown = page != m_files ? page : m_workspace.isEmpty() ? m_noFolder : m_files->parentWidget();
     bool close = toggle && m_side->isVisible() && m_sideStack->currentWidget() == shown;
     m_side->setVisible(!close);
     m_sideStack->setCurrentWidget(shown);
-    m_sideTitle->setText(page == m_outline ? "OUTLINE" : m_workspace.isEmpty() ? "FILES" : QFileInfo(m_workspace).fileName().toUpper());
+    m_sideTitle->setText(page == m_outline ? "Outline" : "Explorer");
     m_filesButton->setChecked(!close && page == m_files);
     m_outlineButton->setChecked(!close && page == m_outline);
 }
@@ -809,7 +927,13 @@ Editor *Window::newDocument(const QString &text)
     auto *editor = new Editor;
     editor->setPlainText(text);
     editor->document()->setModified(false);
-    m_tabs->addTab(editor, "Untitled");
+    int index = m_tabs->addTab(editor, "Untitled");
+    auto *close = new QToolButton;
+    close->setObjectName("tabClose");
+    close->setAutoRaise(true);
+    close->setToolTip("Close · Ctrl+W");
+    connect(close, &QToolButton::clicked, this, [this, editor] { closeTab(m_tabs->indexOf(editor)); });
+    m_tabs->tabBar()->setTabButton(index, QTabBar::LeftSide, close); // left, as tabActionLocation: left
     m_tabs->setCurrentWidget(editor);
     connect(editor->document(), &QTextDocument::modificationChanged, this, [this, editor] { setTabTitle(editor); });
     editor->setWordWrap(m_wordWrap);
@@ -829,11 +953,17 @@ void Window::setTabTitle(Editor *editor)
 {
     QString path = editor->property("path").toString();
     QString name = path.isEmpty() ? "Untitled" : QFileInfo(path).fileName();
-    if (editor->document()->isModified()) name += " •";
     int index = m_tabs->indexOf(editor);
-    if (index >= 0) m_tabs->setTabText(index, name);
+    if (index >= 0)
+    {
+        m_tabs->setTabText(index, name);
+        m_tabs->setTabIcon(index, fileIcon(path.isEmpty() ? "Untitled.tex" : name));
+        m_tabs->setTabToolTip(index, path);
+    }
+    updateTabButtons();
+    updateTabHints();
     if (editor != currentEditor()) return;
-    setWindowTitle(name + (m_workspace.isEmpty() ? "" : " — " + QFileInfo(m_workspace).fileName()) + " — Folitex");
+    setWindowTitle((editor->document()->isModified() ? "● " : "") + name + (m_workspace.isEmpty() ? "" : " — " + QFileInfo(m_workspace).fileName()) + " — Folitex");
     if (!m_workspace.isEmpty() && !path.isEmpty()) m_files->setCurrentIndex(m_fileModel->index(path));
 }
 
@@ -909,6 +1039,7 @@ void Window::closeTab(int index)
     QString path = editor->property("path").toString();
     if (!path.isEmpty()) m_sourceWatcher.removePath(path);
     if (!m_tabs->count()) newDocument();
+    updateTabHints();
 }
 
 void Window::closeEvent(QCloseEvent *event)
@@ -1033,8 +1164,85 @@ void Window::placeFind()
     m_findBar->raise();
 }
 
+// VS Code: × on the active or hovered tab, ● for unsaved changes (× when the dot is hovered),
+// and an invisible button elsewhere so tab widths never jump.
+void Window::updateTabButtons()
+{
+    static const char *closeSvg = R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M4.5 4.5l7 7m0-7l-7 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg>)";
+    static const char *dotSvg = R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3.5" fill="currentColor"/></svg>)";
+    static const QPixmap closePixmap = svgPixmap(closeSvg, "#ADB7C4", 16), dotPixmap = svgPixmap(dotSvg, "#ADB7C4", 16);
+    static const QPixmap blank = [] { QPixmap pixmap(48, 48); pixmap.fill(Qt::transparent); pixmap.setDevicePixelRatio(3); return pixmap; }();
+    for (int i = 0; i < m_tabs->count(); ++i)
+    {
+        auto *button = qobject_cast<QToolButton *>(m_tabs->tabBar()->tabButton(i, QTabBar::LeftSide));
+        auto *editor = qobject_cast<Editor *>(m_tabs->widget(i));
+        if (!button || !editor) continue;
+        bool modified = editor->document()->isModified();
+        bool shown = i == m_tabs->currentIndex() || i == m_hoverTab;
+        QIcon icon(modified ? dotPixmap : shown ? closePixmap : blank);
+        icon.addPixmap(closePixmap, QIcon::Active);
+        button->setIcon(icon);
+    }
+}
+
+// Tabs whose file names collide get their nearest distinguishing folders, dimmed, after the
+// name (VS Code). QTabBar draws one text colour, so the hint is a label in the tab's right slot.
+void Window::updateTabHints()
+{
+    QHash<QString, QList<int>> byName;
+    for (int i = 0; i < m_tabs->count(); ++i)
+        if (QString path = m_tabs->widget(i)->property("path").toString(); !path.isEmpty())
+            byName[QFileInfo(path).fileName()].append(i);
+    for (int i = 0; i < m_tabs->count(); ++i)
+    {
+        QString path = m_tabs->widget(i)->property("path").toString();
+        QString hint;
+        const QList<int> same = path.isEmpty() ? QList<int>() : byName.value(QFileInfo(path).fileName());
+        // Fewest trailing folders that no other tab with this name shares.
+        QStringList folders = QFileInfo(path).absolutePath().split('/', Qt::SkipEmptyParts);
+        for (int depth = 1; same.size() > 1 && depth <= folders.size() && hint.isEmpty(); ++depth)
+        {
+            QString candidate = folders.mid(folders.size() - depth).join('/');
+            bool unique = std::none_of(same.cbegin(), same.cend(), [&](int other)
+            {
+                return other != i && QFileInfo(m_tabs->widget(other)->property("path").toString()).absolutePath().endsWith("/" + candidate);
+            });
+            if (unique || depth == folders.size()) hint = candidate;
+        }
+        auto *label = qobject_cast<QLabel *>(m_tabs->tabBar()->tabButton(i, QTabBar::RightSide));
+        if (label && label->text() == hint) continue;
+        if (label) { m_tabs->tabBar()->setTabButton(i, QTabBar::RightSide, nullptr); label->deleteLater(); }
+        if (hint.isEmpty()) continue;
+        label = new QLabel(hint);
+        label->setObjectName("tabHint");
+        label->setAttribute(Qt::WA_TransparentForMouseEvents); // clicks still select the tab
+        m_tabs->tabBar()->setTabButton(i, QTabBar::RightSide, label);
+    }
+}
+
 bool Window::eventFilter(QObject *object, QEvent *event)
 {
+    // Any wheel or touchpad movement over the tabs scrolls them; Qt would switch tabs instead.
+    if (object == m_tabs->tabBar() && event->type() == QEvent::Wheel)
+    {
+        auto *wheel = static_cast<QWheelEvent *>(event);
+        QPoint pixels = wheel->pixelDelta(), angle = wheel->angleDelta();
+        int delta = wheel->phase() == Qt::NoScrollPhase || pixels.isNull()
+            ? (angle.x() ? angle.x() : angle.y()) * 40 / 120 : (pixels.x() ? pixels.x() : pixels.y());
+        m_tabScroll += delta;
+        // Each hidden-arrow click scrolls by one tab; about 40 px of travel per click.
+        auto *bar = m_tabs->tabBar();
+        for (; m_tabScroll <= -40; m_tabScroll += 40)
+            if (auto *right = bar->findChild<QToolButton *>("ScrollRightButton"); right && right->isEnabled()) right->click();
+        for (; m_tabScroll >= 40; m_tabScroll -= 40)
+            if (auto *left = bar->findChild<QToolButton *>("ScrollLeftButton"); left && left->isEnabled()) left->click();
+        return true;
+    }
+    if (object == m_tabs->tabBar() && (event->type() == QEvent::MouseMove || event->type() == QEvent::Leave))
+    {
+        int hover = event->type() == QEvent::Leave ? -1 : m_tabs->tabBar()->tabAt(static_cast<QMouseEvent *>(event)->position().toPoint());
+        if (hover != m_hoverTab) { m_hoverTab = hover; updateTabButtons(); }
+    }
     if (object == m_tabs && event->type() == QEvent::Resize) placeFind();
     return QMainWindow::eventFilter(object, event);
 }

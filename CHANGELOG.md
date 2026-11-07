@@ -3,10 +3,39 @@
 ## Unreleased
 
 ### Added
+- Package-aware completion: curated commands and environments for about 45 common
+  packages (hyperref, siunitx, tikz, pgfplots, listings, mathtools, beamer, …), offered only
+  when an open document loads them; other packages contribute the `\newcommand`-style
+  definitions of their `.sty` files.
+- File-type icons in the style of VS Code's Seti theme, in the explorer and on editor
+  tabs; chevrons instead of triangles; a bold root folder row that collapses the tree.
+- Tab indents and Shift+Tab outdents every selected line (one undo step each); Shift+Tab
+  also outdents the current line. Tab without a selection pads to the next 4-column stop.
+- Word wrap keeps the indentation: wrapped lines continue under the first non-blank
+  character of their line, as with VS Code's `wrappingIndent: same`.
 - GitHub Actions: build and tests on Debian 13 and Arch Linux for every push and pull
   request; pushing a `vX.Y.Z` tag publishes a release with its changelog section.
 
+### Changed
+- Side bar, editor, build log and PDF are separate rounded panels on a darker
+  background, as in VS Code 1.145. The build log (Ctrl+J) opens under the editor only.
+- Muted dark colour scheme (Dark Modern with custom workbench colours): darker side
+  bar, flat tabs with an underline for the active one, thinner scroll bars.
+- Editor tabs behave like VS Code with `tabActionLocation: left`: × left of the icon, only on
+  the active or hovered tab, ● for unsaved changes (× on hover); the active tab has a light
+  background and underline; faint separators. Crowded tabs keep their names and scroll sideways with the wheel or
+  touchpad, without arrow buttons.
+- Tabs with the same file name show their distinguishing folder, dimmed, after the name.
+
 ### Fixed
+- Completion stays fast in large documents: sources over 5,000 lines are rescanned when
+  typing pauses instead of on every key (50,000 lines: ~10 ms → under 1 ms per key).
+- The first `\usepackage{` no longer stalls: TeX Live's package list loads in the background
+  at start-up (+2.4 MiB RSS), and opening the full list takes 2 ms instead of ~50 ms.
+- The compiler selector and build button sat on a black block; the tab area now paints
+  its own background.
+- Collapsing the root folder row moved it to the middle of the side bar; it stays put.
+- Scroll bar colours were read as `#AARRGGBB` and looked olive; they use `rgba()` now.
 - The editor find widget overflowed a half-width editor with wider fonts; it now shrinks
   to fit, up to 480 px.
 

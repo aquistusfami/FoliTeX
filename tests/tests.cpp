@@ -1,4 +1,6 @@
 #include "window.h"
+#include <QToolButton>
+#include <QTabBar>
 #include <QtTest>
 #include <QTemporaryDir>
 #include <QFile>
@@ -12,6 +14,7 @@
 #include <QScopeGuard>
 #include <QAction>
 #include <QCompleter>
+#include <QStringListModel>
 #include <QTreeWidget>
 #include <QFileSystemModel>
 #include <QClipboard>
@@ -34,6 +37,9 @@ private slots:
     void externalEditsReload();
     void pdfInteraction();
     void findReplace();
+    void tabIndent();
+    void tabScrolling();
+    void packageCompletion();
     void wordWrap();
     void kineticScroll();
     void touchpadPixels();
@@ -100,7 +106,7 @@ void Tests::completionAndSnippets()
     QTest::keyClick(&editor, Qt::Key_Tab);
     QCOMPARE(editor.textCursor().position(), editor.toPlainText().size());
     QTest::keyClick(&editor, Qt::Key_Tab);
-    QCOMPARE(editor.toPlainText(), "\\frac{a}{}    ");
+    QCOMPARE(editor.toPlainText(), "\\frac{a}{}  "); // past the last placeholder Tab pads to column 12
 
     auto *completer = editor.findChild<QCompleter *>();
     QVERIFY(completer);
@@ -239,7 +245,17 @@ void Tests::workspaceTree()
     window.show();
     QVERIFY(QTest::qWaitForWindowExposed(&window));
     QVERIFY(!window.filesView()->isVisible());
-    window.openWorkspace(dir.path());
+    window.openWorkspace(dir.path() + "/"); // a trailing slash still names the root folder row
+    QVERIFY(window.filesView()->isVisible());
+    auto *rootRow = window.findChild<QToolButton *>("rootButton");
+    QVERIFY(rootRow);
+    QCOMPARE(rootRow->text(), QFileInfo(dir.path()).fileName());
+    int rootTop = rootRow->mapTo(&window, QPoint()).y();
+    rootRow->click(); // collapses the tree, like VS Code's root folder row
+    QVERIFY(!window.filesView()->isVisible());
+    QTest::qWait(50); // let the layout settle
+    QCOMPARE(rootRow->mapTo(&window, QPoint()).y(), rootTop); // the row stays where it was
+    rootRow->click();
     QVERIFY(window.filesView()->isVisible());
     QVERIFY(window.windowTitle().contains("Folitex"));
     auto *model = qobject_cast<QFileSystemModel *>(window.filesView()->model());
@@ -254,6 +270,18 @@ void Tests::workspaceTree()
     QCOMPARE(window.currentEditor()->property("path").toString(), QFileInfo(dir.filePath("main.tex")).absoluteFilePath());
     QCOMPARE(window.filesView()->currentIndex(), main);
     QVERIFY(window.windowTitle().contains(QFileInfo(dir.path()).fileName()));
+
+    // Two tabs named main.tex show their distinguishing folder, dimmed, after the name.
+    write(dir.filePath("chapters/main.tex"), "two");
+    QVERIFY(window.openSource(dir.filePath("chapters/main.tex")));
+    auto *tabBar = window.findChild<QTabWidget *>()->tabBar();
+    auto hint = [&](int index) { auto *label = qobject_cast<QLabel *>(tabBar->tabButton(index, QTabBar::RightSide)); return label ? label->text() : QString(); };
+    QCOMPARE(tabBar->count(), 2);
+    QCOMPARE(hint(0), QFileInfo(dir.path()).fileName());
+    QCOMPARE(hint(1), "chapters");
+    qobject_cast<QToolButton *>(tabBar->tabButton(1, QTabBar::LeftSide))->click();
+    QCOMPARE(tabBar->count(), 1);
+    QCOMPARE(hint(0), QString()); // no longer ambiguous
 }
 
 void Tests::externalEditsReload()
@@ -345,6 +373,81 @@ void Tests::pdfInteraction()
     QCOMPARE(matches.last().at(1).toInt(), 0);
 }
 
+void Tests::packageCompletion()
+{
+    Editor editor;
+    editor.show();
+    auto *completer = editor.findChild<QCompleter *>();
+    auto offered = [&](const QString &text)
+    {
+        editor.setPlainText(text);
+        editor.moveCursor(QTextCursor::End);
+        QTest::keyClick(&editor, Qt::Key_Space, Qt::ControlModifier);
+        return static_cast<QStringListModel *>(completer->model())->stringList();
+    };
+    // Curated words appear only once the package is loaded.
+    QVERIFY(!offered("\\documentclass{article}\n\\q").contains("\\qty{•}{•}"));
+    QVERIFY(offered("\\documentclass{article}\n\\usepackage{amsmath,siunitx}\n\\q").contains("\\qty{•}{•}"));
+    QVERIFY(offered("\\documentclass{beamer}\n\\begin{").contains("alertblock{•}"));
+    // Packages without curated data contribute their \newcommand-style definitions.
+    if (QStandardPaths::findExecutable("kpsewhich").isEmpty()) QSKIP("TeX Live is not installed");
+    QStringList cancel = offered("\\usepackage{cancel}\n\\canc");
+    QVERIFY(std::any_of(cancel.cbegin(), cancel.cend(), [](const QString &word) { return word.startsWith("\\cancelto"); }));
+}
+
+void Tests::tabScrolling()
+{
+    QTemporaryDir dir;
+    Window window;
+    window.resize(900, 600);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    for (int i = 0; i < 8; ++i)
+    {
+        QString path = dir.filePath(QString("chapter-with-a-long-name-%1.tex").arg(i));
+        write(path, "x");
+        QVERIFY(window.openSource(path));
+    }
+    auto *bar = window.findChild<QTabWidget *>()->tabBar();
+    // Names stay whole; the bar is scrolled so the newest (current) tab is visible.
+    QVERIFY(bar->findChild<QToolButton *>("ScrollRightButton"));
+    QTRY_VERIFY(bar->tabRect(0).x() < 0);
+    QVERIFY(bar->tabRect(bar->currentIndex()).right() <= bar->width());
+    int before = bar->tabRect(0).x();
+    QPointF inside(bar->width() / 2.0, bar->height() / 2.0);
+    QWheelEvent up(inside, bar->mapToGlobal(inside), {}, QPoint(0, 360), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(bar, &up);
+    QTRY_VERIFY(bar->tabRect(0).x() > before);
+    QCOMPARE(bar->currentIndex(), 7); // the wheel scrolls, it does not switch tabs
+}
+
+void Tests::tabIndent()
+{
+    Editor editor;
+    editor.setPlainText("a\n  b\n\nc");
+    editor.moveCursor(QTextCursor::Start);
+    editor.moveCursor(QTextCursor::End, QTextCursor::KeepAnchor);
+    QTest::keyClick(&editor, Qt::Key_Tab);
+    QCOMPARE(editor.toPlainText(), "    a\n      b\n\n    c"); // empty lines stay empty
+    QVERIFY(editor.textCursor().hasSelection());
+    QTest::keyClick(&editor, Qt::Key_Backtab, Qt::ShiftModifier);
+    QCOMPARE(editor.toPlainText(), "a\n  b\n\nc");
+    QTest::keyClick(&editor, Qt::Key_Backtab, Qt::ShiftModifier);
+    QCOMPARE(editor.toPlainText(), "a\nb\n\nc");
+    editor.undo();
+    QCOMPARE(editor.toPlainText(), "a\n  b\n\nc"); // one undo step per Shift+Tab
+    // Caret only: Tab pads to the next multiple of four, Shift+Tab outdents the line.
+    editor.setPlainText("ab");
+    editor.moveCursor(QTextCursor::End);
+    QTest::keyClick(&editor, Qt::Key_Tab);
+    QCOMPARE(editor.toPlainText(), "ab  ");
+    editor.setPlainText("\t\tx");
+    editor.moveCursor(QTextCursor::End);
+    QTest::keyClick(&editor, Qt::Key_Backtab, Qt::ShiftModifier);
+    QCOMPARE(editor.toPlainText(), "\tx");
+    QCOMPARE(editor.textCursor().positionInBlock(), 2);
+}
+
 void Tests::findReplace()
 {
     Editor editor;
@@ -419,6 +522,52 @@ void Tests::wordWrap()
     QVERIFY(window.currentEditor() != first && window.currentEditor()->wordWrap());
     wrap->trigger();
     QVERIFY(!first->wordWrap() && !window.currentEditor()->wordWrap());
+    // Ctrl+J opens the build log under the editor only, not under the PDF.
+    QAction *logAction = nullptr;
+    for (auto *action : window.actions()) if (action->shortcut() == QKeySequence("Ctrl+J")) logAction = action;
+    QVERIFY(logAction);
+    logAction->trigger();
+    auto *log = window.findChild<QPlainTextEdit *>();
+    QTRY_VERIFY(log && log->isVisible() && log->width() > 0);
+    auto *editorTabs = window.findChild<QTabWidget *>();
+    int logLeft = log->mapTo(&window, QPoint()).x(), tabsLeft = editorTabs->mapTo(&window, QPoint()).x();
+    QCOMPARE(logLeft, tabsLeft);
+    QCOMPARE(log->width(), editorTabs->width());
+    QVERIFY(log->mapTo(&window, QPoint()).y() > editorTabs->mapTo(&window, QPoint()).y() + editorTabs->height() - 1);
+    logAction->trigger();
+    // Each tab has its own close button (VS Code style), which closes that tab.
+    auto *tabs = window.findChild<QTabWidget *>();
+    int count = tabs->count();
+    auto *close = qobject_cast<QToolButton *>(tabs->tabBar()->tabButton(count - 1, QTabBar::LeftSide));
+    QVERIFY(close);
+    close->click();
+    QCOMPARE(tabs->count(), count - 1);
+
+    // Wrapped lines continue under the first non-blank character.
+    Editor indented;
+    indented.resize(320, 400);
+    indented.setWordWrap(true);
+    indented.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&indented));
+    QString text = "    " + QString("word ").repeated(40);
+    indented.setPlainText(text);
+    double space = QFontMetricsF(indented.font()).horizontalAdvance(' ');
+    auto margin = [&](int block) { return indented.document()->findBlockByNumber(block).blockFormat().leftMargin(); };
+    QTRY_VERIFY(qAbs(margin(0) - 4 * space) < 0.5);
+    QTRY_VERIFY(indented.document()->firstBlock().layout()->lineCount() > 1);
+    auto *layout = indented.document()->firstBlock().layout();
+    QVERIFY(qAbs(layout->lineAt(1).x() - layout->lineAt(0).x() - 4 * space) < 0.5);
+    QCOMPARE(indented.toPlainText(), text);
+    QVERIFY(!indented.document()->isModified());
+    QVERIFY(!indented.document()->isUndoAvailable());
+    indented.moveCursor(QTextCursor::End);
+    QTest::keyClick(&indented, Qt::Key_Return); // auto-indent keeps four spaces
+    QTest::keyClicks(&indented, "  x");
+    QTRY_VERIFY(qAbs(margin(1) - 6 * space) < 0.5);
+    while (indented.document()->isUndoAvailable()) indented.undo();
+    QCOMPARE(indented.toPlainText(), text);
+    QTRY_VERIFY(qAbs(margin(0) - 4 * space) < 0.5);
+    QVERIFY(!indented.document()->isModified());
 }
 
 void Tests::kineticScroll()

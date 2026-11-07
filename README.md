@@ -21,8 +21,11 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
 - Context-aware completion (Ctrl+Space, or automatically while typing):
   ~300 LaTeX/amsmath commands with snippet placeholders (Tab jumps to the next one),
   environments with automatic `\end{…}`, `\ref` labels and `\cite` keys from your
-  document, your own `\newcommand`s, and package/class names from the installed TeX Live.
-- Word wrap (Alt+Z or right-click → Word Wrap).
+  document, your own `\newcommand`s, package/class names from the installed TeX Live, and
+  the commands of the packages you load (curated for ~45 common packages, read from the
+  `.sty` for the rest).
+- Word wrap (Alt+Z or right-click → Word Wrap); wrapped lines stay aligned with their
+  line's indentation.
 - Files edited by another program — another editor or an AI coding agent — reload
   silently while the tab has no unsaved edits; the cursor stays put and Ctrl+Z undoes
   the external change. Unsaved edits are never overwritten.
@@ -167,6 +170,7 @@ Keyboard shortcuts follow TeXstudio where TeXstudio documents them.
 | Ctrl+Shift+L / Ctrl+Shift+R | `\left` / `\right` |
 | Ctrl+Shift+I / Ctrl+E | `\item` / insert an environment |
 | Alt+Return | Close the last open environment or brace |
+| Tab / Shift+Tab | Indent / outdent the selected lines |
 | Ctrl+/ | Toggle comment |
 | Alt+Z | Toggle word wrap |
 | Ctrl+F / F3 / Shift+F3 / Ctrl+G | Find (in the PDF when it has focus) / next / previous / go to line |
