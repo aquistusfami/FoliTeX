@@ -7,7 +7,7 @@ Qt 6 Widgets and Poppler. It aims to start fast, stay light on memory, render PD
 sharply at any display scale and scroll smoothly — while covering the everyday
 LaTeX workflow: edit, build, preview, jump between source and PDF.
 
-![Folitex 0.4 editing a LaTeX paper next to its PDF, with word wrap and the explorer open](docs/screenshot.png)
+![Folitex 0.5 editing a LaTeX paper next to its PDF, with word wrap, the explorer and a successful build](docs/screenshot.png)
 
 > Folitex was previously developed as **TeXLite**. Its behaviour was informed by
 > studying TeXstudio and VS Code; it contains no code from either project and is
