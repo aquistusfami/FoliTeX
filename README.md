@@ -7,7 +7,7 @@ Qt 6 Widgets and Poppler. It aims to start fast, stay light on memory, render PD
 sharply at any display scale and scroll smoothly — while covering the everyday
 LaTeX workflow: edit, build, preview, jump between source and PDF.
 
-![Folitex editing a LaTeX file next to its PDF](docs/screenshot.png)
+![Folitex 0.4 editing a LaTeX paper next to its PDF, with word wrap and the explorer open](docs/screenshot.png)
 
 > Folitex was previously developed as **TeXLite**. Its behaviour was informed by
 > studying TeXstudio and VS Code; it contains no code from either project and is
@@ -26,6 +26,10 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
   `.sty` for the rest).
 - Word wrap (Alt+Z or right-click → Word Wrap); wrapped lines stay aligned with their
   line's indentation.
+- VS Code-style find and replace over the editor (Ctrl+F, Ctrl+H): match case, whole word,
+  match counter, Replace All as one undo step.
+- Tab / Shift+Tab indent and outdent the selected lines; TeXstudio's insert shortcuts
+  (`\textbf` Ctrl+B, `\emph` Ctrl+Shift+E, `\frac` Alt+Shift+F, …) plus `\underline` Ctrl+U.
 - Files edited by another program — another editor or an AI coding agent — reload
   silently while the tab has no unsaved edits; the cursor stays put and Ctrl+Z undoes
   the external change. Unsaved edits are never overwritten.
@@ -35,15 +39,18 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
 - One-key asynchronous builds through `latexmk` with pdfLaTeX, LuaLaTeX or XeLaTeX;
   `% !TeX root = …` for multi-file projects; output goes to `.folitex-build/`.
 - Two-way SyncTeX: F7 jumps from the source to the PDF, Ctrl+click in the PDF jumps back.
-- PDF viewer: continuous pages, text search, select and copy text, clickable links,
-  zoom, page jump, automatic reload after each build, right-click menu with Jump to Source.
+- PDF viewer: continuous pages, text search (Ctrl+F in the PDF), select and copy text,
+  clickable links, zoom, page jump, automatic reload after each build, right-click menu
+  with Jump to Source.
 - Background rendering at the display's native pixel density with a bounded image
   cache; image-heavy pages render in a single Poppler call (≈7× faster than small tiles).
 
-**Workspace**
-- Open a folder as a workspace (Ctrl+K Ctrl+O) to browse TeX/BibTeX/PDF files.
+**Workspace and interface**
+- Open a folder as a workspace (Ctrl+K Ctrl+O) to browse TeX/BibTeX/PDF files, with
+  file-type icons and a collapsible root folder.
 - Outline of sections, labels, included files and TODOs; click to jump.
-- Minimal dark interface with File / Edit / Insert / Build / View menus.
+- Dark interface modelled on VS Code: rounded panels, flat tabs that scroll sideways and
+  name the folder when two files share a name, the build log (Ctrl+J) under the editor.
 
 ## Installing on Linux
 
