@@ -17,6 +17,7 @@
 #include <QShortcut>
 #include <QCloseEvent>
 #include <QMouseEvent>
+#include <QKeyEvent>
 #include <QWheelEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -128,6 +129,75 @@ QString BuildRunner::pdfPath(const QString &source)
     return info.absolutePath() + "/.folitex-build/" + info.completeBaseName() + ".pdf";
 }
 
+QList<Problem> BuildRunner::parseLog(const QString &log, const QString &directory)
+{
+    static const QRegularExpression error(R"(^(\.{0,2}/[^:]*|[^:\s]+\.(?:tex|ltx|sty|cls|bbl)):(\d+): (.*)$)");
+    static const QRegularExpression context(R"(^l\.\d+ (.*)$)");
+    static const QRegularExpression warning(R"(^(?:LaTeX|Package (\S+)|Class (\S+)) Warning: (.*)$)");
+    static const QRegularExpression inputLine(R"(on input line (\d+))");
+    static const QRegularExpression box(R"(^((?:Over|Under)full \\[hv]box \([^)]*\))(?:.*? lines? (\d+))?)");
+    QString base = QDir(directory).absolutePath() + '/';
+    // "(" + path in the log opens a file and ")" closes it; other parentheses are pushed as "".
+    QStringList files;
+    QString root;
+    auto current = [&]
+    {
+        for (auto it = files.crbegin(); it != files.crend(); ++it)
+            if (it->startsWith(base)) return *it; // packages report against the document that loads them
+        return root;
+    };
+    QList<Problem> problems;
+    auto add = [&](const Problem &problem)
+    {
+        for (const auto &known : problems)
+            if (known.file == problem.file && known.line == problem.line && known.message == problem.message) return;
+        if (!problem.file.isEmpty()) problems << problem;
+    };
+    const QStringList lines = log.split('\n');
+    for (int i = 0; i < lines.size(); ++i)
+    {
+        const QString text = lines[i].trimmed();
+        QRegularExpressionMatch match;
+        if ((match = error.match(text)).hasMatch())
+        {
+            Problem problem{QDir::cleanPath(QDir(directory).absoluteFilePath(match.captured(1))), match.captured(2).toInt(), true, match.captured(3).trimmed()};
+            // TeX shows the offending source on the "l.<line>" line that follows.
+            for (int j = i + 1; j < lines.size() && j <= i + 40 && !error.match(lines[j]).hasMatch(); ++j)
+                if (auto source = context.match(lines[j]); source.hasMatch())
+                {
+                    if (QString code = source.captured(1).trimmed(); !code.isEmpty()) problem.message += "  " + code;
+                    break;
+                }
+            add(problem);
+        }
+        else if ((match = warning.match(text)).hasMatch())
+        {
+            QString package = match.hasCaptured(1) ? match.captured(1) : match.captured(2);
+            QString message = match.captured(3);
+            // Package warnings continue on lines that start with "(package)".
+            while (!package.isEmpty() && i + 1 < lines.size() && lines[i + 1].startsWith('(' + package + ')'))
+                message += ' ' + lines[++i].mid(package.size() + 2).trimmed();
+            auto at = inputLine.match(message);
+            add({current(), at.hasMatch() ? at.captured(1).toInt() : 0, false, (package.isEmpty() ? "" : package + ": ") + message.simplified()});
+        }
+        else if ((match = box.match(text)).hasMatch())
+            add({current(), match.captured(2).toInt(), false, match.captured(1)});
+        for (int at = 0; at < text.size(); ++at)
+        {
+            if (text[at] == ')' && !files.isEmpty()) files.removeLast();
+            if (text[at] != '(') continue;
+            int end = at + 1;
+            while (end < text.size() && !text[end].isSpace() && text[end] != '(' && text[end] != ')') ++end;
+            QString name = text.mid(at + 1, end - at - 1);
+            QString path = name.isEmpty() ? QString() : QDir::cleanPath(QDir(directory).absoluteFilePath(name));
+            bool file = !path.isEmpty() && QFileInfo(path).isFile();
+            files << (file ? path : QString());
+            if (file && root.isEmpty() && path.startsWith(base)) root = path;
+        }
+    }
+    return problems;
+}
+
 bool BuildRunner::start(const QString &source, const QString &engine)
 {
     if (running()) return false;
@@ -141,6 +211,12 @@ bool BuildRunner::start(const QString &source, const QString &engine)
     }
     m_pdf = pdfPath(root);
     m_process.setWorkingDirectory(QFileInfo(root).absolutePath());
+    // Unwrapped log lines (TeX folds at 79 characters by default), so messages parse whole.
+    auto environment = QProcessEnvironment::systemEnvironment();
+    environment.insert("max_print_line", "10000");
+    environment.insert("error_line", "254");
+    environment.insert("half_error_line", "238");
+    m_process.setProcessEnvironment(environment);
     QString flag = engine == "LuaLaTeX" ? "-lualatex" : engine == "XeLaTeX" ? "-xelatex" : "-pdf";
     // Arguments are passed directly, so spaces, Unicode and shell metacharacters stay filenames.
     m_process.start("latexmk", {flag, "-interaction=nonstopmode", "-file-line-error", "-synctex=1", "-outdir=.folitex-build", "./" + QFileInfo(root).fileName()});
@@ -262,9 +338,11 @@ Window::Window() : m_runner(this)
     auto *layout = new QVBoxLayout(central);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
-    auto *bar = new QHBoxLayout;
-    bar->setContentsMargins(8, 4, 8, 4);
+    m_topBar = new QWidget;
+    auto *bar = new QHBoxLayout(m_topBar);
+    bar->setContentsMargins(8, 2, 8, 0);
     auto *menuBar = new QMenuBar;
+    m_menuBar = menuBar;
     menuBar->setNativeMenuBar(false);
     QMenu *menu = menuBar->addMenu("&File");
     auto add = [this, &menu](const QString &title, const QKeySequence &keys, auto handler)
@@ -366,13 +444,23 @@ Window::Window() : m_runner(this)
     menu = menuBar->addMenu("&Build");
     add("Build / stop", QKeySequence("F5"), [this] { build(); })->setShortcuts({QKeySequence("F5"), QKeySequence("F6")});
     add("Source → PDF", QKeySequence("F7"), [this] { forwardSync(); });
+    add("Next problem", QKeySequence("F8"), [this] { if (!m_problems.isEmpty()) goToProblem((m_problemIndex + 1) % m_problems.size()); });
+    add("Previous problem", QKeySequence("Shift+F8"), [this]
+    {
+        if (!m_problems.isEmpty()) goToProblem((m_problemIndex - 1 + m_problems.size()) % m_problems.size());
+    });
     menu = menuBar->addMenu("&View");
     add("Toggle side bar", QKeySequence("Ctrl+Shift+O"), [this] { showSide(m_outlineButton->isChecked() ? m_outline : m_files); });
     add("Toggle PDF", QKeySequence("Ctrl+\\"), [this] { m_pdfPane->setVisible(!m_pdfPane->isVisible()); });
-    add("Toggle log", QKeySequence("Ctrl+J"), [this] { m_log->setVisible(!m_log->isVisible()); });
+    add("Toggle panel", QKeySequence("Ctrl+J"), [this] { m_panel->setVisible(!m_panel->isVisible()); });
     menu->addSeparator();
     m_wrapAction = add("Word wrap", QKeySequence("Alt+Z"), [this](bool on) { setWordWrap(on); });
     m_wrapAction->setCheckable(true);
+    // Like VS Code's menuBarVisibility "toggle": hidden, a lone Alt shows it until used.
+    m_menuBarAction = add("Menu bar", QKeySequence(), [this](bool on) { setMenuBarShown(on); });
+    m_menuBarAction->setCheckable(true);
+    m_menuBarAction->setChecked(true);
+    connect(menuBar, &QMenuBar::triggered, this, [this] { if (!m_menuBarShown) m_topBar->hide(); });
     menu->addSeparator();
     add("Zoom in PDF", QKeySequence::ZoomIn, [this] { m_pdf->setZoom(m_pdf->zoom() * 1.25); })->setShortcuts({QKeySequence("Ctrl+="), QKeySequence::ZoomIn});
     add("Zoom out PDF", QKeySequence::ZoomOut, [this] { m_pdf->setZoom(m_pdf->zoom() / 1.25); });
@@ -394,6 +482,26 @@ Window::Window() : m_runner(this)
     connect(m_build, &QPushButton::clicked, this, &Window::build);
     m_pdf = new PdfView;
     m_status = new QLabel("Ready");
+    // VS Code's problem counters: click to open the Problems panel.
+    auto counter = [this](const char *svg, const char *color, const QString &tip)
+    {
+        auto *button = new QToolButton;
+        button->setObjectName("problemCount");
+        button->setIcon(QIcon(svgPixmap(svg, color, 14)));
+        button->setIconSize(QSize(14, 14));
+        button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        button->setToolTip(tip);
+        button->hide(); // until the first build
+        connect(button, &QToolButton::clicked, this, [this]
+        {
+            m_panel->setCurrentWidget(m_problemsView);
+            m_panel->show();
+        });
+        statusBar()->addWidget(button);
+        return button;
+    };
+    m_errorCount = counter(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M5.8 5.8l4.4 4.4m0-4.4l-4.4 4.4"/></svg>)", "#F14C4C", "Errors · F8");
+    m_warningCount = counter(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3.2m0 1.6v.1"/></svg>)", "#CCA700", "Warnings");
     statusBar()->addWidget(m_status, 1);
     m_engine = new QComboBox;
     m_engine->addItems({"pdfLaTeX", "LuaLaTeX", "XeLaTeX"});
@@ -486,7 +594,7 @@ Window::Window() : m_runner(this)
     pdfLayout->addWidget(m_pdfFindBar);
     pdfLayout->addWidget(m_pdf);
     statusBar()->setSizeGripEnabled(false);
-    layout->addLayout(bar);
+    layout->addWidget(m_topBar);
     m_tabs = new QTabWidget;
     m_tabs->setObjectName("editorTabs");
     m_tabs->setAttribute(Qt::WA_StyledBackground); // otherwise the corner beside the tabs shows the window gap colour
@@ -713,11 +821,76 @@ Window::Window() : m_runner(this)
     m_log->setReadOnly(true);
     m_log->setMaximumBlockCount(1500);
     m_log->setFont(QFont("monospace", 10));
-    m_log->hide();
+    m_problemsView = new QTreeWidget;
+    m_problemsView->setObjectName("problems");
+    m_problemsView->setHeaderHidden(true);
+    m_problemsView->setIndentation(16);
+    m_problemsView->setFrameShape(QFrame::NoFrame);
+    connect(m_problemsView, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item)
+    {
+        if (item->data(0, Qt::UserRole).isValid()) goToProblem(item->data(0, Qt::UserRole).toInt());
+        else item->setExpanded(!item->isExpanded());
+    });
+    m_panel = new QTabWidget;
+    m_panel->setObjectName("bottomPanel");
+    m_panel->setAttribute(Qt::WA_StyledBackground); // its corner (filter, buttons) would show the window gap colour
+    m_panel->setDocumentMode(true);
+    m_panel->tabBar()->setDrawBase(false);
+    m_panel->addTab(m_problemsView, "Problems");
+    m_panel->addTab(m_log, "Output");
+    m_panel->hide();
+    // VS Code's panel header: filter, collapse all, maximize and close on the right of the tabs.
+    auto *panelActions = new QWidget;
+    auto *panelLayout = new QHBoxLayout(panelActions);
+    panelLayout->setContentsMargins(0, 0, 6, 0);
+    panelLayout->setSpacing(2);
+    auto *filter = new QLineEdit;
+    filter->setObjectName("problemFilter");
+    filter->setPlaceholderText("Filter (e.g. text, main.tex)");
+    filter->setFixedWidth(220);
+    filter->setClearButtonEnabled(true);
+    connect(filter, &QLineEdit::textChanged, this, [this](const QString &text)
+    {
+        for (int i = 0; i < m_problemsView->topLevelItemCount(); ++i)
+        {
+            auto *group = m_problemsView->topLevelItem(i);
+            bool fileMatches = group->text(0).contains(text, Qt::CaseInsensitive);
+            int shown = 0;
+            for (int j = 0; j < group->childCount(); ++j)
+            {
+                bool match = fileMatches || group->child(j)->text(0).contains(text, Qt::CaseInsensitive);
+                group->child(j)->setHidden(!match);
+                shown += match;
+            }
+            group->setHidden(group->childCount() && !shown);
+        }
+    });
+    auto panelButton = [&](const char *svg, const QString &tip)
+    {
+        auto *button = new QToolButton;
+        button->setObjectName("panelAction");
+        button->setIcon(QIcon(svgPixmap(svg, "#ADB7C4", 16)));
+        button->setToolTip(tip);
+        panelLayout->addWidget(button);
+        return button;
+    };
+    panelLayout->addWidget(filter);
+    auto *collapse = panelButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.5 8h5"/></svg>)", "Collapse All");
+    connect(collapse, &QToolButton::clicked, m_problemsView, &QTreeWidget::collapseAll);
+    auto *maximize = panelButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><path d="M4 10l4-4 4 4"/></svg>)", "Maximize Panel Size");
+    connect(maximize, &QToolButton::clicked, this, [this, maximize]
+    {
+        m_tabs->setVisible(!m_tabs->isVisible());
+        maximize->setToolTip(m_tabs->isVisible() ? "Maximize Panel Size" : "Restore Panel Size");
+    });
+    auto *closePanel = panelButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M4.5 4.5l7 7m0-7l-7 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg>)", "Close Panel · Ctrl+J");
+    connect(closePanel, &QToolButton::clicked, this, [this] { m_panel->hide(); m_tabs->show(); });
+    m_panel->setCornerWidget(panelActions, Qt::TopRightCorner);
+    setProblems({}, {}); // shows the empty-state line
     // The build log opens under the editor only, like VS Code's panel inside the editor column.
     m_vertical = new QSplitter(Qt::Vertical);
     m_vertical->addWidget(m_tabs);
-    m_vertical->addWidget(m_log);
+    m_vertical->addWidget(m_panel);
     m_vertical->setStretchFactor(0, 1);
     m_vertical->setStretchFactor(1, 0);
     m_vertical->setChildrenCollapsible(false);
@@ -731,14 +904,15 @@ Window::Window() : m_runner(this)
     m_horizontal->setStretchFactor(2, 1);
     m_horizontal->setChildrenCollapsible(false);
     for (auto *splitter : {m_horizontal, m_vertical}) splitter->setHandleWidth(6);
-    for (QWidget *panel : std::initializer_list<QWidget *>{m_side, m_tabs, m_log, m_pdfPane}) new RoundedCorners(panel);
+    for (QWidget *panel : std::initializer_list<QWidget *>{m_side, m_tabs, m_panel, m_pdfPane}) new RoundedCorners(panel);
     auto *row = new QHBoxLayout;
     row->setSpacing(0);
     row->addWidget(activity);
-    row->setContentsMargins(0, 0, 6, 6);
+    row->setContentsMargins(0, 6, 6, 6);
     row->addWidget(m_horizontal);
     layout->addLayout(row);
     setCentralWidget(central);
+    qApp->installEventFilter(this); // last: eventFilter uses the widgets built above
     connect(&m_runner, &BuildRunner::output, this, [this](const QString &text)
     {
         auto cursor = m_log->textCursor(); cursor.movePosition(QTextCursor::End); cursor.insertText(text);
@@ -748,9 +922,29 @@ Window::Window() : m_runner(this)
     {
         m_build->setIcon(m_runIcon);
         m_build->setToolTip("Build · F5");
-        m_status->setText(success ? "Build succeeded" : "Build failed — see log");
+        // The log sits next to the PDF; one older than this build belongs to an earlier run.
+        QList<Problem> problems;
+        QString directory = QFileInfo(QFileInfo(pdf).absolutePath()).absolutePath();
+        QFile log(QFileInfo(pdf).absolutePath() + '/' + QFileInfo(pdf).completeBaseName() + ".log");
+        if (!pdf.isEmpty() && QFileInfo(log).lastModified() >= m_buildStarted.addSecs(-1) && log.open(QIODevice::ReadOnly))
+            problems = BuildRunner::parseLog(QString::fromUtf8(log.readAll()), directory);
+        setProblems(problems, directory);
+        m_errorCount->show();
+        m_warningCount->show();
+        int errors = int(std::count_if(problems.cbegin(), problems.cend(), [](const Problem &p) { return p.error; }));
+        int warnings = int(problems.size()) - errors;
+        if (success)
+            m_status->setText(warnings ? QString("Build succeeded · %1 warning%2").arg(warnings).arg(warnings == 1 ? "" : "s") : "Build succeeded");
+        else
+            m_status->setText(errors ? QString("Build failed: %1 error%2 · F8 to go to the first").arg(errors).arg(errors == 1 ? "" : "s")
+                                     : "Build failed — see Output");
         if (success) openPdf(pdf);
-        else { m_log->show(); m_vertical->setSizes({580, 170}); }
+        else
+        {
+            m_panel->setCurrentWidget(errors ? static_cast<QWidget *>(m_problemsView) : m_log);
+            m_panel->show();
+            m_vertical->setSizes({580, 170});
+        }
     });
     connect(m_pdf, &PdfView::documentReady, this, [this](int pages)
     {
@@ -928,13 +1122,26 @@ Editor *Window::newDocument(const QString &text)
     editor->setPlainText(text);
     editor->document()->setModified(false);
     int index = m_tabs->addTab(editor, "Untitled");
+    // × and the file icon share one left widget, so their spacing is ours, not QTabBar's.
+    auto *lead = new QWidget;
+    auto *leadLayout = new QHBoxLayout(lead);
+    leadLayout->setContentsMargins(6, 0, 0, 0);
+    leadLayout->setSpacing(4);
     auto *close = new QToolButton;
     close->setObjectName("tabClose");
+    close->setIconSize(QSize(12, 12));
     close->setAutoRaise(true);
     close->setToolTip("Close · Ctrl+W");
     connect(close, &QToolButton::clicked, this, [this, editor] { closeTab(m_tabs->indexOf(editor)); });
-    m_tabs->tabBar()->setTabButton(index, QTabBar::LeftSide, close); // left, as tabActionLocation: left
+    auto *icon = new QLabel;
+    icon->setAttribute(Qt::WA_TransparentForMouseEvents); // clicks select the tab
+    leadLayout->addWidget(close);
+    leadLayout->addWidget(icon);
+    icon->setFixedSize(16, 16);
+    lead->setFixedSize(lead->sizeHint()); // QTabBar would squeeze it otherwise
+    m_tabs->tabBar()->setTabButton(index, QTabBar::LeftSide, lead); // left, as tabActionLocation: left
     m_tabs->setCurrentWidget(editor);
+    setTabTitle(editor); // icon and × now that the left widget exists
     connect(editor->document(), &QTextDocument::modificationChanged, this, [this, editor] { setTabTitle(editor); });
     editor->setWordWrap(m_wordWrap);
     connect(editor, &Editor::wordWrapToggled, this, &Window::setWordWrap);
@@ -957,7 +1164,9 @@ void Window::setTabTitle(Editor *editor)
     if (index >= 0)
     {
         m_tabs->setTabText(index, name);
-        m_tabs->setTabIcon(index, fileIcon(path.isEmpty() ? "Untitled.tex" : name));
+        // addTab() reports the new tab as current before its left widget exists.
+        if (QWidget *lead = m_tabs->tabBar()->tabButton(index, QTabBar::LeftSide))
+            lead->findChild<QLabel *>()->setPixmap(fileIcon(path.isEmpty() ? "Untitled.tex" : name).pixmap(16, 16));
         m_tabs->setTabToolTip(index, path);
     }
     updateTabButtons();
@@ -989,6 +1198,7 @@ bool Window::openSource(const QString &path)
     editor->setProperty("mtime", info.lastModified());
     editor->document()->setModified(false);
     setTabTitle(editor);
+    applyProblems(editor);
     watchSource(absolute);
     return true;
 }
@@ -1071,6 +1281,7 @@ void Window::build()
         if (!path.isEmpty() && !root.isEmpty() && BuildRunner::rootFile(path) == root && !save(other)) return;
     }
     m_log->clear();
+    m_buildStarted = QDateTime::currentDateTime();
     m_status->setText("Building…"); m_build->setIcon(m_stopIcon); m_build->setToolTip("Stop build · F5");
     m_runner.start(editor->property("path").toString(), m_engine->currentText());
 }
@@ -1174,7 +1385,8 @@ void Window::updateTabButtons()
     static const QPixmap blank = [] { QPixmap pixmap(48, 48); pixmap.fill(Qt::transparent); pixmap.setDevicePixelRatio(3); return pixmap; }();
     for (int i = 0; i < m_tabs->count(); ++i)
     {
-        auto *button = qobject_cast<QToolButton *>(m_tabs->tabBar()->tabButton(i, QTabBar::LeftSide));
+        QWidget *lead = m_tabs->tabBar()->tabButton(i, QTabBar::LeftSide);
+        auto *button = lead ? lead->findChild<QToolButton *>() : nullptr;
         auto *editor = qobject_cast<Editor *>(m_tabs->widget(i));
         if (!button || !editor) continue;
         bool modified = editor->document()->isModified();
@@ -1220,8 +1432,93 @@ void Window::updateTabHints()
     }
 }
 
+// The application-wide filter must go before child widgets are destroyed: their events would
+// otherwise reach eventFilter, which uses those children.
+Window::~Window() { qApp->removeEventFilter(this); }
+
+// Problems panel, grouped by file like VS Code's; editors get squiggles for their file.
+void Window::setProblems(const QList<Problem> &problems, const QString &directory)
+{
+    static const QIcon errorIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M5.8 5.8l4.4 4.4m0-4.4l-4.4 4.4"/></svg>)", "#F14C4C", 16));
+    static const QIcon warningIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3.2m0 1.6v.1"/></svg>)", "#CCA700", 16));
+    m_problems = problems;
+    m_problemIndex = -1;
+    m_problemsView->clear();
+    QHash<QString, QTreeWidgetItem *> groups;
+    for (int i = 0; i < problems.size(); ++i)
+    {
+        const Problem &problem = problems[i];
+        auto *&group = groups[problem.file];
+        if (!group)
+        {
+            group = new QTreeWidgetItem(m_problemsView);
+            group->setIcon(0, fileIcon(problem.file));
+            group->setToolTip(0, problem.file);
+            group->setData(0, Qt::UserRole + 1, 0);
+        }
+        group->setData(0, Qt::UserRole + 1, group->data(0, Qt::UserRole + 1).toInt() + 1);
+        QString folder = QDir(directory).relativeFilePath(QFileInfo(problem.file).absolutePath());
+        group->setText(0, QFileInfo(problem.file).fileName() + (folder == "." ? "" : "  " + folder)
+            + QString("  (%1)").arg(group->data(0, Qt::UserRole + 1).toInt()));
+        auto *item = new QTreeWidgetItem(group);
+        item->setIcon(0, problem.error ? errorIcon : warningIcon);
+        item->setText(0, problem.message + (problem.line > 0 ? QString("  [Ln %1]").arg(problem.line) : QString()));
+        item->setToolTip(0, problem.message);
+        item->setData(0, Qt::UserRole, i);
+    }
+    if (problems.isEmpty())
+        (new QTreeWidgetItem(m_problemsView, {"No problems have been detected in the workspace."}))->setFlags(Qt::NoItemFlags);
+    m_problemsView->expandAll();
+    int errors = int(std::count_if(problems.cbegin(), problems.cend(), [](const Problem &p) { return p.error; }));
+    m_errorCount->setText(QString::number(errors));
+    m_warningCount->setText(QString::number(problems.size() - errors));
+    for (int i = 0; i < m_tabs->count(); ++i)
+        if (auto *editor = qobject_cast<Editor *>(m_tabs->widget(i))) applyProblems(editor);
+}
+
+void Window::applyProblems(Editor *editor)
+{
+    QString path = editor->property("path").toString();
+    QList<std::tuple<int, bool, QString>> marks;
+    for (const auto &problem : m_problems)
+        if (!path.isEmpty() && problem.line > 0 && QFileInfo(problem.file) == QFileInfo(path))
+            marks.append({problem.line, problem.error, problem.message});
+    editor->setProblems(marks);
+}
+
+void Window::goToProblem(int index)
+{
+    if (index < 0 || index >= m_problems.size()) return;
+    m_problemIndex = index;
+    const Problem &problem = m_problems[index];
+    if (!openSource(problem.file)) return;
+    auto *editor = currentEditor();
+    if (problem.line > 0) editor->goToLine(problem.line);
+    editor->setFocus();
+    for (QTreeWidgetItemIterator it(m_problemsView); *it; ++it)
+        if ((*it)->data(0, Qt::UserRole).isValid() && (*it)->data(0, Qt::UserRole).toInt() == index) m_problemsView->setCurrentItem(*it);
+    m_status->setText(QString("%1 %2 of %3: %4").arg(problem.error ? "Error" : "Warning").arg(index + 1).arg(m_problems.size()).arg(problem.message));
+}
+
+void Window::setMenuBarShown(bool on)
+{
+    m_menuBarShown = on;
+    m_topBar->setVisible(on);
+    m_menuBarAction->setChecked(on);
+}
+
 bool Window::eventFilter(QObject *object, QEvent *event)
 {
+    // A lone Alt (pressed and released with no other key) shows or hides a hidden menu bar.
+    // The application filter may see one key event per receiver, hence the flag reset.
+    // Keys bound to shortcuts (Alt+Z) arrive only as ShortcutOverride, never as KeyPress.
+    if (event->type() == QEvent::KeyPress || event->type() == QEvent::ShortcutOverride)
+        m_altAlone = static_cast<QKeyEvent *>(event)->key() == Qt::Key_Alt;
+    else if (event->type() == QEvent::KeyRelease && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Alt && m_altAlone)
+    {
+        m_altAlone = false;
+        if (!m_menuBarShown) m_topBar->setVisible(!m_topBar->isVisible());
+    }
     // Any wheel or touchpad movement over the tabs scrolls them; Qt would switch tabs instead.
     if (object == m_tabs->tabBar() && event->type() == QEvent::Wheel)
     {

@@ -175,6 +175,10 @@ PdfView::PdfView(QWidget *parent) : QAbstractScrollArea(parent), m_renderer(new 
     m_dpiTimer.setSingleShot(true);
     m_dpiTimer.setInterval(150);
     connect(&m_dpiTimer, &QTimer::timeout, this, &PdfView::applyDpi);
+    // Pages far away are re-rendered on demand, so their tiles need not stay in memory.
+    m_trimTimer.setSingleShot(true);
+    m_trimTimer.setInterval(5000);
+    connect(&m_trimTimer, &QTimer::timeout, this, &PdfView::trimCache);
     // A wheel notch moves about a tenth of a page; touchpad travel is doubled for long documents.
     new SmoothScroll(this, 120, 2);
     connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this] { emit pageChanged(currentPage()); });
@@ -287,7 +291,26 @@ void PdfView::applyDpi()
     m_previousDpi1000 = m_dpi1000;
     m_dpi1000 = m_targetDpi1000;
     m_pending.clear();
+    m_trimTimer.start();
     viewport()->update();
+}
+
+void PdfView::trimCache()
+{
+    QRectF visible(offset(), QSizeF(viewport()->size()));
+    int first = -1, last = -1;
+    for (int i = 0; i < m_pages.size(); ++i)
+        if (m_pages[i].intersects(visible)) { if (first < 0) first = i; last = i; }
+    for (const QString &key : m_cache.keys())
+    {
+        // Key: generation/page/dpi1000/x/y (Tile::key).
+        QStringList parts = key.split('/');
+        int page = parts.value(1).toInt();
+        bool keep = parts.value(0).toInt() == m_generation && parts.value(2).toInt() == m_dpi1000
+            && first >= 0 && page >= first - 2 && page <= last + 2;
+        if (!keep) m_cache.remove(key);
+    }
+    m_previousDpi1000 = 0; // its tiles are gone; nothing to draw scaled any more
 }
 
 void PdfView::paintEvent(QPaintEvent *)
@@ -399,9 +422,14 @@ void PdfView::resizeEvent(QResizeEvent *event)
 {
     QAbstractScrollArea::resizeEvent(event);
     layoutPages();
+    m_trimTimer.start();
 }
 
-void PdfView::scrollContentsBy(int, int) { viewport()->update(); }
+void PdfView::scrollContentsBy(int, int)
+{
+    m_trimTimer.start();
+    viewport()->update();
+}
 
 bool PdfView::event(QEvent *event)
 {

@@ -3,6 +3,7 @@
 #include <QPropertyAnimation>
 #include <QSyntaxHighlighter>
 #include <QCompleter>
+#include <tuple>
 #include <QTimer>
 
 class SmoothScroll : public QObject
@@ -60,12 +61,15 @@ public:
     static QString closingFor(const QString &textBefore);
     static QList<OutlineEntry> outline(const QString &text);
     void setWordWrap(bool on);
+    // Build problems shown as squiggles with a tooltip: (1-based line, is error, message).
+    void setProblems(const QList<std::tuple<int, bool, QString>> &problems);
     bool wordWrap() const { return lineWrapMode() != QTextEdit::NoWrap; }
 signals:
     void wordWrapToggled(bool on);
 protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
+    bool viewportEvent(QEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
     bool eventFilter(QObject *object, QEvent *event) override;
 private:
@@ -88,6 +92,13 @@ private:
     int gutterWidth() const;
     void paintGutter();
     void updateHighlights();
+    struct Mark
+    {
+        QTextCursor cursor; // at the start of the line, so it moves with edits above it
+        bool error;
+        QString message;
+    };
+    QList<Mark> m_marks;
     void applyWrapIndent();
     int m_indentFrom = -1; // block range whose wrap indent is pending, -1 when none
     int m_indentTo = -1;

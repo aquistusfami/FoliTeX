@@ -21,7 +21,7 @@ int main(int argc, char **argv)
     QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
     QApplication app(argc, argv);
     app.setApplicationName("Folitex");
-    app.setApplicationVersion("0.4.0");
+    app.setApplicationVersion("0.5.0");
     app.setOrganizationName("Folitex");
     // Wayland app_id must match folitex.desktop so launchers and docks show the right icon.
     app.setDesktopFileName("folitex");
@@ -56,9 +56,9 @@ int main(int argc, char **argv)
         QToolButton::menu-indicator { image:none; width:0; }
         QTabWidget::pane { border:0; }
         QTabBar { background:#16181B; }
-        QTabBar::tab { background:#16181B; color:#8793A2; height:35px; padding:0 8px 0 4px; border:0; border-right:1px solid #22272E; border-bottom:1px solid transparent; }
-        QTabBar::tab:selected { background:#1D2024; color:#D2D7DE; border-bottom-color:#7DA6A0; }
-        QTabBar::tab:hover:!selected { color:#ADB7C4; }
+        QTabBar::tab { background:transparent; color:#8793A2; height:25px; padding:0 10px 0 0; margin:5px 0 5px 4px; border:0; border-radius:5px; }
+        QTabBar::tab:selected { background:#22272E; color:#D2D7DE; }
+        QTabBar::tab:hover:!selected { background:#1D2024; color:#ADB7C4; }
         QSplitter::handle { background:#0E1013; }
         QStatusBar { background:#0E1013; color:#ADB7C4; border:0; min-height:22px; max-height:22px; }
         QStatusBar QLabel { font-size:12px; }
@@ -70,7 +70,8 @@ int main(int argc, char **argv)
         QWidget#findWidget QToolButton#replaceToggle:checked { background:transparent; border:0; }
         QWidget#pdfFindBar { background:#16181B; border-bottom:1px solid #22272E; }
         QWidget#pdfBar QToolButton { min-width:22px; padding:3px 6px; }
-        QTabWidget#editorTabs { background:#16181B; }
+        QTabWidget#editorTabs, QTabWidget#bottomPanel { background:#16181B; }
+        QTreeWidget#problems { background:#16181B; }
         QTabBar::scroller { width:0; }
         QTabBar::tear { image:none; width:0; border:0; }
         QTabBar QToolButton#ScrollLeftButton, QTabBar QToolButton#ScrollRightButton { width:0; border:0; padding:0; }
@@ -93,7 +94,14 @@ int main(int argc, char **argv)
         QTreeView::item { height:22px; }
         QTreeView::branch:has-children:closed { image:url(:/chevron-right.svg); }
         QTreeView::branch:has-children:open { image:url(:/chevron-down.svg); }
-        QToolButton#tabClose { border:0; border-radius:4px; padding:0; margin-right:2px; min-width:20px; max-width:20px; min-height:20px; max-height:20px; }
+        QToolButton#tabClose { border:0; border-radius:4px; padding:0; margin:0; min-width:16px; max-width:16px; min-height:16px; max-height:16px; }
+        QTabWidget#bottomPanel QTabBar::tab { background:transparent; color:#8793A2; height:22px; padding:0 10px;
+                                               margin:6px 0 6px 6px; border:0; border-radius:4px; }
+        QTabWidget#bottomPanel QTabBar::tab:selected { background:#22272E; color:#D2D7DE; }
+        QTabWidget#bottomPanel QTabBar::tab:hover:!selected { color:#D2D7DE; }
+        QToolButton#panelAction { padding:3px; }
+        QLineEdit#problemFilter { padding:2px 6px; }
+        QToolButton#problemCount { padding:0 6px; border-radius:0; }
         QToolButton#tabClose:hover { background:#29333B; }
         QLabel#tabHint { color:#68727F; padding:0 4px 0 0; margin:0; }
         QTreeView::item:hover { background:#20252B; }
@@ -136,8 +144,13 @@ int main(int argc, char **argv)
     Window window;
     window.openWorkspace(QSettings().value("workspace").toString());
     window.setWordWrap(QSettings().value("wordWrap", false).toBool());
+    window.setMenuBarShown(QSettings().value("menuBar", true).toBool());
     // Saved here rather than in Window so tests never touch the user's settings.
-    QObject::connect(&app, &QApplication::aboutToQuit, [&window] { QSettings().setValue("wordWrap", window.wordWrap()); });
+    QObject::connect(&app, &QApplication::aboutToQuit, [&window]
+    {
+        QSettings().setValue("wordWrap", window.wordWrap());
+        QSettings().setValue("menuBar", window.menuBarShown());
+    });
     for (const auto &file : parser.positionalArguments())
     {
         if (file.endsWith(".pdf", Qt::CaseInsensitive)) window.openPdf(QFileInfo(file).absoluteFilePath());

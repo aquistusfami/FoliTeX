@@ -1,6 +1,7 @@
 #include "window.h"
 #include <QToolButton>
 #include <QTabBar>
+#include <QMenuBar>
 #include <QtTest>
 #include <QTemporaryDir>
 #include <QFile>
@@ -16,6 +17,7 @@
 #include <QCompleter>
 #include <QStringListModel>
 #include <QTreeWidget>
+#include <QLineEdit>
 #include <QFileSystemModel>
 #include <QClipboard>
 #include <QFontDatabase>
@@ -40,6 +42,8 @@ private slots:
     void tabIndent();
     void tabScrolling();
     void packageCompletion();
+    void menuBarToggle();
+    void buildProblems();
     void wordWrap();
     void kineticScroll();
     void touchpadPixels();
@@ -274,12 +278,12 @@ void Tests::workspaceTree()
     // Two tabs named main.tex show their distinguishing folder, dimmed, after the name.
     write(dir.filePath("chapters/main.tex"), "two");
     QVERIFY(window.openSource(dir.filePath("chapters/main.tex")));
-    auto *tabBar = window.findChild<QTabWidget *>()->tabBar();
+    auto *tabBar = window.findChild<QTabWidget *>("editorTabs")->tabBar();
     auto hint = [&](int index) { auto *label = qobject_cast<QLabel *>(tabBar->tabButton(index, QTabBar::RightSide)); return label ? label->text() : QString(); };
     QCOMPARE(tabBar->count(), 2);
     QCOMPARE(hint(0), QFileInfo(dir.path()).fileName());
     QCOMPARE(hint(1), "chapters");
-    qobject_cast<QToolButton *>(tabBar->tabButton(1, QTabBar::LeftSide))->click();
+    tabBar->tabButton(1, QTabBar::LeftSide)->findChild<QToolButton *>()->click();
     QCOMPARE(tabBar->count(), 1);
     QCOMPARE(hint(0), QString()); // no longer ambiguous
 }
@@ -373,6 +377,113 @@ void Tests::pdfInteraction()
     QCOMPARE(matches.last().at(1).toInt(), 0);
 }
 
+void Tests::buildProblems()
+{
+    if (QStandardPaths::findExecutable("latexmk").isEmpty()) QSKIP("latexmk unavailable");
+    QTemporaryDir dir;
+    QVERIFY(QDir(dir.path()).mkpath("sections"));
+    QString main = dir.filePath("main.tex"), results = dir.filePath("sections/results.tex");
+    write(main, "\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\nSee Table~\\ref{tab:missing}.\n"
+                "\\input{sections/results}\n\\noindent\\hbox to 2\\textwidth{Too wide}\n\\end{document}\n");
+    write(results, "Results here.\n\\tabel{oops}\nMore text.\n\\begin{itemize}\n\\end{enumerate}\n");
+    BuildRunner runner;
+    QSignalSpy done(&runner, &BuildRunner::finished);
+    QVERIFY(runner.start(main, "pdfLaTeX"));
+    QTRY_COMPARE_WITH_TIMEOUT(done.size(), 1, 60000);
+    QVERIFY(!done.at(0).at(0).toBool());
+    QFile logFile(dir.filePath(".folitex-build/main.log"));
+    QVERIFY(logFile.open(QIODevice::ReadOnly));
+    auto problems = BuildRunner::parseLog(QString::fromUtf8(logFile.readAll()), dir.path());
+    auto find = [&](const QString &file, int line, bool error, const QString &text)
+    {
+        return std::any_of(problems.cbegin(), problems.cend(), [&](const Problem &p)
+        {
+            return QFileInfo(p.file) == QFileInfo(file) && p.line == line && p.error == error && p.message.contains(text);
+        });
+    };
+    QString all;
+    for (const auto &p : problems) all += QString("%1:%2 %3 %4\n").arg(p.file).arg(p.line).arg(p.error ? "E" : "W", p.message);
+    QVERIFY2(find(results, 2, true, "Undefined control sequence.  \\tabel"), qPrintable(all));
+    QVERIFY2(find(results, 5, true, "ended by \\end{enumerate}"), qPrintable(all));
+    // Warnings carry no file name; it comes from the file the log has open.
+    QVERIFY2(find(main, 4, false, "Reference `tab:missing'"), qPrintable(all));
+    QVERIFY2(find(main, 6, false, "Overfull \\hbox (345.0pt too wide)"), qPrintable(all));
+    QVERIFY2(std::none_of(problems.cbegin(), problems.cend(), [](const Problem &p) { return !p.file.startsWith(QDir::tempPath()); }), qPrintable(all));
+
+    // In the window: a failed build opens Problems, F8 walks them, editors show squiggles.
+    Window window;
+    window.resize(1100, 700);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QVERIFY(window.openSource(main));
+    QAction *build = nullptr, *next = nullptr;
+    for (auto *action : window.actions())
+    {
+        if (action->shortcut() == QKeySequence("F5")) build = action;
+        if (action->shortcut() == QKeySequence("F8")) next = action;
+    }
+    QVERIFY(build && next);
+    build->trigger();
+    auto *panel = window.findChild<QTabWidget *>("bottomPanel");
+    auto *view = window.findChild<QTreeWidget *>("problems");
+    QTRY_VERIFY_WITH_TIMEOUT(panel->isVisible() && view->topLevelItemCount() == 2, 60000);
+    QCOMPARE(panel->currentWidget(), view);
+    // The filter keeps matching problems (or every problem of a matching file).
+    auto *filter = window.findChild<QLineEdit *>("problemFilter");
+    filter->setText("tabel");
+    int shown = 0;
+    for (QTreeWidgetItemIterator it(view); *it; ++it) shown += (*it)->parent() && !(*it)->isHidden();
+    QCOMPARE(shown, 1);
+    filter->clear();
+    next->trigger(); // the first problem: main.tex line 4 (warnings and errors keep log order)
+    QCOMPARE(window.currentEditor()->property("path").toString(), QFileInfo(main).absoluteFilePath());
+    QCOMPARE(window.currentEditor()->lineNumber(), 4);
+    next->trigger();
+    QCOMPARE(QFileInfo(window.currentEditor()->property("path").toString()), QFileInfo(results));
+    QCOMPARE(window.currentEditor()->lineNumber(), 2);
+    auto squiggles = window.currentEditor()->extraSelections();
+    QVERIFY(std::any_of(squiggles.cbegin(), squiggles.cend(), [](const QTextEdit::ExtraSelection &s)
+    {
+        return s.format.underlineStyle() == QTextCharFormat::WaveUnderline && s.cursor.block().blockNumber() == 1;
+    }));
+}
+
+void Tests::menuBarToggle()
+{
+    Window window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    auto *menuBar = window.findChild<QMenuBar *>();
+    QAction *toggle = nullptr;
+    for (auto *action : window.actions()) if (action->text() == "Menu bar") toggle = action;
+    QVERIFY(menuBar && toggle && toggle->isCheckable() && toggle->isChecked());
+    QVERIFY(menuBar->isVisible());
+    toggle->trigger();
+    QVERIFY(!window.menuBarShown() && !menuBar->isVisible());
+    auto *editor = window.currentEditor();
+    editor->setFocus();
+    // A lone Alt reveals the hidden menu bar, a second one hides it again.
+    QTest::keyPress(editor, Qt::Key_Alt);
+    QTest::keyRelease(editor, Qt::Key_Alt);
+    QVERIFY(menuBar->isVisible());
+    QTest::keyPress(editor, Qt::Key_Alt);
+    QTest::keyRelease(editor, Qt::Key_Alt);
+    QVERIFY(!menuBar->isVisible());
+    // Alt as a modifier (Alt+Z) does not reveal it.
+    QTest::keyPress(editor, Qt::Key_Alt);
+    QTest::keyClick(editor, Qt::Key_Z, Qt::AltModifier);
+    QTest::keyRelease(editor, Qt::Key_Alt);
+    QVERIFY(!menuBar->isVisible());
+    // Using an item of the revealed menu hides it again.
+    QTest::keyPress(editor, Qt::Key_Alt);
+    QTest::keyRelease(editor, Qt::Key_Alt);
+    QVERIFY(menuBar->isVisible());
+    emit menuBar->triggered(toggle);
+    QVERIFY(!menuBar->isVisible());
+    window.setMenuBarShown(true);
+    QVERIFY(menuBar->isVisible() && toggle->isChecked());
+}
+
 void Tests::packageCompletion()
 {
     Editor editor;
@@ -408,7 +519,7 @@ void Tests::tabScrolling()
         write(path, "x");
         QVERIFY(window.openSource(path));
     }
-    auto *bar = window.findChild<QTabWidget *>()->tabBar();
+    auto *bar = window.findChild<QTabWidget *>("editorTabs")->tabBar();
     // Names stay whole; the bar is scrolled so the newest (current) tab is visible.
     QVERIFY(bar->findChild<QToolButton *>("ScrollRightButton"));
     QTRY_VERIFY(bar->tabRect(0).x() < 0);
@@ -527,18 +638,18 @@ void Tests::wordWrap()
     for (auto *action : window.actions()) if (action->shortcut() == QKeySequence("Ctrl+J")) logAction = action;
     QVERIFY(logAction);
     logAction->trigger();
-    auto *log = window.findChild<QPlainTextEdit *>();
+    auto *log = window.findChild<QTabWidget *>("bottomPanel");
     QTRY_VERIFY(log && log->isVisible() && log->width() > 0);
-    auto *editorTabs = window.findChild<QTabWidget *>();
+    auto *editorTabs = window.findChild<QTabWidget *>("editorTabs");
     int logLeft = log->mapTo(&window, QPoint()).x(), tabsLeft = editorTabs->mapTo(&window, QPoint()).x();
     QCOMPARE(logLeft, tabsLeft);
     QCOMPARE(log->width(), editorTabs->width());
     QVERIFY(log->mapTo(&window, QPoint()).y() > editorTabs->mapTo(&window, QPoint()).y() + editorTabs->height() - 1);
     logAction->trigger();
     // Each tab has its own close button (VS Code style), which closes that tab.
-    auto *tabs = window.findChild<QTabWidget *>();
+    auto *tabs = window.findChild<QTabWidget *>("editorTabs");
     int count = tabs->count();
-    auto *close = qobject_cast<QToolButton *>(tabs->tabBar()->tabButton(count - 1, QTabBar::LeftSide));
+    auto *close = tabs->tabBar()->tabButton(count - 1, QTabBar::LeftSide)->findChild<QToolButton *>();
     QVERIFY(close);
     close->click();
     QCOMPARE(tabs->count(), count - 1);
@@ -669,6 +780,28 @@ void Tests::tiledPdf()
     viewer.open(path);
     QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 2, 5000);
     QCOMPARE(viewer.pageCount(), 8);
+
+    // Visit every page, then return to page 1: trimming keeps only pages near the view.
+    viewer.setZoom(1);
+    QTest::qWait(250); // the DPI change settles
+    // repaint() queues the visible tiles; renderingIdle() alone is true before the first paint.
+    auto show = [&](int page)
+    {
+        viewer.goToPage(page);
+        viewer.viewport()->repaint();
+        QTRY_VERIFY_WITH_TIMEOUT(viewer.renderingIdle(), 5000);
+    };
+    for (int page = 1; page <= 8; ++page) show(page);
+    show(1);
+    int full = viewer.cachedTiles();
+    viewer.trimCache();
+    QVERIFY2(viewer.cachedTiles() < full, qPrintable(QString("%1 tiles before, %2 after").arg(full).arg(viewer.cachedTiles())));
+    QVERIFY(viewer.cachedTiles() > 0);
+    // What is on screen survives: repainting needs no new render.
+    quint64 requests = viewer.renderRequests();
+    viewer.viewport()->repaint();
+    QTest::qWait(100);
+    QCOMPARE(viewer.renderRequests(), requests);
 }
 
 void Tests::compilation()

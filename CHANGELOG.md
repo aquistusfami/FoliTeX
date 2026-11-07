@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.5.0 — 2026-11-07
+
+### Added
+- Problems panel (next to Output, under the editor): errors from `-file-line-error`,
+  LaTeX/package warnings and over/underfull boxes, grouped by file. Clicking one or F8 /
+  Shift+F8 opens the file at the line; editors show squiggles with the message on hover;
+  the status bar counts errors and warnings. Logs are no longer folded at 79 characters.
+  The panel looks like VS Code's: pill tabs, a filter box, Collapse All, Maximize and Close.
+- View → Menu Bar hides the File / Edit / … menu bar (remembered between sessions); a lone
+  Alt then shows it until an item is used or Alt is pressed again, like VS Code's
+  `menuBarVisibility: toggle`.
+
+### Changed
+- Five seconds after scrolling or zooming stops, the PDF view drops cached pages more than
+  two pages away and tiles of old zoom levels. Scrolling a 15-page image-heavy PDF and
+  pausing: cache 20.1 → 5.4 MiB, RSS 84.6 → 69.8 MiB; the visible page is not re-rendered.
+- Editor tabs are pills, like the panel's: the active tab gets a rounded light background
+  instead of an underline; × and the file icon sit closer together.
+- The panel header and Problems list share the editor background.
+
+### Fixed
+- The first tab showed no × until hovered.
+
 ## 0.4.0 — 2026-11-07
 
 ### Added

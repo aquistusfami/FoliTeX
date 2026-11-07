@@ -35,6 +35,8 @@ Folitex is a single Qt Widgets application. All logic lives in a static library,
   longer match are dropped. Tiles go into a cost-bounded `QCache` (32–128 MiB).
 - Zoom and resize change the resolution only 150 ms after the last step; meanwhile
   existing tiles are drawn scaled, so the page never flashes white.
+- Five seconds after the last scroll, zoom or resize, tiles more than two pages from the
+  view and tiles of other resolutions are dropped (`trimCache`).
 - Text boxes and links for the 8 most recently used pages are cached for selection,
   copy, link following and cursor shapes.
 
@@ -51,6 +53,10 @@ Folitex is a single Qt Widgets application. All logic lives in a static library,
   tabs with unsaved edits are left alone. The watch is re-added after each change
   because atomic writers replace the file's inode.
 - SyncTeX runs the `synctex` command-line tool asynchronously in both directions.
+- After a build, `BuildRunner::parseLog` reads the `.log` (run with `max_print_line=10000`, so
+  lines are not folded). Errors carry `file:line:`; warnings are assigned to the project file
+  the log has open, tracked through its `(` / `)` file markers. Editors keep problem lines as
+  `QTextCursor`s, so squiggles follow edits.
 - The side bar (Files, Outline), activity bar, menus and the PDF toolbar are plain
   widgets; colours and metrics come from the application style sheet in `main.cpp`.
 

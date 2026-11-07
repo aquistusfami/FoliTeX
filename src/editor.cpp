@@ -20,6 +20,8 @@
 #include <future>
 #include "completiondata.h"
 #include <QMenu>
+#include <QHelpEvent>
+#include <QToolTip>
 #include <QAbstractTextDocumentLayout>
 #include <algorithm>
 #include <cmath>
@@ -728,7 +730,48 @@ void Editor::updateHighlights()
         }
         break;
     }
+    for (const auto &mark : m_marks)
+    {
+        QTextBlock block = mark.cursor.block();
+        QTextEdit::ExtraSelection squiggle;
+        squiggle.format.setUnderlineStyle(QTextCharFormat::WaveUnderline);
+        squiggle.format.setUnderlineColor(mark.error ? QColor("#F14C4C") : QColor("#CCA700"));
+        squiggle.cursor = QTextCursor(block);
+        // From the first non-blank character to the end of the line, as VS Code underlines.
+        int indent = 0;
+        while (indent < block.text().size() && block.text()[indent].isSpace()) ++indent;
+        squiggle.cursor.setPosition(block.position() + indent);
+        squiggle.cursor.setPosition(block.position() + block.length() - 1, QTextCursor::KeepAnchor);
+        selections << squiggle;
+    }
     setExtraSelections(selections);
+}
+
+void Editor::setProblems(const QList<std::tuple<int, bool, QString>> &problems)
+{
+    m_marks.clear();
+    for (const auto &[line, error, message] : problems)
+    {
+        QTextBlock block = document()->findBlockByNumber(line - 1);
+        if (block.isValid()) m_marks << Mark{QTextCursor(block), error, message};
+    }
+    updateHighlights();
+}
+
+bool Editor::viewportEvent(QEvent *event)
+{
+    if (event->type() == QEvent::ToolTip)
+    {
+        auto *help = static_cast<QHelpEvent *>(event);
+        int block = cursorForPosition(help->pos()).blockNumber();
+        QStringList messages;
+        for (const auto &mark : m_marks)
+            if (mark.cursor.blockNumber() == block) messages << (mark.error ? "Error: " : "Warning: ") + mark.message;
+        if (messages.isEmpty()) QToolTip::hideText();
+        else QToolTip::showText(help->globalPos(), messages.join('\n'), viewport());
+        return true;
+    }
+    return QTextEdit::viewportEvent(event);
 }
 
 QList<OutlineEntry> Editor::outline(const QString &text)

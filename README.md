@@ -39,6 +39,9 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
 - One-key asynchronous builds through `latexmk` with pdfLaTeX, LuaLaTeX or XeLaTeX;
   `% !TeX root = …` for multi-file projects; output goes to `.folitex-build/`.
 - Two-way SyncTeX: F7 jumps from the source to the PDF, Ctrl+click in the PDF jumps back.
+- Problems panel after each build: errors with file and line, LaTeX and package warnings,
+  over/underfull boxes. Click one (or F8 / Shift+F8) to jump there; the lines get red or
+  yellow squiggles with the message on hover, and the status bar counts them.
 - PDF viewer: continuous pages, text search (Ctrl+F in the PDF), select and copy text,
   clickable links, zoom, page jump, automatic reload after each build, right-click menu
   with Jump to Source.
@@ -157,7 +160,7 @@ Reports of Windows builds — working or not — are welcome as issues.
 ## Using Folitex
 
 Open a `.tex` file, press **F5** to build, and the PDF appears on the right. Settings
-(workspace folder, word wrap) are stored in `~/.config/Folitex/`.
+(workspace folder, word wrap, menu bar) are stored in `~/.config/Folitex/`.
 
 Keyboard shortcuts follow TeXstudio where TeXstudio documents them.
 
@@ -165,6 +168,7 @@ Keyboard shortcuts follow TeXstudio where TeXstudio documents them.
 |---|---|
 | F5 / F6 | Build, or stop a running build |
 | F7 | Show the cursor position in the PDF |
+| F8 / Shift+F8 | Next / previous build problem |
 | Ctrl+click in the PDF | Jump to the matching source line |
 | Ctrl+Space | Complete command, environment, package, `\ref` or `\cite` |
 | Tab / Ctrl+Right / Ctrl+Left | Next / next / previous snippet placeholder |
@@ -186,7 +190,8 @@ Keyboard shortcuts follow TeXstudio where TeXstudio documents them.
 | Ctrl+K Ctrl+O | Open a workspace folder |
 | Ctrl+PgDown / Ctrl+PgUp | Next / previous tab |
 | Ctrl+= / Ctrl+- / Ctrl+0 | Zoom the PDF in / out / fit width |
-| Ctrl+\ / Ctrl+J / Ctrl+Shift+O | Toggle PDF / build log / side bar |
+| Ctrl+\ / Ctrl+J / Ctrl+Shift+O | Toggle PDF / Problems and Output panel / side bar |
+| View → Menu Bar, then Alt | Hide the menu bar; a lone Alt shows it until an item is used |
 
 In the PDF, drag to select text, double-click to select a word, Ctrl+C to copy and
 click links to follow them. Right-click for Jump to Source, Copy, zoom and Open in
@@ -194,11 +199,10 @@ External Viewer.
 
 ## Status and limitations
 
-Folitex is young (0.4) and deliberately smaller than TeXstudio. Known gaps:
+Folitex is young (0.5) and deliberately smaller than TeXstudio. Known gaps:
 
 - No spell or grammar checking, no full LaTeX parser, no session restore.
 - The engine comes from the combo box; `% !TeX program` is not read yet.
-- Build errors are shown as the raw log, not as a clickable list.
 - The outline covers the current file only; `\cite` completion reads `.bib` files
   next to open sources.
 - PDF text selection stays within one page.

@@ -84,6 +84,8 @@ public:
     int cacheLimitKiB() const { return m_cache.maxCost(); }
     bool renderingIdle() const { return !m_busy && m_pending.isEmpty(); }
     quint64 renderRequests() const { return m_renderRequests; }
+    // Drops cached tiles more than two pages from the view, and tiles of other resolutions.
+    void trimCache();
     static double renderDensity(QSize viewport, double nativeDpr);
     double zoom() const { return m_zoom; }
     QString selectedText() const;
@@ -142,6 +144,7 @@ private:
     int m_targetDpi1000 = 72000;
     int m_previousDpi1000 = 0;
     QTimer m_dpiTimer;
+    QTimer m_trimTimer; // trims the cache once scrolling and zooming pause
     double m_zoom = 1;
     double m_scale = 1;
     double m_renderDpr = 1;

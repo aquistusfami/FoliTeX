@@ -10,6 +10,7 @@ class QTreeView;
 class QFileSystemModel;
 class QStackedWidget;
 class QToolButton;
+class QMenuBar;
 #include <QProcess>
 #include <QTabWidget>
 #include <QPlainTextEdit>
@@ -20,8 +21,18 @@ class QToolButton;
 #include <QSpinBox>
 #include <QFileSystemWatcher>
 #include <QTimer>
+#include <QDateTime>
 #include "editor.h"
 #include "pdfview.h"
+
+// One error or warning from a LaTeX log, located in a source file of the project.
+struct Problem
+{
+    QString file; // absolute path
+    int line = 0; // 1-based; 0 when the log gives no line
+    bool error = true;
+    QString message;
+};
 
 class BuildRunner : public QObject
 {
@@ -34,6 +45,8 @@ public:
     void stop();
     static QString rootFile(const QString &source);
     static QString pdfPath(const QString &source);
+    // Errors (file:line: from -file-line-error), LaTeX/package warnings and over/underfull boxes.
+    static QList<Problem> parseLog(const QString &log, const QString &directory);
 signals:
     void output(QString text);
     void finished(bool success, QString pdf);
@@ -50,6 +63,7 @@ class Window : public QMainWindow
     Q_OBJECT
 public:
     explicit Window();
+    ~Window() override;
     bool openSource(const QString &path);
     void openPdf(const QString &path);
     Editor *currentEditor() const;
@@ -59,6 +73,8 @@ public:
     void openWorkspace(const QString &directory);
     void setWordWrap(bool on);
     bool wordWrap() const { return m_wordWrap; }
+    void setMenuBarShown(bool on);
+    bool menuBarShown() const { return m_menuBarShown; }
     QString workspace() const { return m_workspace; }
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -70,6 +86,9 @@ private:
     void placeFind();
     void updateTabButtons();
     void updateTabHints();
+    void setProblems(const QList<Problem> &problems, const QString &directory);
+    void applyProblems(Editor *editor);
+    void goToProblem(int index);
     Editor *newDocument(const QString &text = {});
     bool save(Editor *editor, bool saveAs = false);
     bool mayClose(Editor *editor);
@@ -88,11 +107,23 @@ private:
     PdfView *m_pdf;
     QWidget *m_pdfPane;
     QPlainTextEdit *m_log;
+    QTabWidget *m_panel; // Problems and Output under the editor
+    QTreeWidget *m_problemsView;
+    QToolButton *m_errorCount;
+    QToolButton *m_warningCount;
+    QList<Problem> m_problems;
+    int m_problemIndex = -1;
+    QDateTime m_buildStarted;
     QComboBox *m_engine;
     QPushButton *m_build;
     QIcon m_runIcon;
     QAction *m_wrapAction;
     bool m_wordWrap = false;
+    QWidget *m_topBar;
+    QMenuBar *m_menuBar;
+    QAction *m_menuBarAction;
+    bool m_menuBarShown = true;
+    bool m_altAlone = false;
     QIcon m_stopIcon;
     QLabel *m_status;
     QLabel *m_pageCount;
