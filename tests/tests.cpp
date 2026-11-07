@@ -41,6 +41,7 @@ private slots:
     void findReplace();
     void tabIndent();
     void continueList();
+    void inverseSearchWord();
     void undoWithWrapIndent();
     void tabScrolling();
     void packageCompletion();
@@ -383,6 +384,10 @@ void Tests::pdfInteraction()
     QCOMPARE(source.size(), 1);
     QCOMPARE(source.first().at(0).toInt(), 1);
     QVERIFY(qAbs(source.first().at(2).toDouble() - 405) < 2);
+    QStringList words = source.first().at(3).toStringList();
+    int clicked = source.first().at(4).toInt();
+    QVERIFY(clicked >= 0 && clicked < words.size());
+    QCOMPARE(words.join(' '), "Hello wide world");
     QSignalSpy matches(&viewer, &PdfView::matchChanged);
     viewer.find("WIDE", false, Poppler::Page::IgnoreCase);
     QTRY_COMPARE_WITH_TIMEOUT(matches.size(), 1, 5000);
@@ -630,6 +635,30 @@ void Tests::undoWithWrapIndent()
     }
     // Margins match the text again after the round trip.
     QTRY_VERIFY(qAbs(editor.document()->firstBlock().blockFormat().leftMargin() - 8 * space) < 0.5);
+}
+
+void Tests::inverseSearchWord()
+{
+    // SyncTeX reports \end{frame} (line 7) for every word of a beamer frame.
+    Editor editor;
+    editor.setPlainText("\\begin{frame}{Intro}\n"
+                        "    \\centering Placeholder for ``the part''.\n"
+                        "    Second part here, with the part again.\n"
+                        "\\end{frame}\n"
+                        "\\begin{frame}\n"
+                        "    the part\n"
+                        "\\end{frame}\n");
+    auto at = [&] { return std::pair(editor.textCursor().blockNumber() + 1, editor.textCursor().positionInBlock()); };
+    editor.goToWord(4, {"Placeholder", "for", "\u201cthe", "part\u201d."}, 3);
+    QCOMPARE(at(), std::pair(2, 37)); // "part" next to "Placeholder for the", not the later ones
+    editor.goToWord(4, {"Second", "part", "here,"}, 1);
+    QCOMPARE(at(), std::pair(3, 11));
+    editor.goToWord(4, {"centering"}, 0); // command names are not text
+    QCOMPARE(at(), std::pair(4, 0));
+    editor.goToWord(7, {"the", "part"}, 1); // only inside the frame SyncTeX named
+    QCOMPARE(at(), std::pair(6, 8));
+    editor.goToWord(4, {}, -1);
+    QCOMPARE(at(), std::pair(4, 0));
 }
 
 void Tests::continueList()

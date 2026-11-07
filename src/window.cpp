@@ -1351,17 +1351,17 @@ void Window::forwardSync()
     });
 }
 
-void Window::inverseSync(int page, double x, double y)
+void Window::inverseSync(int page, double x, double y, const QStringList &words, int clicked)
 {
     QString position = QString::number(page) + ':' + QString::number(x) + ':' + QString::number(y) + ':' + m_pdf->path();
-    syncProcess({"edit", "-o", position}, [this](const QString &text)
+    syncProcess({"edit", "-o", position}, [this, words, clicked](const QString &text)
     {
         auto input = QRegularExpression(R"(^Input:(.+)$)", QRegularExpression::MultilineOption).match(text);
         auto line = QRegularExpression(R"(^Line:(\d+))", QRegularExpression::MultilineOption).match(text);
         if (!input.hasMatch() || !line.hasMatch()) return;
         QString path = input.captured(1).trimmed();
         if (QFileInfo(path).isRelative()) path = QDir(QFileInfo(m_pdf->path()).absolutePath()).absoluteFilePath(path);
-        if (openSource(QDir::cleanPath(path))) currentEditor()->goToLine(line.captured(1).toInt());
+        if (openSource(QDir::cleanPath(path))) currentEditor()->goToWord(line.captured(1).toInt(), words, clicked);
     });
 }
 

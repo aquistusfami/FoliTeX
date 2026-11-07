@@ -45,6 +45,9 @@ class Editor : public QTextEdit
 public:
     explicit Editor(QWidget *parent = nullptr);
     void goToLine(int line, int column = 0);
+    // Inverse search: SyncTeX puts everything in a beamer frame on \end{frame}, so find the clicked
+    // PDF word (scored by its neighbours) inside the frame around the line; falls back to the line.
+    void goToWord(int line, const QStringList &words, int clicked);
     int lineNumber() const;
     void toggleComment();
     // Undo/redo one text change; the wrap-indent format steps around it go along (see applyWrapIndent).

@@ -904,6 +904,77 @@ void Editor::contextMenuEvent(QContextMenuEvent *event)
     menu->exec(event->globalPos());
 }
 
+namespace
+{
+struct Token { QString text; int position; };
+
+// Letter/digit runs (marks included for decomposed accents); command names after '\\' are skipped.
+QList<Token> tokens(const QString &text, int offset = 0)
+{
+    QList<Token> result;
+    for (int i = 0; i < text.size();)
+    {
+        auto inWord = [&](int k) { return text[k].isLetterOrNumber() || text[k].isMark(); };
+        if (!inWord(i)) { ++i; continue; }
+        int start = i;
+        while (i < text.size() && inWord(i)) ++i;
+        if (start == 0 || text[start - 1] != '\\') result.append({text.mid(start, i - start), offset + start});
+    }
+    return result;
+}
+
+// "hoá”." -> "hoá", "ﬁle" -> "file": the longest letter run of the PDF word.
+QString key(const QString &word)
+{
+    QString best;
+    for (const auto &token : tokens(word.normalized(QString::NormalizationForm_KC)))
+        if (token.text.size() > best.size()) best = token.text;
+    return best;
+}
+}
+
+void Editor::goToWord(int line, const QStringList &words, int clicked)
+{
+    goToLine(line);
+    if (clicked < 0 || clicked >= words.size()) return;
+    QString target = key(words[clicked]);
+    if (target.isEmpty()) return;
+    // The enclosing frame, or just the line outside frames.
+    const QTextBlock at = textCursor().block();
+    QTextBlock first = at, last = at;
+    for (QTextBlock block = at; block.isValid() && at.blockNumber() - block.blockNumber() < 400; block = block.previous())
+    {
+        if (block.text().contains("\\begin{frame}")) { first = block; break; }
+        if (block != at && block.text().contains("\\end{frame}")) break;
+    }
+    if (first != at || at.text().contains("\\begin{frame}"))
+        for (QTextBlock block = at; block.isValid() && block.blockNumber() - at.blockNumber() < 400; block = block.next())
+            if (block.text().contains("\\end{frame}")) { last = block; break; }
+    QTextCursor range(first);
+    range.setPosition(last.position() + last.length() - 1, QTextCursor::KeepAnchor);
+    QList<Token> source = tokens(range.selectedText().replace(QChar::ParagraphSeparator, '\n'), first.position());
+    int best = -1, bestScore = -1;
+    for (int i = 0; i < source.size(); ++i)
+    {
+        if (source[i].text != target) continue;
+        // A neighbour counts if it sits at the same offset in the source, give or take one token.
+        int score = 0;
+        for (int k = 0; k < words.size(); ++k)
+        {
+            QString word = key(words[k]);
+            int at = i + k - clicked;
+            for (int j = std::max(0, at - 1); k != clicked && !word.isEmpty() && j <= std::min(int(source.size()) - 1, at + 1); ++j)
+                if (source[j].text == word) { ++score; break; }
+        }
+        if (score > bestScore) { bestScore = score; best = i; }
+    }
+    if (best < 0) return;
+    QTextCursor cursor(document());
+    cursor.setPosition(source[best].position);
+    setTextCursor(cursor);
+    ensureCursorVisible();
+}
+
 void Editor::goToLine(int line, int column)
 {
     auto block = document()->findBlockByNumber(std::max(0, line - 1));

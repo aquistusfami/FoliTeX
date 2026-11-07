@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1 — 2026-11-07
+
+### Fixed
+- Jump to Source (Ctrl+click in the PDF) on beamer slides lands on the clicked word instead
+  of `\end{frame}`: SyncTeX reports one line for a whole frame, so FoliTeX now finds the
+  clicked word, scored by its neighbours, inside that frame. Elsewhere it still uses the
+  SyncTeX line.
+
 ## 0.6.0 — 2026-11-07
 
 ### Changed

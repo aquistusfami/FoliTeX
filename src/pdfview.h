@@ -102,7 +102,8 @@ signals:
     void textRequested(int generation, int page);
     void documentReady(int pageCount);
     void loadFailed(QString error);
-    void sourceRequested(int page, double xPoints, double yPoints);
+    // words: the clicked word and its neighbours (empty if the page text is not loaded yet); clicked indexes it.
+    void sourceRequested(int page, double xPoints, double yPoints, QStringList words, int clicked);
     void pageChanged(int page);
     void searchRequested(int generation, QString query, int flags);
     void matchChanged(int index, int count); // count -1: no search
@@ -128,6 +129,7 @@ private:
     int pageAt(QPointF position, QPointF *local = nullptr) const;
     const PdfPageText *pageText(int page);
     int wordAt(const PdfPageText &text, QPointF local, bool nearest) const;
+    void requestSource(int page, QPointF local);
     void followLink(const PdfLink &link);
     void showMatch();
     QThread m_thread;

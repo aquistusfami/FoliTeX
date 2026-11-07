@@ -21,7 +21,7 @@ int main(int argc, char **argv)
     QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
     QApplication app(argc, argv);
     app.setApplicationName("FoliTeX");
-    app.setApplicationVersion("0.6.0");
+    app.setApplicationVersion("0.6.1");
     app.setOrganizationName("Folitex");
     // Wayland app_id must match folitex.desktop so launchers and docks show the right icon.
     app.setDesktopFileName("folitex");

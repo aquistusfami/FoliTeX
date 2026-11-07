@@ -550,6 +550,23 @@ int PdfView::wordAt(const PdfPageText &text, QPointF local, bool nearest) const
     return best;
 }
 
+// shortcut: no context if the page text was never extracted (no hover first); the jump then stays line-level.
+void PdfView::requestSource(int page, QPointF local)
+{
+    QStringList words;
+    int clicked = -1;
+    if (const auto *text = pageText(page))
+    {
+        int i = wordAt(*text, local, false);
+        for (int j = std::max(0, i - 4); i >= 0 && j <= std::min(int(text->words.size()) - 1, i + 4); ++j)
+        {
+            if (j == i) clicked = words.size();
+            words << text->words[j].text;
+        }
+    }
+    emit sourceRequested(page + 1, local.x(), local.y(), words, clicked);
+}
+
 QString PdfView::selectedText() const
 {
     auto *text = m_text.object(m_selectionPage);
@@ -586,7 +603,7 @@ void PdfView::mousePressEvent(QMouseEvent *event)
     int page = pageAt(event->position(), &local);
     if (event->button() != Qt::LeftButton || page < 0) return QAbstractScrollArea::mousePressEvent(event);
     // Ctrl+click is inverse search, as in TeXstudio.
-    if (event->modifiers() & Qt::ControlModifier) { emit sourceRequested(page + 1, local.x(), local.y()); return; }
+    if (event->modifiers() & Qt::ControlModifier) { requestSource(page, local); return; }
     m_pressPage = page;
     m_pressPosition = event->position();
     m_dragging = false;
@@ -661,7 +678,7 @@ void PdfView::contextMenuEvent(QContextMenuEvent *event)
     QPointF local;
     int page = pageAt(event->pos(), &local);
     QMenu menu(this);
-    auto *jump = menu.addAction("Jump to Source\tCtrl+Click", this, [this, page, local] { emit sourceRequested(page + 1, local.x(), local.y()); });
+    auto *jump = menu.addAction("Jump to Source\tCtrl+Click", this, [this, page, local] { requestSource(page, local); });
     jump->setEnabled(page >= 0);
     auto *copy = menu.addAction("Copy", this, &PdfView::copySelection);
     copy->setShortcut(QKeySequence::Copy);

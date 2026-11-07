@@ -97,7 +97,7 @@ private:
     void build();
     void setTabTitle(Editor *editor);
     void forwardSync();
-    void inverseSync(int page, double x, double y);
+    void inverseSync(int page, double x, double y, const QStringList &words, int clicked);
     void reloadSource(Editor *editor);
     void watchSource(const QString &path);
     void refreshOutline();
