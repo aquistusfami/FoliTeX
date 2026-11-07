@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- GitHub Actions: build and tests on Debian 13 and Arch Linux for every push and pull
+  request; pushing a `vX.Y.Z` tag publishes a release with its changelog section.
+
+### Fixed
+- The editor find widget overflowed a half-width editor with wider fonts; it now shrinks
+  to fit, up to 480 px.
+
 ## 0.3.0 — 2026-11-07
 
 ### Added

@@ -1,5 +1,7 @@
 # Folitex
 
+[![CI](https://github.com/aquistusfami/Folitex/actions/workflows/ci.yml/badge.svg)](https://github.com/aquistusfami/Folitex/actions/workflows/ci.yml)
+
 A lean, native LaTeX editor with a built-in PDF viewer, written in C++20 with
 Qt 6 Widgets and Poppler. It aims to start fast, stay light on memory, render PDFs
 sharply at any display scale and scroll smoothly — while covering the everyday
@@ -210,6 +212,11 @@ Issues and pull requests are welcome. Please run the test suite before submittin
 Code style: four-space indentation, braces on their own line, Qt naming. Rendering
 stays off the UI thread and image caches stay bounded. See [AGENTS.md](AGENTS.md) for
 the full guidelines.
+
+CI builds and tests every push and pull request on Debian 13 and Arch Linux. To
+release, set the version in `CMakeLists.txt` and `src/main.cpp`, add a matching
+`## X.Y.Z — date` section to `CHANGELOG.md`, then push an annotated tag `vX.Y.Z`; the
+release workflow reruns CI and publishes a GitHub release with that changelog section.
 
 ## License
 

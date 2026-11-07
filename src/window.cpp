@@ -429,7 +429,7 @@ Window::Window() : m_runner(this)
     m_replaceToggle->setObjectName("replaceToggle");
     m_find = new QLineEdit;
     m_find->setPlaceholderText("Find");
-    m_find->setMinimumWidth(220);
+    m_find->setMinimumWidth(120);
     m_findCase = toolButton("Aa", "Match Case", true);
     m_findWord = toolButton("ab", "Match Whole Word", true);
     m_findCount = new QLabel;
@@ -1025,7 +1025,9 @@ void Window::updateFindCount()
 void Window::placeFind()
 {
     if (!m_findBar->isVisible()) return;
-    m_findBar->adjustSize();
+    // About 480 px like VS Code, narrower when the editor is; the find field absorbs the difference.
+    int width = std::min(std::max(m_findBar->sizeHint().width(), 480), m_tabs->width() - 22);
+    m_findBar->resize(std::max(width, m_findBar->minimumSizeHint().width()), m_findBar->sizeHint().height());
     // Left of the editor's vertical scroll bar, just below the tabs.
     m_findBar->move(std::max(0, m_tabs->width() - m_findBar->width() - 18), m_tabs->tabBar()->height());
     m_findBar->raise();

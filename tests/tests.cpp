@@ -388,7 +388,8 @@ void Tests::findReplace()
     // The widget floats inside the editor area, at its top-right corner.
     QRect editorArea(window.currentEditor()->mapTo(&window, QPoint()), window.currentEditor()->size());
     QRect area(widget->mapTo(&window, QPoint()), widget->size());
-    QVERIFY(editorArea.contains(area));
+    auto describe = [](QRect r) { return QString("(%1,%2 %3x%4)").arg(r.x()).arg(r.y()).arg(r.width()).arg(r.height()); };
+    QVERIFY2(editorArea.contains(area), qPrintable("widget " + describe(area) + " outside editor " + describe(editorArea)));
     QVERIFY(editorArea.right() - area.right() < 40);
     QTest::keyClick(QApplication::focusWidget(), Qt::Key_Escape);
     QVERIFY(!widget->isVisible());

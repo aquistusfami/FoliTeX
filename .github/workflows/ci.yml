@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    # Ubuntu runners ship Qt 6.4; Folitex needs 6.5, so build inside the distributions the README supports.
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Debian 13
+            image: debian:trixie
+            install: |
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential git cmake pkg-config \
+                qt6-base-dev qt6-svg-plugins libpoppler-qt6-dev latexmk texlive-latex-extra texlive-lang-other
+          - name: Arch Linux
+            image: archlinux:latest
+            install: |
+              pacman -Syu --noconfirm --needed base-devel git cmake qt6-base qt6-svg poppler-qt6 \
+                texlive-bin texlive-binextra texlive-latexextra texlive-langother ttf-dejavu
+    steps:
+      # The same packages as the README, so CI also checks the install instructions.
+      - name: Install dependencies
+        run: ${{ matrix.install }}
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+          cmake --build build --parallel
+      - name: Test at 100 %
+        run: ctest --test-dir build --output-on-failure
+      - name: Test at 125 % and 200 %
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          QT_SCALE_FACTOR=1.25 ./build/folitex_tests
+          QT_SCALE_FACTOR=2 ./build/folitex_tests
+      - name: Install
+        run: cmake --install build --prefix "$PWD/stage" && ./stage/bin/folitex --version
+        env:
+          QT_QPA_PLATFORM: offscreen
