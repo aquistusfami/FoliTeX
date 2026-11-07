@@ -226,7 +226,8 @@ Window::Window() : m_runner(this)
         if (path.isEmpty()) return;
         if (path.endsWith(".pdf", Qt::CaseInsensitive)) openPdf(path); else openSource(path);
     });
-    auto *openFolder = add("Open folder…", QKeySequence("Ctrl+Shift+E"), [this]
+    // Ctrl+Shift+E is \emph in TeXstudio, so the folder takes VS Code's Ctrl+K Ctrl+O.
+    auto *openFolder = add("Open folder…", QKeySequence("Ctrl+K, Ctrl+O"), [this]
     {
         QString directory = QFileDialog::getExistingDirectory(this, "Open folder", m_workspace);
         if (directory.isEmpty()) return;
@@ -242,7 +243,7 @@ Window::Window() : m_runner(this)
     add("Redo", QKeySequence::Redo, [this] { if (auto *editor = currentEditor()) editor->redo(); });
     menu->addSeparator();
     add("Find", QKeySequence::Find, [showFind] { showFind(false); });
-    add("Replace", QKeySequence("Ctrl+H"), [showFind] { showFind(true); });
+    add("Replace", QKeySequence("Ctrl+H"), [showFind] { showFind(true); })->setShortcuts({QKeySequence("Ctrl+H"), QKeySequence("Ctrl+R")});
     add("Find next", QKeySequence("F3"), [find] { find(false); });
     add("Find previous", QKeySequence("Shift+F3"), [find] { find(true); });
     add("Go to line…", QKeySequence("Ctrl+G"), [this]
@@ -258,16 +259,30 @@ Window::Window() : m_runner(this)
     menu = menuBar->addMenu("&Insert");
     add("Bold", QKeySequence("Ctrl+B"), insert("\\textbf{\u2022}"));
     add("Italic", QKeySequence("Ctrl+I"), insert("\\textit{\u2022}"));
+    add("Underline", QKeySequence("Ctrl+U"), insert("\\underline{\u2022}"));
+    add("Emphasis", QKeySequence("Ctrl+Shift+E"), insert("\\emph{\u2022}"));
+    add("Typewriter", QKeySequence("Ctrl+Shift+T"), insert("\\texttt{\u2022}"));
+    add("Small caps", QKeySequence("Ctrl+Shift+C"), insert("\\textsc{\u2022}"));
+    add("Sans serif", QKeySequence("Ctrl+Shift+A"), insert("\\textsf{\u2022}"));
+    add("New line \\\\", QKeySequence("Ctrl+Return"), insert("\\\\\n"));
     menu->addSeparator();
     add("Inline math", QKeySequence("Ctrl+Shift+M"), insert("$\u2022$"));
     add("Display math", QKeySequence("Alt+Shift+M"), insert("\\[\n\u2022\n\\]"));
+    add("Equation", QKeySequence("Ctrl+Shift+N"), insert("\\begin{equation}\n\u2022\n\\end{equation}"));
+    add("Subscript", QKeySequence("Ctrl+Shift+D"), insert("_{\u2022}"));
+    add("Superscript", QKeySequence("Ctrl+Shift+U"), insert("^{\u2022}"));
+    add("Fraction \\frac", QKeySequence("Alt+Shift+F"), insert("\\frac{\u2022}{\u2022}"));
+    add("Fraction \\dfrac", QKeySequence("Ctrl+Shift+F"), insert("\\dfrac{\u2022}{\u2022}"));
+    add("Square root", QKeySequence("Ctrl+Shift+Q"), insert("\\sqrt{\u2022}"));
+    add("\\left", QKeySequence("Ctrl+Shift+L"), insert("\\left "));
+    add("\\right", QKeySequence("Ctrl+Shift+R"), insert("\\right "));
     menu->addSeparator();
     add("Item", QKeySequence("Ctrl+Shift+I"), insert("\\item "));
     add("Environment…", QKeySequence("Ctrl+E"), [this] { if (auto *editor = currentEditor()) editor->insertEnvironment(); });
     add("Close environment", QKeySequence("Alt+Return"), [this] { if (auto *editor = currentEditor()) editor->closeEnvironment(); });
     menu = menuBar->addMenu("&Build");
     add("Build / stop", QKeySequence("F5"), [this] { build(); })->setShortcuts({QKeySequence("F5"), QKeySequence("F6")});
-    add("Source → PDF", QKeySequence("F7"), [this] { forwardSync(); })->setShortcuts({QKeySequence("F7"), QKeySequence("Ctrl+Return")});
+    add("Source → PDF", QKeySequence("F7"), [this] { forwardSync(); });
     menu = menuBar->addMenu("&View");
     add("Toggle side bar", QKeySequence("Ctrl+Shift+O"), [this] { showSide(m_outlineButton->isChecked() ? m_outline : m_files); });
     add("Toggle PDF", QKeySequence("Ctrl+\\"), [this] { m_pdfPane->setVisible(!m_pdfPane->isVisible()); });

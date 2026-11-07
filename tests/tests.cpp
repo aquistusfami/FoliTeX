@@ -161,6 +161,22 @@ void Tests::completionAndSnippets()
     QTest::keyClick(source, Qt::Key_Return, Qt::AltModifier);
     QTest::keyClick(source, Qt::Key_Return, Qt::AltModifier);
     QCOMPARE(source->toPlainText(), "\\begin{center}{}\\end{center}");
+    // TeXstudio defaults, plus Ctrl+U for \underline; a selection is wrapped.
+    source->setPlainText("word");
+    source->selectAll();
+    QTest::keyClick(source, Qt::Key_U, Qt::ControlModifier);
+    QCOMPARE(source->toPlainText(), "\\underline{word}");
+    source->clear();
+    QTest::keyClick(source, Qt::Key_E, Qt::ControlModifier | Qt::ShiftModifier);
+    QTest::keyClicks(source, "a");
+    QTest::keyClick(source, Qt::Key_Tab);
+    QTest::keyClick(source, Qt::Key_F, Qt::AltModifier | Qt::ShiftModifier);
+    QTest::keyClicks(source, "1");
+    QTest::keyClick(source, Qt::Key_Tab);
+    QTest::keyClicks(source, "2");
+    QTest::keyClick(source, Qt::Key_Tab);
+    QTest::keyClick(source, Qt::Key_Return, Qt::ControlModifier);
+    QCOMPARE(source->toPlainText(), "\\emph{a}\\frac{1}{2}\\\\\n");
 }
 
 void Tests::editorAidsAndOutline()

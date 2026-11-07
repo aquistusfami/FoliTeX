@@ -7,8 +7,14 @@
   (Case sensitive, Whole words, Enter / Shift+Enter, "3 of 12", all matches highlighted).
 - VS Code-style find widget over the editor (Ctrl+F, Ctrl+H): match case, whole word,
   match counter, Replace and Replace All (one undo step); Escape closes it.
+- TeXstudio's default insert shortcuts: `\emph` Ctrl+Shift+E, `\texttt` Ctrl+Shift+T,
+  `\textsc` Ctrl+Shift+C, `\textsf` Ctrl+Shift+A, `\\` Ctrl+Enter, `equation` Ctrl+Shift+N,
+  `_{}` Ctrl+Shift+D, `^{}` Ctrl+Shift+U, `\frac` Alt+Shift+F, `\dfrac` Ctrl+Shift+F,
+  `\sqrt` Ctrl+Shift+Q, `\left` / `\right` Ctrl+Shift+L / R; plus `\underline` Ctrl+U.
 
 ### Changed
+- Open folder moves to Ctrl+K Ctrl+O and Ctrl+Enter now inserts `\\`, as in TeXstudio;
+  Source → PDF stays on F7.
 - Touchpad scrolling keeps gliding after a flick (kinetic scrolling) on Wayland and
   other systems without built-in inertia, in both the editor and the PDF view.
 ### Fixed

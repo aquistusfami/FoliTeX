@@ -36,7 +36,7 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
   cache; image-heavy pages render in a single Poppler call (≈7× faster than small tiles).
 
 **Workspace**
-- Open a folder as a workspace (Ctrl+Shift+E) to browse TeX/BibTeX/PDF files.
+- Open a folder as a workspace (Ctrl+K Ctrl+O) to browse TeX/BibTeX/PDF files.
 - Outline of sections, labels, included files and TODOs; click to jump.
 - Minimal dark interface with File / Edit / Insert / Build / View menus.
 
@@ -152,20 +152,25 @@ Keyboard shortcuts follow TeXstudio where TeXstudio documents them.
 | Key | Action |
 |---|---|
 | F5 / F6 | Build, or stop a running build |
-| F7 or Ctrl+Enter | Show the cursor position in the PDF |
+| F7 | Show the cursor position in the PDF |
 | Ctrl+click in the PDF | Jump to the matching source line |
 | Ctrl+Space | Complete command, environment, package, `\ref` or `\cite` |
 | Tab / Ctrl+Right / Ctrl+Left | Next / next / previous snippet placeholder |
-| Ctrl+B / Ctrl+I | `\textbf{}` / `\textit{}` (wraps the selection) |
-| Ctrl+Shift+M / Alt+Shift+M | Inline math `$…$` / display math `\[…\]` |
+| Ctrl+B / Ctrl+I / Ctrl+U | `\textbf{}` / `\textit{}` / `\underline{}` (wrap the selection) |
+| Ctrl+Shift+E / T / C / A | `\emph{}` / `\texttt{}` / `\textsc{}` / `\textsf{}` |
+| Ctrl+Enter | New line `\\` |
+| Ctrl+Shift+M / Alt+Shift+M / Ctrl+Shift+N | Inline math `$…$` / display math `\[…\]` / `equation` |
+| Ctrl+Shift+D / Ctrl+Shift+U | Subscript `_{}` / superscript `^{}` |
+| Alt+Shift+F / Ctrl+Shift+F / Ctrl+Shift+Q | `\frac{}{}` / `\dfrac{}{}` / `\sqrt{}` |
+| Ctrl+Shift+L / Ctrl+Shift+R | `\left` / `\right` |
 | Ctrl+Shift+I / Ctrl+E | `\item` / insert an environment |
 | Alt+Return | Close the last open environment or brace |
 | Ctrl+/ | Toggle comment |
 | Alt+Z | Toggle word wrap |
 | Ctrl+F / F3 / Shift+F3 / Ctrl+G | Find (in the PDF when it has focus) / next / previous / go to line |
-| Ctrl+H | Replace, Replace All in the current file |
+| Ctrl+H or Ctrl+R | Replace, Replace All in the current file |
 | Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+Shift+S / Ctrl+W | New / open / save / save as / close |
-| Ctrl+Shift+E | Open a workspace folder |
+| Ctrl+K Ctrl+O | Open a workspace folder |
 | Ctrl+PgDown / Ctrl+PgUp | Next / previous tab |
 | Ctrl+= / Ctrl+- / Ctrl+0 | Zoom the PDF in / out / fit width |
 | Ctrl+\ / Ctrl+J / Ctrl+Shift+O | Toggle PDF / build log / side bar |
