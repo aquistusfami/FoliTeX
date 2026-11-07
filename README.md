@@ -181,7 +181,7 @@ External Viewer.
 
 ## Status and limitations
 
-Folitex is young (0.2) and deliberately smaller than TeXstudio. Known gaps:
+Folitex is young (0.3) and deliberately smaller than TeXstudio. Known gaps:
 
 - No spell or grammar checking, no full LaTeX parser, no session restore.
 - The engine comes from the combo box; `% !TeX program` is not read yet.

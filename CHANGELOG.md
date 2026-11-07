@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-07
 
 ### Added
 - Search in the PDF: Ctrl+F while the PDF has focus opens a find bar above the pages
