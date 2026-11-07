@@ -20,8 +20,8 @@ int main(int argc, char **argv)
 #endif
     QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
     QApplication app(argc, argv);
-    app.setApplicationName("Folitex");
-    app.setApplicationVersion("0.5.0");
+    app.setApplicationName("FoliTeX");
+    app.setApplicationVersion("0.6.0");
     app.setOrganizationName("Folitex");
     // Wayland app_id must match folitex.desktop so launchers and docks show the right icon.
     app.setDesktopFileName("folitex");
@@ -126,12 +126,14 @@ int main(int argc, char **argv)
         QToolButton#rootButton { font-weight:bold; color:#ADB7C4; text-align:left; padding:3px 4px; border-radius:0; }
         QToolButton#rootButton:hover { background:transparent; }
 )");
-    // One-time move of settings saved under the former name.
-    if (QSettings settings; settings.allKeys().isEmpty())
-    {
-        QSettings former("TeXLite", "TeXLite");
-        for (const auto &key : former.allKeys()) settings.setValue(key, former.value(key));
-    }
+    // One-time move of settings saved under former names (Folitex.conf, then TeXLite).
+    QSettings settings;
+    for (auto [organization, application] : {std::pair{"Folitex", "Folitex"}, std::pair{"TeXLite", "TeXLite"}})
+        if (settings.allKeys().isEmpty())
+        {
+            QSettings former(organization, application);
+            for (const auto &key : former.allKeys()) settings.setValue(key, former.value(key));
+        }
     QCommandLineParser parser;
     parser.setApplicationDescription("Native minimal LaTeX editor and tiled PDF viewer");
     parser.addHelpOption(); parser.addVersionOption();

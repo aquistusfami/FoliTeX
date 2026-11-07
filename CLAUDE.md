@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Folitex (formerly TeXLite; historical records under `research/`, `artifacts/` and `docs/BENCHMARK.md` keep that name) is a standalone C++20 / Qt 6 Widgets / Poppler-Qt6 LaTeX editor + PDF viewer prototype, built after analysing TeXstudio 4.9.9. Read the local, untracked `HANDOFF.md` (if present) for status and open priorities; `docs/ARCHITECTURE.md` is the public overview.
+FoliTeX (formerly TeXLite; historical records under `research/`, `artifacts/` and `docs/BENCHMARK.md` keep that name) is a standalone C++20 / Qt 6 Widgets / Poppler-Qt6 LaTeX editor + PDF viewer prototype, built after analysing TeXstudio 4.9.9. Read the local, untracked `HANDOFF.md` (if present) for status and open priorities; `docs/ARCHITECTURE.md` is the public overview.
 ## Commands
 
 ```bash

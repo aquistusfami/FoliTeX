@@ -42,6 +42,7 @@ public:
     ~BuildRunner() override;
     bool start(const QString &source, const QString &engine);
     bool running() const { return m_process.state() != QProcess::NotRunning; }
+    bool cancelled() const { return m_cancelRequested; }
     void stop();
     static QString rootFile(const QString &source);
     static QString pdfPath(const QString &source);
@@ -114,6 +115,7 @@ private:
     QList<Problem> m_problems;
     int m_problemIndex = -1;
     QDateTime m_buildStarted;
+    QDateTime m_problemsTime; // when m_problems were read
     QComboBox *m_engine;
     QPushButton *m_build;
     QIcon m_runIcon;

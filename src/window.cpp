@@ -161,6 +161,10 @@ QList<Problem> BuildRunner::parseLog(const QString &log, const QString &director
         if ((match = error.match(text)).hasMatch())
         {
             Problem problem{QDir::cleanPath(QDir(directory).absoluteFilePath(match.captured(1))), match.captured(2).toInt(), true, match.captured(3).trimmed()};
+            // An error inside a package (e.g. a bad option while geometry.sty loads) is reported in
+            // the system file; it belongs to the project file that loaded it.
+            if (!problem.file.startsWith(base))
+                problem = {current(), 0, true, QFileInfo(problem.file).fileName() + ": " + problem.message};
             // TeX shows the offending source on the "l.<line>" line that follows.
             for (int j = i + 1; j < lines.size() && j <= i + 40 && !error.match(lines[j]).hasMatch(); ++j)
                 if (auto source = context.match(lines[j]); source.hasMatch())
@@ -218,8 +222,14 @@ bool BuildRunner::start(const QString &source, const QString &engine)
     environment.insert("half_error_line", "238");
     m_process.setProcessEnvironment(environment);
     QString flag = engine == "LuaLaTeX" ? "-lualatex" : engine == "XeLaTeX" ? "-xelatex" : "-pdf";
+    // Light PDF compression: images that cannot be copied as-is (e.g. PNGs with alpha) are
+    // re-deflated on every run, at level 9 by default. Level 1 cut a screenshot-heavy report
+    // from 3.0 s to 1.2 s per rebuild for ~12 % more PDF size; documents may still set their own.
+    QString compression = engine == "LuaLaTeX" ? R"(\pdfvariable compresslevel=1)"
+                        : engine == "XeLaTeX" ? R"(\special{dvipdfmx:config z 1})" : R"(\pdfcompresslevel=1)";
     // Arguments are passed directly, so spaces, Unicode and shell metacharacters stay filenames.
-    m_process.start("latexmk", {flag, "-interaction=nonstopmode", "-file-line-error", "-synctex=1", "-outdir=.folitex-build", "./" + QFileInfo(root).fileName()});
+    m_process.start("latexmk", {flag, "-interaction=nonstopmode", "-file-line-error", "-synctex=1", "-usepretex=" + compression,
+        "-outdir=.folitex-build", "./" + QFileInfo(root).fileName()});
     return true;
 }
 
@@ -251,7 +261,7 @@ static QPixmap svgPixmap(const char *svg, const char *color, int size)
     return pixmap;
 }
 
-// Glyphs and colours in the style of VS Code's Seti icon theme (drawn for Folitex, not copied).
+// Glyphs and colours in the style of VS Code's Seti icon theme (drawn for FoliTeX, not copied).
 static QIcon fileIcon(const QString &fileName)
 {
     static QHash<QString, QIcon> icons;
@@ -331,7 +341,7 @@ public:
 
 Window::Window() : m_runner(this)
 {
-    setWindowTitle("Folitex");
+    setWindowTitle("FoliTeX");
     resize(1280, 820);
     setMinimumSize(680, 420);
     auto *central = new QWidget(this);
@@ -400,8 +410,8 @@ Window::Window() : m_runner(this)
     add("Save as…", QKeySequence::SaveAs, [this] { save(currentEditor(), true); });
     add("Close file", QKeySequence::Close, [this] { closeTab(m_tabs->currentIndex()); });
     menu = menuBar->addMenu("&Edit");
-    add("Undo", QKeySequence::Undo, [this] { if (auto *editor = currentEditor()) editor->undo(); });
-    add("Redo", QKeySequence::Redo, [this] { if (auto *editor = currentEditor()) editor->redo(); });
+    add("Undo", QKeySequence::Undo, [this] { if (auto *editor = currentEditor()) editor->undoText(); });
+    add("Redo", QKeySequence::Redo, [this] { if (auto *editor = currentEditor()) editor->redoText(); });
     menu->addSeparator();
     add("Find", QKeySequence::Find, [showFind] { showFind(false); });
     add("Replace", QKeySequence("Ctrl+H"), [showFind] { showFind(true); })->setShortcuts({QKeySequence("Ctrl+H"), QKeySequence("Ctrl+R")});
@@ -421,6 +431,19 @@ Window::Window() : m_runner(this)
     add("Bold", QKeySequence("Ctrl+B"), insert("\\textbf{\u2022}"));
     add("Italic", QKeySequence("Ctrl+I"), insert("\\textit{\u2022}"));
     add("Underline", QKeySequence("Ctrl+U"), insert("\\underline{\u2022}"));
+    // `…' around the selection, which stays selected, so a second press gives ``…''.
+    add("Quotes `\u2026' (twice for ``\u2026'')", QKeySequence("Ctrl+'"), [this]
+    {
+        auto *editor = currentEditor();
+        if (!editor) return;
+        auto cursor = editor->textCursor();
+        QString inner = cursor.selectedText().replace(QChar::ParagraphSeparator, '\n');
+        int start = cursor.selectionStart();
+        cursor.insertText("`" + inner + "'");
+        cursor.setPosition(start + 1);
+        cursor.setPosition(start + 1 + int(inner.size()), QTextCursor::KeepAnchor);
+        editor->setTextCursor(cursor);
+    });
     add("Emphasis", QKeySequence("Ctrl+Shift+E"), insert("\\emph{\u2022}"));
     add("Typewriter", QKeySequence("Ctrl+Shift+T"), insert("\\texttt{\u2022}"));
     add("Small caps", QKeySequence("Ctrl+Shift+C"), insert("\\textsc{\u2022}"));
@@ -922,11 +945,13 @@ Window::Window() : m_runner(this)
     {
         m_build->setIcon(m_runIcon);
         m_build->setToolTip("Build · F5");
-        // The log sits next to the PDF; one older than this build belongs to an earlier run.
+        if (m_runner.cancelled()) { m_status->setText("Build stopped"); return; }
+        // Always the latest log: when nothing changed, latexmk does not rerun and keeps the old
+        // one, which still describes the document.
         QList<Problem> problems;
         QString directory = QFileInfo(QFileInfo(pdf).absolutePath()).absolutePath();
         QFile log(QFileInfo(pdf).absolutePath() + '/' + QFileInfo(pdf).completeBaseName() + ".log");
-        if (!pdf.isEmpty() && QFileInfo(log).lastModified() >= m_buildStarted.addSecs(-1) && log.open(QIODevice::ReadOnly))
+        if (!pdf.isEmpty() && log.open(QIODevice::ReadOnly))
             problems = BuildRunner::parseLog(QString::fromUtf8(log.readAll()), directory);
         setProblems(problems, directory);
         m_errorCount->show();
@@ -938,8 +963,9 @@ Window::Window() : m_runner(this)
         else
             m_status->setText(errors ? QString("Build failed: %1 error%2 · F8 to go to the first").arg(errors).arg(errors == 1 ? "" : "s")
                                      : "Build failed — see Output");
-        if (success) openPdf(pdf);
-        else
+        // nonstopmode still writes a PDF after most errors; show it so the edits are visible.
+        if (success || (QFileInfo::exists(pdf) && QFileInfo(pdf).lastModified() >= m_buildStarted.addSecs(-1))) openPdf(pdf);
+        if (!success)
         {
             m_panel->setCurrentWidget(errors ? static_cast<QWidget *>(m_problemsView) : m_log);
             m_panel->show();
@@ -1172,7 +1198,7 @@ void Window::setTabTitle(Editor *editor)
     updateTabButtons();
     updateTabHints();
     if (editor != currentEditor()) return;
-    setWindowTitle((editor->document()->isModified() ? "● " : "") + name + (m_workspace.isEmpty() ? "" : " — " + QFileInfo(m_workspace).fileName()) + " — Folitex");
+    setWindowTitle((editor->document()->isModified() ? "● " : "") + name + (m_workspace.isEmpty() ? "" : " — " + QFileInfo(m_workspace).fileName()) + " — FoliTeX");
     if (!m_workspace.isEmpty() && !path.isEmpty()) m_files->setCurrentIndex(m_fileModel->index(path));
 }
 
@@ -1442,6 +1468,7 @@ void Window::setProblems(const QList<Problem> &problems, const QString &director
     static const QIcon errorIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M5.8 5.8l4.4 4.4m0-4.4l-4.4 4.4"/></svg>)", "#F14C4C", 16));
     static const QIcon warningIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3.2m0 1.6v.1"/></svg>)", "#CCA700", 16));
     m_problems = problems;
+    m_problemsTime = QDateTime::currentDateTime();
     m_problemIndex = -1;
     m_problemsView->clear();
     QHash<QString, QTreeWidgetItem *> groups;
@@ -1480,8 +1507,10 @@ void Window::applyProblems(Editor *editor)
 {
     QString path = editor->property("path").toString();
     QList<std::tuple<int, bool, QString>> marks;
+    // A file changed since the build would get squiggles on the wrong lines.
+    bool current = !path.isEmpty() && QFileInfo(path).lastModified() <= m_problemsTime;
     for (const auto &problem : m_problems)
-        if (!path.isEmpty() && problem.line > 0 && QFileInfo(problem.file) == QFileInfo(path))
+        if (current && problem.line > 0 && QFileInfo(problem.file) == QFileInfo(path))
             marks.append({problem.line, problem.error, problem.message});
     editor->setProblems(marks);
 }

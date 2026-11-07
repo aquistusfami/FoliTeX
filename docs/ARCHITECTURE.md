@@ -1,6 +1,6 @@
 # Architecture
 
-Folitex is a single Qt Widgets application. All logic lives in a static library,
+FoliTeX is a single Qt Widgets application. All logic lives in a static library,
 `folitex_lib` (`src/editor.*`, `src/pdfview.*`, `src/window.*`), linked by the app
 (`src/main.cpp`) and by the Qt Test suite (`tests/tests.cpp`).
 
@@ -46,6 +46,8 @@ Folitex is a single Qt Widgets application. All logic lives in a static library,
   the process group, then SIGKILL after 1.5 s, but only if `/proc/<pid>/stat` shows the
   same start time — a reused PID is never targeted. `% !TeX root` is followed with
   cycle detection; output goes to `.folitex-build/` next to the root file.
+  Builds pass `-usepretex` with a PDF compression level of 1 (per engine): images that
+  pdfTeX cannot copy as-is are otherwise re-deflated at level 9 on every run.
 - Sources are decoded strictly (UTF-8 only, no U+2028/U+2029), saved with `QSaveFile`,
   and keep their BOM and line-ending style.
 - A `QFileSystemWatcher` follows open sources. External changes are coalesced (200 ms)
@@ -62,6 +64,7 @@ Folitex is a single Qt Widgets application. All logic lives in a static library,
 
 ## Settings
 
-`QSettings` under organisation and application `Folitex` stores the workspace folder
+`QSettings` under organisation `Folitex`, application `FoliTeX` (file
+`~/.config/Folitex/FoliTeX.conf`) stores the workspace folder
 and word wrap. They are read and written only in `main.cpp`, so tests never touch a
 user's configuration. Settings from the former name TeXLite are copied once.

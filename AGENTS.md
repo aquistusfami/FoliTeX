@@ -2,7 +2,7 @@
 
 ## Scope and Structure
 
-Folitex (formerly TeXLite) is a standalone C++20/Qt 6 Widgets/Poppler LaTeX editor.
+FoliTeX (formerly TeXLite) is a standalone C++20/Qt 6 Widgets/Poppler LaTeX editor.
 Read `docs/ARCHITECTURE.md` first, and the local, untracked `HANDOFF.md` if present.
 
 `src/editor.*` handles source editing and scrolling; `src/pdfview.*` implements

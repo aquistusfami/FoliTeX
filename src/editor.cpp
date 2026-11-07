@@ -587,6 +587,8 @@ void Editor::keyPressEvent(QKeyEvent *event)
         event->ignore();
         return;
     }
+    if (event->matches(QKeySequence::Undo)) { undoText(); return; }
+    if (event->matches(QKeySequence::Redo)) { redoText(); return; }
     bool control = event->modifiers() == Qt::ControlModifier;
     if (event->key() == Qt::Key_Escape) { m_placeholders.clear(); m_placeholder = -1; }
     if (event->key() == Qt::Key_Backtab) { shiftLines(true); return; }
@@ -634,6 +636,39 @@ void Editor::keyPressEvent(QKeyEvent *event)
         cursor.deleteChar();
         cursor.endEditBlock();
         updateCompletion(false);
+        return;
+    }
+    // Shift+Enter continues a list: a new \item (or \task) at the indentation of the item above.
+    if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) && event->modifiers() == Qt::ShiftModifier)
+    {
+        static const QRegularExpression item(R"(^(\s*)(\\(?:item|task))(?![A-Za-z]))");
+        static const QRegularExpression list(R"(^(\s*)\\begin\{(itemize|enumerate|description|tasks|compactitem|compactenum)\*?\})");
+        static const QRegularExpression begins(R"(\\begin\s*\{)"), ends(R"(\\end\s*\{)");
+        QString insert = "\n" + QRegularExpression(R"(^\s*)").match(cursor.block().text()).captured();
+        // Walking up, nested environments (\end ... \begin) are skipped, so the item found is the
+        // one at the cursor's own level; reaching the list's \begin first means its first item.
+        int depth = 0;
+        for (auto block = cursor.block(); block.isValid(); block = block.previous())
+        {
+            QString text = block.text();
+            if (auto match = item.match(text); depth == 0 && match.hasMatch())
+            {
+                insert = "\n" + match.captured(1) + match.captured(2) + ' ';
+                break;
+            }
+            static const QRegularExpression comment(R"((?<!\\)(?:\\\\)*\K%.*$)"); // as LatexHighlighter
+            QString code = QString(text).remove(comment); // "% \end{itemize}" is not an end
+            depth += int(code.count(ends)) - int(code.count(begins));
+            if (depth < 0)
+            {
+                if (auto open = list.match(text); open.hasMatch())
+                    insert = "\n" + open.captured(1) + "  " + (open.captured(2) == "tasks" ? "\\task " : "\\item ");
+                break;
+            }
+        }
+        cursor.insertText(insert);
+        setTextCursor(cursor);
+        m_completion->popup()->hide();
         return;
     }
     if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) && !event->modifiers())
@@ -856,6 +891,11 @@ void Editor::setWordWrap(bool on)
 void Editor::contextMenuEvent(QContextMenuEvent *event)
 {
     std::unique_ptr<QMenu> menu(createStandardContextMenu(event->pos()));
+    for (auto *action : menu->actions())
+    {
+        if (action->objectName() == "edit-undo") { action->disconnect(); connect(action, &QAction::triggered, this, &Editor::undoText); }
+        if (action->objectName() == "edit-redo") { action->disconnect(); connect(action, &QAction::triggered, this, &Editor::redoText); }
+    }
     menu->addSeparator();
     auto *wrap = menu->addAction("Word Wrap\tAlt+Z");
     wrap->setCheckable(true);
@@ -899,6 +939,28 @@ void Editor::toggleComment()
         if (block == last) break;
     }
     cursor.endEditBlock();
+}
+
+// applyWrapIndent's block formats become separate undo steps when the edit before them was
+// not an edit block (typing, a single insert). Undoing such a step alone changes no text and
+// made applyWrapIndent re-add it, which cleared redo and trapped Ctrl+Z.
+void Editor::undoText()
+{
+    const QString before = toPlainText();
+    while (document()->isUndoAvailable() && toPlainText() == before) undo();
+}
+
+void Editor::redoText()
+{
+    const QString before = toPlainText();
+    while (document()->isRedoAvailable() && toPlainText() == before) redo();
+    // Then the format steps recorded right after that text change; stop before the next one.
+    while (document()->isRedoAvailable())
+    {
+        const QString text = toPlainText();
+        redo();
+        if (toPlainText() != text) { undo(); break; }
+    }
 }
 
 void Editor::shiftLines(bool outdent)

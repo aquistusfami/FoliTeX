@@ -1,6 +1,6 @@
 #include "completiondata.h"
 
-// Curated completion entries per package, written for Folitex. U+2022 (•) marks a placeholder.
+// Curated completion entries per package, written for FoliTeX. U+2022 (•) marks a placeholder.
 // They are offered only while an open document loads the package (or class, for beamer);
 // packages not listed here fall back to the public definitions found in their .sty file.
 const QHash<QString, PackageWords> &curatedPackages()

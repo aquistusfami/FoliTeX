@@ -13,7 +13,7 @@ jobs:
   test:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
-    # Ubuntu runners ship Qt 6.4; Folitex needs 6.5, so build inside the distributions the README supports.
+    # Ubuntu runners ship Qt 6.4; FoliTeX needs 6.5, so build inside the distributions the README supports.
     container: ${{ matrix.image }}
     strategy:
       fail-fast: false

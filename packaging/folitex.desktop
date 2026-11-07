@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=Folitex
+Name=FoliTeX
 GenericName=LaTeX Editor
 Comment=Lean LaTeX editor with tiled PDF preview
 Exec=folitex %F

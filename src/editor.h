@@ -47,6 +47,9 @@ public:
     void goToLine(int line, int column = 0);
     int lineNumber() const;
     void toggleComment();
+    // Undo/redo one text change; the wrap-indent format steps around it go along (see applyWrapIndent).
+    void undoText();
+    void redoText();
     // Indents (or outdents) every line touched by the selection by one level.
     void shiftLines(bool outdent);
     // flags: QTextDocument::FindBackward, FindCaseSensitively, FindWholeWords.

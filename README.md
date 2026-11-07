@@ -1,15 +1,15 @@
-# Folitex
+# FoliTeX
 
-[![CI](https://github.com/aquistusfami/Folitex/actions/workflows/ci.yml/badge.svg)](https://github.com/aquistusfami/Folitex/actions/workflows/ci.yml)
+[![CI](https://github.com/aquistusfami/FoliTeX/actions/workflows/ci.yml/badge.svg)](https://github.com/aquistusfami/FoliTeX/actions/workflows/ci.yml)
 
 A lean, native LaTeX editor with a built-in PDF viewer, written in C++20 with
 Qt 6 Widgets and Poppler. It aims to start fast, stay light on memory, render PDFs
 sharply at any display scale and scroll smoothly — while covering the everyday
 LaTeX workflow: edit, build, preview, jump between source and PDF.
 
-![Folitex 0.5 editing a LaTeX paper next to its PDF, with word wrap, the explorer and a successful build](docs/screenshot.png)
+![FoliTeX 0.5 editing a LaTeX paper next to its PDF, with word wrap, the explorer and a successful build](docs/screenshot.png)
 
-> Folitex was previously developed as **TeXLite**. Its behaviour was informed by
+> FoliTeX was previously developed as **TeXLite**. Its behaviour was informed by
 > studying TeXstudio and VS Code; it contains no code from either project and is
 > not affiliated with them.
 
@@ -57,7 +57,7 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
 
 ## Installing on Linux
 
-Folitex needs **Qt 6.5 or newer**, so it installs on Arch Linux and its derivatives
+FoliTeX needs **Qt 6.5 or newer**, so it installs on Arch Linux and its derivatives
 (Manjaro, EndeavourOS), Debian 13 and Ubuntu 25.04 or newer. Ubuntu 24.04 LTS and
 Debian 12 ship Qt 6.4 and cannot build it. The steps below were run on clean systems:
 Arch Linux and Debian 13 end to end (install, build, tests, launch), Ubuntu 25.04 up to
@@ -87,14 +87,14 @@ only write in English. A TeX distribution you already have works too, as long as
 ### 2. Download, build and install
 
 ```bash
-git clone https://github.com/aquistusfami/Folitex.git
-cd Folitex
+git clone https://github.com/aquistusfami/FoliTeX.git
+cd FoliTeX
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 cmake --install build --prefix ~/.local
 ```
 
-No root access is needed for this step. Folitex now appears in your application
+No root access is needed for this step. FoliTeX now appears in your application
 launcher, and `folitex paper.tex` opens a file from a terminal. If the shell says
 `folitex: command not found`, add `~/.local/bin` to your `PATH`.
 
@@ -104,7 +104,7 @@ Optionally, check the build with `ctest --test-dir build --output-on-failure`
 ### Updating
 
 ```bash
-cd Folitex
+cd FoliTeX
 git pull
 cmake --build build --parallel
 cmake --install build --prefix ~/.local
@@ -132,11 +132,11 @@ delete at any time.
 | Icons in the side bar or tabs are blank | Install `qt6-svg` (Arch) or `qt6-svg-plugins` (Debian/Ubuntu). |
 | Building a document fails with `Encoding scheme 'T5' unknown` or `Unicode character … not set up` | Install the language package: `texlive-langother` / `texlive-lang-other`. |
 | F5 shows `Cannot start latexmk` | Install `texlive-binextra` (Arch) or `latexmk` (Debian/Ubuntu). |
-| Folitex does not appear in the launcher | Log out and back in, or run `update-desktop-database ~/.local/share/applications`. |
+| FoliTeX does not appear in the launcher | Log out and back in, or run `update-desktop-database ~/.local/share/applications`. |
 
 ## Installing on Windows (experimental, untested)
 
-Folitex has not been built on Windows yet. The code avoids Linux-only calls outside
+FoliTeX has not been built on Windows yet. The code avoids Linux-only calls outside
 `#ifdef Q_OS_UNIX`, so a build is expected to work with [MSYS2](https://www.msys2.org/)
 (UCRT64 shell):
 
@@ -157,7 +157,7 @@ completion. Known differences on Windows:
 
 Reports of Windows builds — working or not — are welcome as issues.
 
-## Using Folitex
+## Using FoliTeX
 
 Open a `.tex` file, press **F5** to build, and the PDF appears on the right. Settings
 (workspace folder, word wrap, menu bar) are stored in `~/.config/Folitex/`.
@@ -175,11 +175,13 @@ Keyboard shortcuts follow TeXstudio where TeXstudio documents them.
 | Ctrl+B / Ctrl+I / Ctrl+U | `\textbf{}` / `\textit{}` / `\underline{}` (wrap the selection) |
 | Ctrl+Shift+E / T / C / A | `\emph{}` / `\texttt{}` / `\textsc{}` / `\textsf{}` |
 | Ctrl+Enter | New line `\\` |
+| Ctrl+' (twice for ` ``…'' `) | `` `…' `` quotes around the selection |
 | Ctrl+Shift+M / Alt+Shift+M / Ctrl+Shift+N | Inline math `$…$` / display math `\[…\]` / `equation` |
 | Ctrl+Shift+D / Ctrl+Shift+U | Subscript `_{}` / superscript `^{}` |
 | Alt+Shift+F / Ctrl+Shift+F / Ctrl+Shift+Q | `\frac{}{}` / `\dfrac{}{}` / `\sqrt{}` |
 | Ctrl+Shift+L / Ctrl+Shift+R | `\left` / `\right` |
 | Ctrl+Shift+I / Ctrl+E | `\item` / insert an environment |
+| Shift+Enter | New `\item` (or `\task`) on the next line, inside a list |
 | Alt+Return | Close the last open environment or brace |
 | Tab / Shift+Tab | Indent / outdent the selected lines |
 | Ctrl+/ | Toggle comment |
@@ -199,7 +201,7 @@ External Viewer.
 
 ## Status and limitations
 
-Folitex is young (0.5) and deliberately smaller than TeXstudio. Known gaps:
+FoliTeX is young (0.6) and deliberately smaller than TeXstudio. Known gaps:
 
 - No spell or grammar checking, no full LaTeX parser, no session restore.
 - The engine comes from the combo box; `% !TeX program` is not read yet.

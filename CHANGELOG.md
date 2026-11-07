@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.6.0 — 2026-11-07
+
+### Changed
+- The app is now called **FoliTeX** (window title, launcher, docs). The command stays
+  `folitex`; settings move once from `~/.config/Folitex/Folitex.conf` to `FoliTeX.conf`.
+- Builds are up to 2.5× faster on documents with images: FoliTeX asks for light PDF
+  compression (`-usepretex`, level 1 instead of 9). A report with ten RGBA screenshots:
+  cold build 5.9 → 2.3 s, rebuild after an edit 3.0 → 1.2 s; the PDF is ~12 % larger
+  (`research/build-speed-2026-11-07/`).
+
+### Added
+- Shift+Enter in a list starts the next `\item` (or `\task`) at the same indentation,
+  also from a continuation line; elsewhere it is a plain newline instead of a U+2028 break.
+- Ctrl+' puts LaTeX quotes `…' around the selection or cursor; pressed twice it gives ``…''.
+
+### Fixed
+- Pressing F5 again without changes cleared the Problems panel: latexmk does nothing and
+  keeps its log, which was ignored as "old". The latest log is now always read.
+- An error raised while a package loads (e.g. a bad `geometry` option) pointed at the system
+  `.sty` and F8 opened it; it now lands on the project file that loaded the package.
+- After a failed build the PDF view kept the previous PDF although LaTeX had written a new
+  one; it now shows it.
+- Shift+Enter counted `\begin`/`\end` inside comments, so `% \end{itemize}` stopped it.
+- Stopping a build reported "Build failed" and opened the panel; it now says "Build stopped".
+- Squiggles from the last build no longer appear on a file changed on disk since then.
+- With word wrap on, Ctrl+Z could get stuck after Tab or Enter: it undid an invisible
+  indentation-format step, which was immediately re-added and wiped the redo history.
+  Undo and redo now skip those steps together with the text change they belong to.
+
 ## 0.5.0 — 2026-11-07
 
 ### Added

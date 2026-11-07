@@ -40,10 +40,14 @@ private slots:
     void pdfInteraction();
     void findReplace();
     void tabIndent();
+    void continueList();
+    void undoWithWrapIndent();
     void tabScrolling();
     void packageCompletion();
     void menuBarToggle();
     void buildProblems();
+    void packageErrorProblems();
+    void rebuildKeepsWarnings();
     void wordWrap();
     void kineticScroll();
     void touchpadPixels();
@@ -176,6 +180,20 @@ void Tests::completionAndSnippets()
     source->selectAll();
     QTest::keyClick(source, Qt::Key_U, Qt::ControlModifier);
     QCOMPARE(source->toPlainText(), "\\underline{word}");
+    QAction *quotes = nullptr;
+    for (auto *action : window.actions()) if (action->shortcut() == QKeySequence("Ctrl+'")) quotes = action;
+    QVERIFY(quotes);
+    source->setPlainText("word");
+    source->selectAll();
+    quotes->trigger();
+    QCOMPARE(source->toPlainText(), "`word'");
+    quotes->trigger(); // twice: double quotes
+    QCOMPARE(source->toPlainText(), "``word''");
+    source->clear();
+    quotes->trigger();
+    quotes->trigger();
+    QTest::keyClicks(source, "x");
+    QCOMPARE(source->toPlainText(), "``x''");
     source->clear();
     QTest::keyClick(source, Qt::Key_E, Qt::ControlModifier | Qt::ShiftModifier);
     QTest::keyClicks(source, "a");
@@ -261,7 +279,7 @@ void Tests::workspaceTree()
     QCOMPARE(rootRow->mapTo(&window, QPoint()).y(), rootTop); // the row stays where it was
     rootRow->click();
     QVERIFY(window.filesView()->isVisible());
-    QVERIFY(window.windowTitle().contains("Folitex"));
+    QVERIFY(window.windowTitle().contains("FoliTeX"));
     auto *model = qobject_cast<QFileSystemModel *>(window.filesView()->model());
     auto root = window.filesView()->rootIndex();
     QTRY_COMPARE(model->rowCount(root), 2);
@@ -377,6 +395,47 @@ void Tests::pdfInteraction()
     QCOMPARE(matches.last().at(1).toInt(), 0);
 }
 
+void Tests::rebuildKeepsWarnings()
+{
+    // A successful build with warnings, then F5 again without changes: latexmk does nothing and
+    // keeps the old log, which must still be read.
+    if (QStandardPaths::findExecutable("latexmk").isEmpty()) QSKIP("latexmk unavailable");
+    QTemporaryDir dir;
+    QString main = dir.filePath("main.tex");
+    write(main, "\\documentclass{article}\n\\begin{document}\nSee \\ref{missing}.\n\\end{document}\n");
+    Window window;
+    window.show();
+    QVERIFY(window.openSource(main));
+    QAction *build = nullptr;
+    for (auto *action : window.actions()) if (action->shortcut() == QKeySequence("F5")) build = action;
+    auto *button = window.findChild<QPushButton *>("editorAction");
+    auto *view = window.findChild<QTreeWidget *>("problems");
+    for (int run = 0; run < 2; ++run)
+    {
+        if (run) QTest::qWait(1500); // a later F5, as people press it
+        build->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!button->toolTip().startsWith("Stop"), 60000);
+        QCOMPARE(view->topLevelItemCount(), 1); // main.tex with its warnings
+        QVERIFY(view->topLevelItem(0)->childCount() > 0);
+    }
+}
+
+void Tests::packageErrorProblems()
+{
+    // An error raised while a package loads is reported in the system .sty; it must land on
+    // the project file that loaded the package, not open the system file.
+    QTemporaryDir project, system;
+    write(project.filePath("main.tex"), "x");
+    write(system.filePath("pkg.sty"), "x");
+    QString log = QString("(%1\n(%2\n%2:1005: Package keyval Error: bogus undefined.\n)\n)\n")
+        .arg(project.filePath("main.tex"), system.filePath("pkg.sty"));
+    auto problems = BuildRunner::parseLog(log, project.path());
+    QCOMPARE(problems.size(), 1);
+    QCOMPARE(QFileInfo(problems[0].file), QFileInfo(project.filePath("main.tex")));
+    QCOMPARE(problems[0].line, 0);
+    QVERIFY(problems[0].error && problems[0].message.startsWith("pkg.sty: Package keyval Error"));
+}
+
 void Tests::buildProblems()
 {
     if (QStandardPaths::findExecutable("latexmk").isEmpty()) QSKIP("latexmk unavailable");
@@ -428,6 +487,8 @@ void Tests::buildProblems()
     auto *view = window.findChild<QTreeWidget *>("problems");
     QTRY_VERIFY_WITH_TIMEOUT(panel->isVisible() && view->topLevelItemCount() == 2, 60000);
     QCOMPARE(panel->currentWidget(), view);
+    // The failed build still wrote a PDF; it is shown.
+    QCOMPARE(QFileInfo(window.pdfView()->path()), QFileInfo(BuildRunner::pdfPath(main)));
     // The filter keeps matching problems (or every problem of a matching file).
     auto *filter = window.findChild<QLineEdit *>("problemFilter");
     filter->setText("tabel");
@@ -530,6 +591,91 @@ void Tests::tabScrolling()
     QApplication::sendEvent(bar, &up);
     QTRY_VERIFY(bar->tabRect(0).x() > before);
     QCOMPARE(bar->currentIndex(), 7); // the wheel scrolls, it does not switch tabs
+}
+
+void Tests::undoWithWrapIndent()
+{
+    // Wrap-indent format steps must not trap Ctrl+Z or eat the redo history.
+    Editor editor;
+    editor.resize(400, 300);
+    editor.setWordWrap(true);
+    editor.show();
+    editor.setPlainText("first line\nsecond");
+    QTest::qWait(20);
+    editor.moveCursor(QTextCursor::Start);
+    QStringList states{editor.toPlainText()};
+    QTest::keyClick(&editor, Qt::Key_Tab);
+    QTest::qWait(20);
+    states << editor.toPlainText();
+    QTest::keyClick(&editor, Qt::Key_Tab);
+    QTest::qWait(20);
+    states << editor.toPlainText();
+    editor.moveCursor(QTextCursor::EndOfBlock);
+    QTest::keyClick(&editor, Qt::Key_Return);
+    QTest::qWait(20);
+    states << editor.toPlainText();
+    double space = QFontMetricsF(editor.font()).horizontalAdvance(' ');
+    for (int i = states.size() - 2; i >= 0; --i)
+    {
+        QTest::keyClick(&editor, Qt::Key_Z, Qt::ControlModifier);
+        QTest::qWait(20);
+        QCOMPARE(editor.toPlainText(), states[i]);
+    }
+    QVERIFY(editor.document()->isRedoAvailable());
+    for (int i = 1; i < states.size(); ++i)
+    {
+        QTest::keyClick(&editor, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+        QTest::qWait(20);
+        QCOMPARE(editor.toPlainText(), states[i]);
+    }
+    // Margins match the text again after the round trip.
+    QTRY_VERIFY(qAbs(editor.document()->firstBlock().blockFormat().leftMargin() - 8 * space) < 0.5);
+}
+
+void Tests::continueList()
+{
+    Editor editor;
+    auto shiftEnter = [&] { QTest::keyClick(&editor, Qt::Key_Return, Qt::ShiftModifier); };
+    editor.setPlainText("\\begin{itemize}\n  \\item first");
+    editor.moveCursor(QTextCursor::End);
+    shiftEnter();
+    QTest::keyClicks(&editor, "second");
+    QCOMPARE(editor.toPlainText(), "\\begin{itemize}\n  \\item first\n  \\item second");
+    // From the continuation line of a long item, and with \task (tasks package).
+    editor.setPlainText("\\begin{tasks}\n\\task one\n    more of one");
+    editor.moveCursor(QTextCursor::End);
+    shiftEnter();
+    QCOMPARE(editor.toPlainText(), "\\begin{tasks}\n\\task one\n    more of one\n\\task ");
+    // Nested lists: after an inner list, the outer list continues.
+    editor.setPlainText("\\begin{enumerate}\n  \\item outer\n    \\begin{itemize}\n      \\item inner\n    \\end{itemize}\n    rest of outer");
+    editor.moveCursor(QTextCursor::End);
+    shiftEnter();
+    QVERIFY(editor.toPlainText().endsWith("rest of outer\n  \\item "));
+    // Inside the inner list it continues the inner one.
+    editor.setPlainText("\\begin{enumerate}\n  \\item outer\n    \\begin{itemize}\n      \\item inner");
+    editor.moveCursor(QTextCursor::End);
+    shiftEnter();
+    QVERIFY(editor.toPlainText().endsWith("\\item inner\n      \\item "));
+    // An environment opened and closed on the item's own line does not hide that item.
+    editor.setPlainText("\\begin{itemize}\n  \\item see \\begin{math}x\\end{math}");
+    editor.moveCursor(QTextCursor::End);
+    shiftEnter();
+    QVERIFY(editor.toPlainText().endsWith("\\end{math}\n  \\item "));
+    // A commented-out \end does not close the list.
+    editor.setPlainText("\\begin{itemize}\n  \\item one\n  % \\end{itemize}\n  more");
+    editor.moveCursor(QTextCursor::End);
+    shiftEnter();
+    QVERIFY(editor.toPlainText().endsWith("more\n  \\item "));
+    // Right after \begin{itemize}: its first item, one level deeper.
+    editor.setPlainText("  \\begin{itemize}");
+    editor.moveCursor(QTextCursor::End);
+    shiftEnter();
+    QCOMPARE(editor.toPlainText(), "  \\begin{itemize}\n    \\item ");
+    // Outside a list it is a plain newline that keeps the indentation (no U+2028).
+    editor.setPlainText("\\begin{center}\n  text");
+    editor.moveCursor(QTextCursor::End);
+    shiftEnter();
+    QCOMPARE(editor.toPlainText(), "\\begin{center}\n  text\n  ");
 }
 
 void Tests::tabIndent()
