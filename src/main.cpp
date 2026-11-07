@@ -7,9 +7,17 @@
 #include <QPalette>
 #include <QIcon>
 #include <QSettings>
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
 
 int main(int argc, char **argv)
 {
+#ifdef __GLIBC__
+    // glibc raises its mmap threshold after large frees, so freed page images stayed in the
+    // heap (≈20 MiB after zooming). A fixed threshold returns them to the system.
+    mallopt(M_MMAP_THRESHOLD, 128 * 1024);
+#endif
     QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
     QApplication app(argc, argv);
     app.setApplicationName("Folitex");

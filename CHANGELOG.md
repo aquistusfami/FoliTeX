@@ -12,6 +12,8 @@
 - Touchpad scrolling keeps gliding after a flick (kinetic scrolling) on Wayland and
   other systems without built-in inertia, in both the editor and the PDF view.
 ### Fixed
+- After zooming or scrolling an image-heavy PDF, about 20 MiB of freed memory was not
+  returned to the system (glibc mmap threshold); now fixed (`research/ram-2026-11-06/`).
 - On Wayland, mouse wheel notches scrolled only 15 px: Qt sends a small pixel delta
   with each notch, which was mistaken for touchpad input. Notches now scroll 72 px in
   the editor and 120 px in the PDF view.
