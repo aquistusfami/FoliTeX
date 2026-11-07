@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-11-07
 
 ### Added
 - Package-aware completion: curated commands and environments for about 45 common
