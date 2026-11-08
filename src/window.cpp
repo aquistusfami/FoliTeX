@@ -34,6 +34,12 @@
 #include <QHeaderView>
 #include <QTreeView>
 #include <QFileSystemModel>
+#include <QUrl>
+#include <QDesktopServices>
+#include <QDialogButtonBox>
+#include <QFontComboBox>
+#include <QFormLayout>
+#include <QDialog>
 #include <QAbstractFileIconProvider>
 #include <QSettings>
 #include <QStackedWidget>
@@ -252,7 +258,7 @@ void BuildRunner::stop()
 // Renders an SVG icon whose strokes use currentColor; 3x density stays sharp at fractional scales.
 static QPixmap svgPixmap(const char *svg, const char *color, int size)
 {
-    QByteArray data = QByteArray(svg).replace("currentColor", color);
+    QByteArray data = themed(QString::fromUtf8(svg).replace("currentColor", color)).toUtf8();
     QBuffer buffer(&data);
     QImageReader reader(&buffer, "svg");
     reader.setScaledSize(QSize(size * 3, size * 3));
@@ -311,8 +317,8 @@ protected:
         QPainterPath outside, inside;
         outside.addRect(rect());
         inside.addRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), radius, radius);
-        painter.fillPath(outside.subtracted(inside), QColor("#0E1013"));
-        painter.setPen(QColor("#22272E"));
+        painter.fillPath(outside.subtracted(inside), themeColor("#0E1013"));
+        painter.setPen(themeColor("#22272E"));
         painter.drawPath(inside);
     }
 private:
@@ -391,6 +397,28 @@ Window::Window() : m_runner(this)
         m_find->selectAll();
     };
     add("New document", QKeySequence::New, [this] { newDocument(); });
+    auto *templates = menu->addMenu("New from template");
+    connect(templates, &QMenu::aboutToShow, this, [this, templates]
+    {
+        templates->clear();
+        for (const auto &[name, text] : builtinTemplates())
+            templates->addAction(name, this, [this, text] { newFromTemplate(text); });
+        const auto mine = QDir(templatesFolder()).entryInfoList({"*.tex"}, QDir::Files, QDir::Name);
+        if (!mine.isEmpty()) templates->addSeparator();
+        for (const auto &info : mine)
+            templates->addAction(info.completeBaseName(), this, [this, path = info.absoluteFilePath()]
+            {
+                QFile file(path);
+                if (file.open(QIODevice::ReadOnly)) newFromTemplate(QString::fromUtf8(file.readAll()));
+            });
+        templates->addSeparator();
+        templates->addAction("Open templates folder", this, [] 
+        {
+            QDir().mkpath(templatesFolder());
+            QDesktopServices::openUrl(QUrl::fromLocalFile(templatesFolder()));
+        });
+    });
+    templates->addAction("Article")->setVisible(false); // a submenu with no actions never opens
     add("Open TeX or PDF…", QKeySequence::Open, [this]
     {
         QString path = QFileDialog::getOpenFileName(this, "Open document", m_workspace, "TeX / PDF (*.tex *.bib *.sty *.cls *.pdf);;All files (*)");
@@ -404,11 +432,32 @@ Window::Window() : m_runner(this)
         if (directory.isEmpty()) return;
         openWorkspace(directory);
         QSettings().setValue("workspace", m_workspace);
+        addRecent(m_workspace);
+    });
+    auto *recent = menu->addMenu("Open recent");
+    recent->addAction("No recent files")->setEnabled(false);
+    connect(recent, &QMenu::aboutToShow, this, [this, recent]
+    {
+        recent->clear();
+        for (const auto &path : m_recent)
+            recent->addAction(QDir::toNativeSeparators(path), this, [this, path]
+            {
+                if (QFileInfo(path).isDir()) { openWorkspace(path); addRecent(path); QSettings().setValue("workspace", m_workspace); }
+                else if (QFileInfo(path).suffix().compare("pdf", Qt::CaseInsensitive) == 0) openPdf(path);
+                else openSource(path);
+            });
+        if (m_recent.isEmpty()) recent->addAction("No recent files")->setEnabled(false);
+        else { recent->addSeparator(); recent->addAction("Clear recent", this, [this] { m_recent.clear(); }); }
     });
     menu->addSeparator();
-    add("Save", QKeySequence::Save, [this] { save(currentEditor()); });
+    add("Save", QKeySequence::Save, [this]
+    {
+        if (save(currentEditor()) && m_buildOnSaveAction->isChecked() && !m_runner.running()) build();
+    });
     add("Save as…", QKeySequence::SaveAs, [this] { save(currentEditor(), true); });
     add("Close file", QKeySequence::Close, [this] { closeTab(m_tabs->currentIndex()); });
+    menu->addSeparator();
+    add("Settings…", QKeySequence("Ctrl+,"), [this] { showSettings(); });
     menu = menuBar->addMenu("&Edit");
     add("Undo", QKeySequence::Undo, [this] { if (auto *editor = currentEditor()) editor->undoText(); });
     add("Redo", QKeySequence::Redo, [this] { if (auto *editor = currentEditor()) editor->redoText(); });
@@ -427,6 +476,17 @@ Window::Window() : m_runner(this)
     });
     menu->addSeparator();
     add("Toggle comment", QKeySequence("Ctrl+/"), [this] { if (currentEditor()) currentEditor()->toggleComment(); });
+    menu->addSeparator();
+    add("Fold", QKeySequence("Ctrl+Shift+["), [this] { if (auto *editor = currentEditor()) editor->foldAtCursor(); });
+    add("Unfold", QKeySequence("Ctrl+Shift+]"), [this]
+    {
+        auto *editor = currentEditor();
+        if (!editor) return;
+        // The fold whose first line holds the cursor, else the nearest folded line above.
+        for (QTextBlock block = editor->textCursor().block(); block.isValid(); block = block.previous())
+            if (editor->isFolded(block.blockNumber())) { editor->toggleFold(block.blockNumber()); return; }
+    });
+    add("Unfold all", QKeySequence("Ctrl+K, Ctrl+J"), [this] { if (auto *editor = currentEditor()) editor->unfoldAll(); });
     menu = menuBar->addMenu("&Insert");
     add("Bold", QKeySequence("Ctrl+B"), insert("\\textbf{\u2022}"));
     add("Italic", QKeySequence("Ctrl+I"), insert("\\textit{\u2022}"));
@@ -472,6 +532,10 @@ Window::Window() : m_runner(this)
     {
         if (!m_problems.isEmpty()) goToProblem((m_problemIndex - 1 + m_problems.size()) % m_problems.size());
     });
+    menu->addSeparator();
+    m_buildOnSaveAction = add("Build on save", QKeySequence(), [] {});
+    m_buildOnSaveAction->setCheckable(true);
+    add("Word count", QKeySequence(), [this] { countWords(); });
     menu = menuBar->addMenu("&View");
     add("Toggle side bar", QKeySequence("Ctrl+Shift+O"), [this] { showSide(m_outlineButton->isChecked() ? m_outline : m_files); });
     add("Toggle PDF", QKeySequence("Ctrl+\\"), [this] { m_pdfPane->setVisible(!m_pdfPane->isVisible()); });
@@ -483,11 +547,17 @@ Window::Window() : m_runner(this)
     m_menuBarAction = add("Menu bar", QKeySequence(), [this](bool on) { setMenuBarShown(on); });
     m_menuBarAction->setCheckable(true);
     m_menuBarAction->setChecked(true);
-    connect(menuBar, &QMenuBar::triggered, this, [this] { if (!m_menuBarShown) m_topBar->hide(); });
+    // Choosing an item hides a revealed menu bar again; a keyboard shortcut (Ctrl+S) is not a choice.
+    connect(menuBar, &QMenuBar::triggered, this, [this]
+    {
+        if (!m_menuBarShown && !m_viaShortcut) m_topBar->hide();
+        m_viaShortcut = false;
+    });
     menu->addSeparator();
     add("Zoom in PDF", QKeySequence::ZoomIn, [this] { m_pdf->setZoom(m_pdf->zoom() * 1.25); })->setShortcuts({QKeySequence("Ctrl+="), QKeySequence::ZoomIn});
     add("Zoom out PDF", QKeySequence::ZoomOut, [this] { m_pdf->setZoom(m_pdf->zoom() / 1.25); });
     add("Fit PDF width", QKeySequence("Ctrl+0"), [this] { m_pdf->fitWidth(); });
+    add("Present PDF", QKeySequence("Shift+F5"), [this] { present(); }); // PowerPoint's "from current slide"
     menu->addSeparator();
     add("Next tab", QKeySequence("Ctrl+PgDown"), [this] { m_tabs->setCurrentIndex((m_tabs->currentIndex() + 1) % m_tabs->count()); });
     add("Previous tab", QKeySequence("Ctrl+PgUp"), [this] { m_tabs->setCurrentIndex((m_tabs->currentIndex() + m_tabs->count() - 1) % m_tabs->count()); });
@@ -1096,7 +1166,7 @@ void Window::refreshOutline()
         static const QStringList prefixes = {"", "label  ", "file  ", "TODO  "};
         static const QStringList colors = {"#ADB7C4", "#4FC1FF", "#C586C0", "#CCA700"};
         item->setText(0, prefixes[entry.kind] + (entry.title.isEmpty() ? "…" : entry.title));
-        item->setForeground(0, QColor(colors[entry.kind]));
+        item->setForeground(0, themeColor(colors[entry.kind]));
         item->setData(0, Qt::UserRole, entry.line);
         item->setData(0, Qt::UserRole + 1, entry.kind);
         item->setToolTip(0, QString("Line %1").arg(entry.line));
@@ -1170,7 +1240,14 @@ Editor *Window::newDocument(const QString &text)
     setTabTitle(editor); // icon and × now that the left widget exists
     connect(editor->document(), &QTextDocument::modificationChanged, this, [this, editor] { setTabTitle(editor); });
     editor->setWordWrap(m_wordWrap);
+    if (m_editorFont != QFont()) editor->setEditorFont(m_editorFont);
     connect(editor, &Editor::wordWrapToggled, this, &Window::setWordWrap);
+    connect(editor, &Editor::fontZoomRequested, this, [this, editor](int steps)
+    {
+        QFont font = editor->font();
+        font.setPointSizeF(std::clamp(font.pointSizeF() + steps, 6.0, 40.0));
+        setEditorFont(font);
+    });
     connect(editor, &QTextEdit::textChanged, this, [this, editor] { if (editor == currentEditor()) m_outlineTimer.start(); });
     connect(editor, &QTextEdit::cursorPositionChanged, this, [this, editor]
     {
@@ -1208,7 +1285,7 @@ bool Window::openSource(const QString &path)
     QString absolute = info.absoluteFilePath();
     for (int i = 0; i < m_tabs->count(); ++i)
         if (m_tabs->widget(i)->property("path").toString() == absolute)
-        { m_tabs->setCurrentIndex(i); return true; }
+        { m_tabs->setCurrentIndex(i); addRecent(absolute); return true; }
     QFile file(absolute);
     if (!file.open(QIODevice::ReadOnly)) { m_status->setText("Cannot open file: " + file.errorString()); return false; }
     QByteArray bytes = file.readAll();
@@ -1226,7 +1303,181 @@ bool Window::openSource(const QString &path)
     setTabTitle(editor);
     applyProblems(editor);
     watchSource(absolute);
+    addRecent(absolute);
     return true;
+}
+
+void Window::setEditorFont(const QFont &font)
+{
+    m_editorFont = font;
+    for (int i = 0; i < m_tabs->count(); ++i)
+        if (auto *editor = qobject_cast<Editor *>(m_tabs->widget(i))) editor->setEditorFont(font);
+}
+
+QString Window::templatesFolder()
+{
+    return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + "/templates";
+}
+
+QList<QPair<QString, QString>> Window::builtinTemplates()
+{
+    return {
+        {"Article", "\\documentclass[11pt,a4paper]{article}\n\\usepackage[T1]{fontenc}\n\\usepackage{amsmath,amssymb}\n"
+            "\\usepackage{graphicx}\n\\usepackage{hyperref}\n\n\\title{\u2022}\n\\author{\u2022}\n\\date{\\today}\n\n"
+            "\\begin{document}\n\\maketitle\n\n\\section{\u2022}\n\u2022\n\n\\end{document}\n"},
+        {"Article (Vietnamese)", "\\documentclass[12pt,a4paper]{article}\n\\usepackage[T5]{fontenc}\n\\usepackage[vietnamese]{babel}\n"
+            "\\usepackage{amsmath,amssymb}\n\\usepackage{graphicx}\n\\usepackage{hyperref}\n\n\\title{\u2022}\n\\author{\u2022}\n"
+            "\\date{\\today}\n\n\\begin{document}\n\\maketitle\n\n\\section{\u2022}\n\u2022\n\n\\end{document}\n"},
+        {"Report", "\\documentclass[12pt,a4paper]{report}\n\\usepackage[T1]{fontenc}\n\\usepackage{amsmath,amssymb}\n"
+            "\\usepackage{graphicx}\n\\usepackage{hyperref}\n\n\\title{\u2022}\n\\author{\u2022}\n\\date{\\today}\n\n"
+            "\\begin{document}\n\\maketitle\n\\tableofcontents\n\n\\chapter{\u2022}\n\u2022\n\n\\end{document}\n"},
+        {"Beamer presentation", "\\documentclass{beamer}\n\\usetheme{Madrid}\n\\usepackage{amsmath,amssymb}\n\\usepackage{graphicx}\n\n"
+            "\\title{\u2022}\n\\author{\u2022}\n\\date{\\today}\n\n\\begin{document}\n\n\\begin{frame}\n    \\titlepage\n\\end{frame}\n\n"
+            "\\begin{frame}{\u2022}\n    \\begin{itemize}\n        \\item \u2022\n    \\end{itemize}\n\\end{frame}\n\n\\end{document}\n"},
+        {"Letter", "\\documentclass[11pt,a4paper]{letter}\n\\usepackage[T1]{fontenc}\n\n\\signature{\u2022}\n\\address{\u2022}\n\n"
+            "\\begin{document}\n\\begin{letter}{\u2022}\n\\opening{Dear \u2022,}\n\n\u2022\n\n\\closing{Sincerely,}\n\\end{letter}\n\\end{document}\n"},
+    };
+}
+
+Editor *Window::newFromTemplate(const QString &text)
+{
+    auto *editor = newDocument();
+    editor->insertTemplate(text); // the first placeholder is selected, Tab goes to the next
+    editor->setFocus();
+    return editor;
+}
+
+void Window::showSettings()
+{
+    QDialog dialog(this);
+    dialog.setWindowTitle("Settings");
+    auto *form = new QFormLayout(&dialog);
+    auto *family = new QFontComboBox;
+    family->setFontFilters(QFontComboBox::MonospacedFonts);
+    family->setCurrentFont(currentEditor() ? currentEditor()->font() : font());
+    auto *size = new QSpinBox;
+    size->setRange(6, 40);
+    size->setSuffix(" pt");
+    size->setValue(qRound(currentEditor() ? currentEditor()->font().pointSizeF() : 11));
+    auto *fontRow = new QHBoxLayout;
+    fontRow->addWidget(family, 1);
+    fontRow->addWidget(size);
+    form->addRow("Editor font", fontRow);
+    auto *theme = new QComboBox;
+    theme->addItems({"Dark", "Light"});
+    theme->setCurrentIndex(lightTheme() ? 1 : 0);
+    auto *restart = new QLabel("Restart FoliTeX to apply the theme.");
+    restart->setVisible(false);
+    connect(theme, &QComboBox::currentIndexChanged, restart, [restart, theme] { restart->setVisible((theme->currentIndex() == 1) != lightTheme()); });
+    form->addRow("Theme", theme);
+    form->addRow("", restart);
+    auto *engine = new QComboBox;
+    for (int i = 0; i < m_engine->count(); ++i) engine->addItem(m_engine->itemText(i));
+    engine->setCurrentText(m_engine->currentText());
+    form->addRow("Engine", engine);
+    auto *buildOnSave = new QCheckBox("Build after each Ctrl+S");
+    buildOnSave->setChecked(m_buildOnSaveAction->isChecked());
+    form->addRow("Build", buildOnSave);
+    auto *wrap = new QCheckBox("Wrap long lines (Alt+Z)");
+    wrap->setChecked(m_wordWrap);
+    form->addRow("Word wrap", wrap);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    form->addRow(buttons);
+    if (dialog.exec() != QDialog::Accepted) return;
+    QFont chosen = family->currentFont();
+    chosen.setStyleHint(QFont::Monospace);
+    chosen.setPointSizeF(size->value());
+    setEditorFont(chosen);
+    m_engine->setCurrentText(engine->currentText());
+    m_buildOnSaveAction->setChecked(buildOnSave->isChecked());
+    setWordWrap(wrap->isChecked());
+    // Read at start-up, before any widget exists; the other settings are saved on quit (main.cpp).
+    QSettings().setValue("theme", theme->currentIndex() == 1 ? "light" : "dark");
+}
+
+void Window::addRecent(const QString &path)
+{
+    m_recent.removeAll(path);
+    m_recent.prepend(path);
+    while (m_recent.size() > 12) m_recent.removeLast();
+}
+
+QVariantMap Window::session() const
+{
+    QStringList files;
+    QVariantList positions;
+    int current = -1;
+    for (int i = 0; i < m_tabs->count(); ++i)
+    {
+        auto *editor = qobject_cast<Editor *>(m_tabs->widget(i));
+        if (!editor || editor->property("path").toString().isEmpty()) continue;
+        if (i == m_tabs->currentIndex()) current = files.size();
+        files << editor->property("path").toString();
+        positions << editor->textCursor().position();
+    }
+    return {{"files", files}, {"positions", positions}, {"current", current}, {"pdf", m_pdf->path()}};
+}
+
+void Window::restoreSession(const QVariantMap &session)
+{
+    QStringList files = session.value("files").toStringList();
+    QVariantList positions = session.value("positions").toList();
+    QList<int> positionsByTab;
+    Editor *current = nullptr;
+    for (int i = 0; i < files.size(); ++i)
+    {
+        if (!QFileInfo(files[i]).isFile() || !openSource(files[i])) continue;
+        auto *editor = currentEditor();
+        QTextCursor cursor(editor->document());
+        cursor.setPosition(std::clamp(positions.value(i).toInt(), 0, editor->document()->characterCount() - 1));
+        editor->setTextCursor(cursor);
+        if (i == session.value("current").toInt()) current = editor;
+    }
+    if (current) m_tabs->setCurrentWidget(current);
+    if (auto *editor = currentEditor()) editor->ensureCursorVisible();
+    QString pdf = session.value("pdf").toString();
+    if (QFileInfo(pdf).isFile()) openPdf(pdf);
+}
+
+PdfView *Window::present()
+{
+    if (m_pdf->path().isEmpty() || !m_pdf->pageCount()) { m_status->setText("Open or build a PDF to present it."); return nullptr; }
+    // A second view with its own renderer, so the editor's PDF keeps its position and cache.
+    // A child window, so it closes with the main window instead of keeping the app running.
+    auto *show = new PdfView(this);
+    show->setWindowFlag(Qt::Window);
+    show->setAttribute(Qt::WA_DeleteOnClose);
+    show->setWindowTitle(QFileInfo(m_pdf->path()).fileName());
+    show->setPresentation(true);
+    show->goToPage(m_pdf->currentPage());
+    show->open(m_pdf->path());
+    show->showFullScreen();
+    return show;
+}
+
+void Window::countWords()
+{
+    auto *editor = currentEditor();
+    QString path = editor ? editor->property("path").toString() : QString();
+    if (path.isEmpty()) { m_status->setText("Save the document to count its words."); return; }
+    QString root = BuildRunner::rootFile(path);
+    auto *process = new QProcess(this);
+    process->setWorkingDirectory(QFileInfo(root).absolutePath());
+    connect(process, &QProcess::finished, this, [this, process, root](int code)
+    {
+        QString report = QString::fromUtf8(process->readAllStandardOutput()).trimmed();
+        process->deleteLater();
+        if (code != 0 || report.isEmpty()) { m_status->setText("texcount failed; is it installed?"); return; }
+        QMessageBox::information(this, "Word count — " + QFileInfo(root).fileName(), report);
+    });
+    connect(process, &QProcess::errorOccurred, this, [this, process](QProcess::ProcessError error)
+    {
+        if (error == QProcess::FailedToStart) { m_status->setText("Cannot start texcount; install it with TeX Live."); process->deleteLater(); }
+    });
+    // -inc follows \input/\include from the root, like the build.
+    process->start("texcount", {"-inc", "-utf8", "-total", QFileInfo(root).fileName()});
 }
 
 bool Window::save(Editor *editor, bool saveAs)
@@ -1297,7 +1548,14 @@ void Window::build()
     auto *editor = currentEditor();
     if (!editor) return;
     if ((editor->property("path").toString().isEmpty() || editor->document()->isModified()) && !save(editor)) return;
-    QString root = BuildRunner::rootFile(editor->property("path").toString());
+    QString source = editor->property("path").toString();
+    QString root = BuildRunner::rootFile(source);
+    // A .bib, .sty or other non-TeX file builds the document built last, never itself.
+    if (!root.isEmpty() && !QStringList{"tex", "ltx"}.contains(QFileInfo(root).suffix().toLower()))
+    {
+        if (m_lastRoot.isEmpty()) { m_status->setText("Open the main .tex file and press F5 to build."); return; }
+        source = root = m_lastRoot;
+    }
     // Only save other documents explicitly associated with the same TeX root.
     for (int i = 0; i < m_tabs->count(); ++i)
     {
@@ -1309,7 +1567,8 @@ void Window::build()
     m_log->clear();
     m_buildStarted = QDateTime::currentDateTime();
     m_status->setText("Building…"); m_build->setIcon(m_stopIcon); m_build->setToolTip("Stop build · F5");
-    m_runner.start(editor->property("path").toString(), m_engine->currentText());
+    m_lastRoot = root;
+    m_runner.start(source, m_engine->currentText());
 }
 
 void Window::openPdf(const QString &path)
@@ -1547,6 +1806,11 @@ bool Window::eventFilter(QObject *object, QEvent *event)
     {
         m_altAlone = false;
         if (!m_menuBarShown) m_topBar->setVisible(!m_topBar->isVisible());
+    }
+    if (event->type() == QEvent::Shortcut && qobject_cast<QAction *>(object))
+    {
+        m_viaShortcut = true; // the action triggers synchronously inside this event
+        QTimer::singleShot(0, this, [this] { m_viaShortcut = false; });
     }
     // Any wheel or touchpad movement over the tabs scrolls them; Qt would switch tabs instead.
     if (object == m_tabs->tabBar() && event->type() == QEvent::Wheel)

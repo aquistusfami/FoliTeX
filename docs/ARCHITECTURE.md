@@ -10,7 +10,10 @@ FoliTeX is a single Qt Widgets application. All logic lives in a static library,
   the cost is that Qt lays out the whole document, roughly 3 KB per line.
 - `SmoothScroll` is an event filter shared with the PDF view: touchpad pixel deltas
   scroll directly, mouse wheels animate for 140 ms.
-- `LatexHighlighter` colours commands, braces and comments.
+- `LatexHighlighter` scans each line once, keeping brace depth and the mode (text, inline
+  or display maths, a math environment, verbatim) in the block state so maths and listings
+  continue across lines. Command arguments (headings, keys, environment names, `\text{}`
+  in maths) are coloured after the scan, only where nothing else set a colour.
 - Completion picks a context from the text before the cursor (command, `\begin{`,
   `\ref{`, `\cite{`, `\usepackage{` / `\documentclass{`) and fills a `QCompleter`.
   Templates mark placeholders with U+2022; the mark is never inserted into the source,
@@ -23,8 +26,28 @@ FoliTeX is a single Qt Widgets application. All logic lives in a static library,
   they require, one level). Documents over 5,000 lines are rescanned only when typing pauses.
 - `Editor::outline()` and `Editor::closingFor()` are pure functions over text, which
   keeps them easy to test.
+- `\ref`/`\cite` completion walks the project from the root (`BuildRunner::rootFile`)
+  through `\input`/`\include`/`\subfile`; open tabs supply their unsaved text, other files
+  are read from disk and cached by modification time.
+- Hover previews (`Editor::preview`): `mathAt()` finds the formula around the pointer,
+  `imageAt()` the figure. Formulas compile with `pdflatex` in a temporary directory and
+  `pdftocairo` turns the page into a PNG; both run as `QProcess`es, results are cached
+  per editor by the generated source, and `previewReady` shows the tooltip when done.
+- Folding hides `QTextBlock`s (`setVisible(false)` + `markContentsDirty`), so it touches
+  neither the text nor the undo history. A line is folded when the block after it is
+  hidden; `foldEnd()` finds the range (matching `\end`, or the next heading of the same
+  level). The gutter only runs a cheap per-line test (`looksFoldable`).
+- Theme: colours are written for the dark theme; `themeColor()` / `themed()` map them to
+  light ones when `setLightTheme(true)` was called at start-up.
+- Inverse search (`Editor::goToWord`): SyncTeX puts every word of a beamer frame on
+  `\end{frame}`, so the PDF view sends the clicked word with its neighbours and the
+  editor finds it inside the enclosing frame.
 
 ## PDF view (`src/pdfview.*`)
+
+- Presentation mode (`setPresentation`) lays out one page per screen height, fitted and
+  centred; `Window::present()` opens it in a second full-screen `PdfView` with its own
+  renderer, so the main view keeps its position and cache.
 
 - `PdfRenderer` lives on its own `QThread` and owns the Poppler document, loaded from an
   in-memory snapshot so `latexmk` can rewrite the file during a render. The UI talks to

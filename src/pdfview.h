@@ -8,6 +8,8 @@
 #include <poppler-qt6.h>
 #include <memory>
 
+class SmoothScroll;
+
 struct Tile
 {
     int generation = 0;
@@ -88,6 +90,9 @@ public:
     void trimCache();
     static double renderDensity(QSize viewport, double nativeDpr);
     double zoom() const { return m_zoom; }
+    // Slide show: one page per screen, fitted and centred; keys, clicks and the wheel step pages, Esc closes.
+    void setPresentation(bool on);
+    bool presenting() const { return m_presenting; }
     QString selectedText() const;
     void copySelection() const;
     QString path() const { return m_path; }
@@ -148,6 +153,11 @@ private:
     QTimer m_dpiTimer;
     QTimer m_trimTimer; // trims the cache once scrolling and zooming pause
     double m_zoom = 1;
+    bool m_presenting = false;
+    int m_slide = 0; // 0-based page shown while presenting
+    int m_wheelTravel = 0;
+    SmoothScroll *m_smooth;
+    void showSlide(int index);
     double m_scale = 1;
     double m_renderDpr = 1;
     quint64 m_renderRequests = 0;

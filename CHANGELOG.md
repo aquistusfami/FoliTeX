@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.7.0 — 2026-11-08
+
+### Added
+- Session restore: open files, cursor positions and the PDF come back on the next start
+  (files given on the command line replace them). File → Open Recent lists files and folders.
+- Build → Build on Save: Ctrl+S also builds.
+- Build → Word Count runs `texcount -inc` on the root and shows its report.
+- Present PDF (Shift+F5): full-screen slides from the page in view; arrows, Space, clicks
+  and the wheel step pages, Esc ends. The pages before and after are rendered ahead, so
+  stepping never shows a blank page.
+- Hover previews: formulas render in the background through pdfLaTeX with the preamble's
+  math packages and macros; `\includegraphics` shows the figure (PDF figures through
+  `pdftocairo`), found through `\graphicspath` like the build. Previews are drawn at the
+  screen's pixel density, so they stay sharp at fractional scaling.
+- Code folding for `\begin…\end` environments and sectioning commands: click the arrow
+  beside the line number, or Ctrl+Shift+[ / Ctrl+Shift+] / Ctrl+K Ctrl+J (unfold all).
+  Folded lines show a ⋯ badge and open again when the cursor moves into them.
+- Settings (Ctrl+,): editor font and size, dark or light theme (after a restart),
+  engine, build on save, word wrap. Ctrl+wheel resizes the editor text; the font and the
+  engine are remembered.
+- File → New from Template: article, Vietnamese article, report, beamer and letter, plus
+  your own `.tex` files in `~/.config/Folitex/FoliTeX/templates/` (U+2022 `•` marks a
+  placeholder that Tab jumps to).
+- Richer syntax colours, after VS Code's LaTeX Workshop, Overleaf and TeXstudio:
+  `\begin`/`\end`/`\item`/sectioning as keywords, environment names, bold section titles,
+  label/ref/cite/file keys, maths (inline, display and math environments, with `\text{}`
+  kept as text), brackets coloured by nesting depth, `&` `~` `\\`, italic comments, and
+  verbatim/listings left raw. A blank line resets bracket depth, so an unbalanced `{`
+  recolours only its paragraph (32 ms instead of 390 ms in a 20,000-line file).
+
+### Fixed
+- Ctrl+S (and any other shortcut) no longer hides a menu bar revealed with Alt; only
+  choosing a menu item does.
+- F5, or saving with Build on Save, in a `.bib`, `.sty` or other non-TeX file builds the
+  document built last instead of running `latexmk` on that file.
+
+### Changed
+- `\ref` and `\cite` completion cover the whole project: files reached through
+  `\input`/`\include`/`\subfile` from the root, and the bibliographies it names.
+
 ## 0.6.1 — 2026-11-07
 
 ### Fixed

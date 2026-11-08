@@ -5,6 +5,17 @@
 #include <QCompleter>
 #include <tuple>
 #include <QTimer>
+#include <QTextBlock>
+#include <QCache>
+
+class QLabel;
+
+// Colours are written for the dark theme; with the light theme they map to light equivalents.
+// Chosen once at start-up (switching needs a restart).
+void setLightTheme(bool on);
+bool lightTheme();
+QColor themeColor(const QString &dark);
+QString themed(QString text); // every mapped #RRGGBB in a style sheet or SVG
 
 class SmoothScroll : public QObject
 {
@@ -70,12 +81,34 @@ public:
     // Build problems shown as squiggles with a tooltip: (1-based line, is error, message).
     void setProblems(const QList<std::tuple<int, bool, QString>> &problems);
     bool wordWrap() const { return lineWrapMode() != QTextEdit::NoWrap; }
+    // The formula around position ($…$, \(…\), \[…\], equation-like environments), or empty.
+    QString mathAt(int position) const;
+    // The \includegraphics file under position, resolved like the build would, or empty.
+    QString imageAt(int position) const;
+    // Hover preview of the formula or image at position, at the screen's pixel density; null while it
+    // renders in the background (previewReady follows), when it failed, or when there is nothing to show.
+    QPixmap preview(int position);
+    // Font, tab width, gutter and wrap indents together.
+    void setEditorFont(const QFont &font);
+    // Folding: \begin…\end environments and sectioning commands. Hidden lines stay in the text;
+    // the cursor entering one unfolds it.
+    int foldEnd(const QTextBlock &start) const; // last line a fold at start would hide, -1 if none
+    bool isFolded(int blockNumber) const;
+    bool toggleFold(int blockNumber);
+    void foldAtCursor();
+    void unfoldAll();
 signals:
     void wordWrapToggled(bool on);
+    void previewReady();
+    void fontZoomRequested(int steps); // Ctrl+wheel; the window resizes every editor
 protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     bool viewportEvent(QEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
+    void focusOutEvent(QFocusEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
     bool eventFilter(QObject *object, QEvent *event) override;
 private:
@@ -105,6 +138,15 @@ private:
         QString message;
     };
     QList<Mark> m_marks;
+    QCache<QString, QPixmap> m_previews{16 * 1024}; // key -> image (cost in KiB), null when rendering failed
+    QPixmap remember(const QString &key, const QPixmap &pixmap);
+    QSet<QString> m_rendering;
+    QLabel *m_previewPopup; // a tooltip-like window that shows the pixmap 1:1, unlike QToolTip's scaled <img>
+    QPoint m_previewPoint; // global position the popup was shown for
+    QPoint m_hoverPoint; // global pointer position while it rests over the text, null otherwise
+    void showPreview(const QPixmap &pixmap, const QPoint &global);
+    void refreshFold(const QTextBlock &from, const QTextBlock &to);
+    void renderPreview(const QString &key, const QString &formula, const QString &image);
     void applyWrapIndent();
     int m_indentFrom = -1; // block range whose wrap indent is pending, -1 when none
     int m_indentTo = -1;

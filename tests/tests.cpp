@@ -1,5 +1,6 @@
 #include "window.h"
 #include <QToolButton>
+#include <QStackedWidget>
 #include <QTabBar>
 #include <QMenuBar>
 #include <QtTest>
@@ -42,6 +43,14 @@ private slots:
     void tabIndent();
     void continueList();
     void inverseSearchWord();
+    void sessionRestore();
+    void projectReferences();
+    void mathAndImagePreview();
+    void presentation();
+    void folding();
+    void syntaxColors();
+    void buildOnSave();
+    void fontThemeAndTemplates();
     void undoWithWrapIndent();
     void tabScrolling();
     void packageCompletion();
@@ -544,6 +553,11 @@ void Tests::menuBarToggle()
     QTest::keyPress(editor, Qt::Key_Alt);
     QTest::keyRelease(editor, Qt::Key_Alt);
     QVERIFY(menuBar->isVisible());
+    // A shortcut of a menu item (here Alt+Z) is not a menu choice; the bar stays.
+    bool wrap = window.wordWrap();
+    QTest::keyClick(editor, Qt::Key_Z, Qt::AltModifier);
+    QCOMPARE(window.wordWrap(), !wrap);
+    QVERIFY(menuBar->isVisible());
     emit menuBar->triggered(toggle);
     QVERIFY(!menuBar->isVisible());
     window.setMenuBarShown(true);
@@ -659,6 +673,321 @@ void Tests::inverseSearchWord()
     QCOMPARE(at(), std::pair(6, 8));
     editor.goToWord(4, {}, -1);
     QCOMPARE(at(), std::pair(4, 0));
+}
+
+void Tests::sessionRestore()
+{
+    QTemporaryDir dir;
+    write(dir.filePath("a.tex"), "first file\nsecond line\n");
+    write(dir.filePath("b.tex"), "other");
+    QVariantMap session;
+    {
+        Window window;
+        QVERIFY(window.openSource(dir.filePath("a.tex")));
+        auto cursor = window.currentEditor()->textCursor();
+        cursor.setPosition(14);
+        window.currentEditor()->setTextCursor(cursor);
+        QVERIFY(window.openSource(dir.filePath("b.tex")));
+        QVERIFY(window.openSource(dir.filePath("a.tex"))); // switches back to the open tab
+        session = window.session();
+        QCOMPARE(window.recentFiles().first(), QFileInfo(dir.filePath("a.tex")).absoluteFilePath());
+        QCOMPARE(window.recentFiles().size(), 2);
+    }
+    QFile::remove(dir.filePath("b.tex")); // a file deleted since is skipped
+    write(dir.filePath("c.tex"), "c");
+    session["files"] = session["files"].toStringList() << dir.filePath("c.tex");
+    Window window;
+    window.restoreSession(session);
+    auto *tabs = window.findChild<QTabWidget *>("editorTabs");
+    QCOMPARE(tabs->count(), 2);
+    QCOMPARE(window.currentEditor()->property("path").toString(), QFileInfo(dir.filePath("a.tex")).absoluteFilePath());
+    QCOMPARE(window.currentEditor()->textCursor().position(), 14);
+}
+
+void Tests::projectReferences()
+{
+    // Only the root is open; labels and keys come from the files it includes.
+    QTemporaryDir dir;
+    QVERIFY(QDir(dir.path()).mkpath("sections") && QDir(dir.path()).mkpath("refs"));
+    write(dir.filePath("main.tex"), "\\documentclass{article}\n\\addbibresource{refs/lib.bib}\n\\begin{document}\n"
+                                    "\\input{sections/one}\n% \\input{ghost}\n\\end{document}\n");
+    write(dir.filePath("sections/one.tex"), "\\section{One}\\label{sec:one}\n\\include{sections/two}\n");
+    write(dir.filePath("sections/two.tex"), "\\label{sec:two}\n");
+    write(dir.filePath("ghost.tex"), "\\label{sec:ghost}\n");
+    write(dir.filePath("refs/lib.bib"), "@article{knuth84,\n  title={Literate programming}\n}\n");
+    Window window;
+    window.show();
+    QVERIFY(window.openSource(dir.filePath("main.tex")));
+    auto *editor = window.currentEditor();
+    auto *completer = editor->findChild<QCompleter *>();
+    auto offered = [&](const QString &text)
+    {
+        editor->moveCursor(QTextCursor::End);
+        editor->insertPlainText(text);
+        QTest::keyClick(editor, Qt::Key_Space, Qt::ControlModifier);
+        return static_cast<QStringListModel *>(completer->model())->stringList();
+    };
+    QStringList labels = offered("\\ref{");
+    QVERIFY(labels.contains("sec:one") && labels.contains("sec:two"));
+    QVERIFY(!labels.contains("sec:ghost")); // commented out
+    QVERIFY(offered("}\n\\cite{").contains("knuth84"));
+}
+
+void Tests::mathAndImagePreview()
+{
+    Editor editor;
+    editor.setPlainText("Cost \\$5 and $x^2$ or \\(a+b\\) and $$c$$.\n"
+                        "\\begin{align*}\n  a &= b \\\\[2pt]\n  c &= d\n\\end{align*}\n"
+                        "Text \\[ \\int f \\] end % $not$\n");
+    auto at = [&](int line, int column) { return editor.document()->findBlockByNumber(line - 1).position() + column; };
+    QCOMPARE(editor.mathAt(at(1, 2)), QString());
+    QCOMPARE(editor.mathAt(at(1, 15)), "$x^2$");
+    QCOMPARE(editor.mathAt(at(1, 25)), "\\(a+b\\)");
+    QCOMPARE(editor.mathAt(at(1, 37)), "\\[c\\]");
+    QCOMPARE(editor.mathAt(at(4, 3)), "\\begin{align*}\n  a &= b \\\\[2pt]\n  c &= d\n\\end{align*}");
+    QCOMPARE(editor.mathAt(at(6, 9)), "\\[ \\int f \\]");
+    QCOMPARE(editor.mathAt(at(6, 20)), QString());
+    QCOMPARE(editor.mathAt(at(6, 27)), QString()); // in a comment
+    // Figures resolve through \graphicspath; bitmaps need no rendering.
+    QTemporaryDir dir;
+    QVERIFY(QDir(dir.path()).mkpath("figs"));
+    QImage(40, 20, QImage::Format_RGB32).save(dir.filePath("figs/plot.png"));
+    write(dir.filePath("main.tex"), "\\graphicspath{{figs/}}\n\\includegraphics[width=3cm]{plot}\n");
+    Window window;
+    QVERIFY(window.openSource(dir.filePath("main.tex")));
+    auto *source = window.currentEditor();
+    QCOMPARE(source->imageAt(source->document()->findBlockByNumber(1).position() + 30), QDir::cleanPath(dir.filePath("figs/plot.png")));
+    QPixmap figure = source->preview(source->document()->findBlockByNumber(1).position() + 30);
+    QCOMPARE(figure.deviceIndependentSize(), QSizeF(40, 20));
+    QCOMPARE(figure.devicePixelRatio(), source->devicePixelRatioF()); // drawn 1:1 on screen pixels, not blurred
+    if (QStandardPaths::findExecutable("pdflatex").isEmpty() || QStandardPaths::findExecutable("pdftocairo").isEmpty())
+        QSKIP("pdflatex or pdftocairo is not installed");
+    QSignalSpy ready(&editor, &Editor::previewReady);
+    QVERIFY(editor.preview(at(1, 15)).isNull()); // renders in the background
+    QTRY_COMPARE_WITH_TIMEOUT(ready.size(), 1, 20000);
+    QPixmap formula = editor.preview(at(1, 15));
+    QVERIFY(!formula.isNull());
+    QCOMPARE(formula.devicePixelRatio(), editor.devicePixelRatioF());
+}
+
+void Tests::presentation()
+{
+    QTemporaryDir dir;
+    QString path = dir.filePath("slides.pdf");
+    {
+        QPdfWriter writer(path);
+        writer.setPageSize(QPageSize(QSizeF(160, 90), QPageSize::Millimeter));
+        QPainter painter(&writer);
+        writer.newPage(); writer.newPage();
+    }
+    PdfView viewer;
+    viewer.resize(800, 600);
+    viewer.setPresentation(true);
+    viewer.goToPage(2); // before loading, as Window::present does
+    QSignalSpy loaded(&viewer, &PdfView::documentReady);
+    viewer.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&viewer));
+    viewer.open(path);
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
+    QCOMPARE(viewer.pageCount(), 3);
+    QCOMPARE(viewer.currentPage(), 2);
+    QCOMPARE(viewer.verticalScrollBar()->value(), viewer.viewport()->height()); // one screen per page
+    // The pages before and after are rendered ahead, so stepping never shows a blank page.
+    QTRY_VERIFY_WITH_TIMEOUT(viewer.renderingIdle() && viewer.cachedTiles() == 3, 5000);
+    QTest::keyClick(&viewer, Qt::Key_Right);
+    QCOMPARE(viewer.currentPage(), 3);
+    QTest::keyClick(&viewer, Qt::Key_Space);
+    QCOMPARE(viewer.currentPage(), 3); // stays on the last page
+    QTest::mouseClick(viewer.viewport(), Qt::LeftButton);
+    QCOMPARE(viewer.currentPage(), 3);
+    QTest::keyClick(&viewer, Qt::Key_Home);
+    QCOMPARE(viewer.currentPage(), 1);
+    QWheelEvent down(QPointF(100, 100), viewer.mapToGlobal(QPointF(100, 100)), {}, QPoint(0, -120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(viewer.viewport(), &down);
+    QCOMPARE(viewer.currentPage(), 2);
+    QTest::keyClick(&viewer, Qt::Key_Escape);
+    QVERIFY(!viewer.isVisible());
+}
+
+void Tests::syntaxColors()
+{
+    Editor editor;
+    editor.setPlainText("\\begin{align}\n"                      // 1
+                        "  a &= \\text{if} b % note\n"            // 2
+                        "\\end{align}\n"                          // 3
+                        "\\section{Title}\\label{key} $x$ \\$\n"   // 4
+                        "\\begin{verbatim}\n"                     // 5
+                        "\\raw{ $ % \n"                           // 6
+                        "\\end{verbatim} \\includegraphics[width=1cm]{fig}\n"); // 7
+    auto color = [&](int line, int column)
+    {
+        auto block = editor.document()->findBlockByNumber(line - 1);
+        for (const auto &range : block.layout()->formats())
+            if (column >= range.start && column < range.start + range.length) return range.format.foreground().color().name().toUpper();
+        return QString("plain");
+    };
+    auto bold = [&](int line, int column)
+    {
+        for (const auto &range : editor.document()->findBlockByNumber(line - 1).layout()->formats())
+            if (column >= range.start && column < range.start + range.length) return range.format.fontWeight() == QFont::Bold;
+        return false;
+    };
+    QCOMPARE(color(1, 1), "#C586C0");   // \begin
+    QCOMPARE(color(1, 8), "#4EC9B0");   // align
+    QCOMPARE(color(1, 6), "#FFD700");   // { at depth 0
+    QCOMPARE(color(2, 2), "#A9DC76");   // math continues on the next line
+    QCOMPARE(color(2, 4), "#D7BA7D");   // &
+    QCOMPARE(color(2, 13), "plain");    // \text{if} is text inside math
+    QCOMPARE(color(2, 19), "#6A9955");  // comment
+    QCOMPARE(color(3, 6), "#4EC9B0");   // \end{align} ends math
+    QCOMPARE(color(4, 10), "#DCDCAA");  // heading text
+    QVERIFY(bold(4, 10) && bold(4, 2));
+    QCOMPARE(color(4, 22), "#CE9178");  // label key
+    QCOMPARE(color(4, 28), "#A9DC76");  // $x$
+    QCOMPARE(color(4, 31), "#569CD6");  // \$ is an escape, not math
+    QCOMPARE(color(6, 1), "plain");     // verbatim stays raw: no command, math or comment
+    QCOMPARE(color(6, 9), "plain");
+    QCOMPARE(color(7, 6), "#4EC9B0");   // \end{verbatim} itself
+    QCOMPARE(color(7, 43), "#CE9178");  // the file after [width=1cm]
+    editor.setPlainText("text \\"); // a backslash being typed at the end of a line once hung the scan
+    QCOMPARE(color(1, 5), "plain");    // A stray { colours only its paragraph: the blank line resets the depth.
+    editor.setPlainText("{ open\n\n{x}");
+    QCOMPARE(color(3, 0), "#FFD700");
+    QCOMPARE(editor.document()->findBlockByNumber(2).userState() & 0xFF, 0);
+    // The hover popup is a window of its own; it hides with its tab.
+    QStackedWidget tabs;
+    auto *other = new Editor;
+    auto *first = new Editor;
+    tabs.addWidget(first);
+    tabs.addWidget(other);
+    tabs.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+    auto *popup = first->findChild<QLabel *>("preview");
+    popup->show();
+    tabs.setCurrentWidget(other);
+    QVERIFY(!popup->isVisible());
+}
+
+void Tests::buildOnSave()
+{
+    if (QStandardPaths::findExecutable("latexmk").isEmpty()) QSKIP("latexmk is not installed");
+    QTemporaryDir dir;
+    write(dir.filePath("main.tex"), "\\documentclass{article}\n\\begin{document}\nHi\n\\end{document}\n");
+    write(dir.filePath("refs.bib"), "@misc{a, title={A}}\n");
+    Window window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    window.setBuildOnSave(true);
+    QAction *save = nullptr;
+    for (auto *action : window.actions()) if (action->text() == "Save") save = action;
+    QVERIFY(save);
+    auto status = [&] (const QString &text)
+    {
+        const auto labels = window.findChildren<QLabel *>();
+        return std::any_of(labels.cbegin(), labels.cend(), [&](QLabel *label) { return label->text() == text; });
+    };
+    auto edit = [&](const QString &path)
+    {
+        QVERIFY(window.openSource(path));
+        window.currentEditor()->moveCursor(QTextCursor::End);
+        window.currentEditor()->insertPlainText("%\n");
+        save->trigger();
+    };
+    // A .bib never builds itself; with nothing built yet there is nothing to rebuild.
+    edit(dir.filePath("refs.bib"));
+    QVERIFY(status("Open the main .tex file and press F5 to build."));
+    edit(dir.filePath("main.tex"));
+    QVERIFY(status("Building…"));
+    QTRY_VERIFY_WITH_TIMEOUT(!status("Building…"), 60000);
+    QVERIFY(QFileInfo::exists(dir.filePath(".folitex-build/main.pdf")));
+    // Saving the .bib now rebuilds main.tex.
+    edit(dir.filePath("refs.bib"));
+    QVERIFY(status("Building…"));
+    QTRY_VERIFY_WITH_TIMEOUT(!status("Building…"), 60000);
+}
+
+void Tests::folding()
+{
+    Editor editor;
+    editor.resize(500, 400);
+    editor.show();
+    editor.setPlainText("\\section{One}\n"                 // 1
+                        "\\begin{itemize} % \\end{itemize}\n" // 2: the comment does not close it
+                        "  \\item a\n"                       // 3
+                        "  \\begin{itemize}\\item x\\end{itemize}\n" // 4: closed on its line
+                        "\\end{itemize}\n"                   // 5
+                        "\n"                                 // 6
+                        "\\subsection{Sub}\n"                // 7
+                        "text\n"                             // 8
+                        "\n"                                 // 9
+                        "\\section{Two}\n"                   // 10
+                        "end\n");                            // 11
+    auto line = [&](int number) { return editor.document()->findBlockByNumber(number - 1); };
+    // foldEnd() gives 0-based block numbers: line 4 is block 3.
+    QCOMPARE(editor.foldEnd(line(2)), 3);  // through the line before \end, which stays visible
+    QCOMPARE(editor.foldEnd(line(4)), -1);
+    QCOMPARE(editor.foldEnd(line(1)), 7);  // the section ends before \section{Two}, blank lines stay
+    QCOMPARE(editor.foldEnd(line(7)), 7);  // ...and \subsection{Sub} at its text
+    QCOMPARE(editor.foldEnd(line(8)), -1);
+    QVERIFY(editor.toggleFold(0)); // block numbers are 0-based: line 1
+    QVERIFY(editor.isFolded(0));
+    for (int number = 2; number <= 8; ++number) QVERIFY(!line(number).isVisible());
+    QVERIFY(line(9).isVisible() && line(10).isVisible());
+    QVERIFY(!editor.document()->isModified() && !editor.document()->isUndoAvailable()); // not an edit
+    QCOMPARE(editor.toPlainText().count('\n'), 11); // the text is untouched
+    // Moving the cursor into folded lines (find, go to line) unfolds them.
+    editor.goToLine(3);
+    QVERIFY(line(3).isVisible() && !editor.isFolded(0));
+    // Fold at the cursor picks the innermost range; unfold all restores everything.
+    editor.foldAtCursor();
+    QVERIFY(editor.isFolded(1) && !line(3).isVisible() && line(5).isVisible());
+    QCOMPARE(editor.textCursor().blockNumber(), 1); // the cursor leaves the hidden lines
+    editor.toggleFold(0);
+    editor.unfoldAll();
+    for (int number = 1; number <= 11; ++number) QVERIFY(line(number).isVisible());
+    // Hidden lines whose first line was edited away still unfold from the line above.
+    editor.toggleFold(1);
+    QTextCursor cursor(line(2));
+    cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+    cursor.insertText("plain");
+    QVERIFY(editor.isFolded(1));
+    QVERIFY(editor.toggleFold(1) && line(3).isVisible());
+}
+
+void Tests::fontThemeAndTemplates()
+{
+    Window window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    auto *first = window.currentEditor();
+    QFont font("Monospace");
+    font.setPointSizeF(15);
+    window.setEditorFont(font);
+    QCOMPARE(first->font().pointSizeF(), 15.0);
+    QCOMPARE(first->tabStopDistance(), QFontMetricsF(first->font()).horizontalAdvance(' ') * 4);
+    // Ctrl+wheel resizes the text in every editor, new ones included.
+    QPointF middle(100, 100);
+    QWheelEvent zoom(middle, first->viewport()->mapToGlobal(middle), {}, QPoint(0, 240), Qt::NoButton, Qt::ControlModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(first->viewport(), &zoom);
+    QCOMPARE(window.editorFont().pointSizeF(), 17.0);
+    // Templates open as a new modified document with the first placeholder selected.
+    const auto templates = Window::builtinTemplates();
+    auto beamer = std::find_if(templates.cbegin(), templates.cend(), [](const auto &entry) { return entry.first == "Beamer presentation"; });
+    QVERIFY(beamer != templates.cend());
+    auto *editor = window.newFromTemplate(beamer->second);
+    QCOMPARE(editor->font().pointSizeF(), 17.0);
+    QVERIFY(editor->toPlainText().startsWith("\\documentclass{beamer}"));
+    QVERIFY(!editor->toPlainText().contains(QChar(0x2022)));
+    QVERIFY(editor->document()->isModified());
+    QVERIFY(editor->textCursor().block().text().startsWith("\\title{"));
+    for (const auto &[name, text] : templates)
+        QVERIFY2(text.contains("\\begin{document}") && text.endsWith("\\end{document}\n"), qPrintable(name));
+    // The light theme maps the dark palette; the dark one leaves colours alone.
+    QCOMPARE(themeColor("#16181B"), QColor("#16181B"));
+    setLightTheme(true);
+    auto reset = qScopeGuard([] { setLightTheme(false); });
+    QCOMPARE(themeColor("#16181b"), QColor("#FFFFFF"));
+    QCOMPARE(themed("a { background:#16181B; color:#d2d7de; }"), "a { background:#FFFFFF; color:#1F1F1F; }");
 }
 
 void Tests::continueList()

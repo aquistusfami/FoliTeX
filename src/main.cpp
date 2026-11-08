@@ -21,30 +21,31 @@ int main(int argc, char **argv)
     QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
     QApplication app(argc, argv);
     app.setApplicationName("FoliTeX");
-    app.setApplicationVersion("0.6.1");
+    app.setApplicationVersion("0.7.0");
     app.setOrganizationName("Folitex");
     // Wayland app_id must match folitex.desktop so launchers and docks show the right icon.
     app.setDesktopFileName("folitex");
     app.setWindowIcon(QIcon(":/folitex.svg"));
     app.setStyle(QStyleFactory::create("Fusion"));
+    setLightTheme(QSettings().value("theme").toString() == "light");
     // Colors follow the author's VS Code setup: Dark Modern with muted workbench.colorCustomizations.
     QPalette palette;
-    palette.setColor(QPalette::Window, QColor("#0E1013")); // gap between rounded panels
-    palette.setColor(QPalette::WindowText, QColor("#ADB7C4"));
-    palette.setColor(QPalette::Base, QColor("#16181B"));
-    palette.setColor(QPalette::AlternateBase, QColor("#1D2024"));
-    palette.setColor(QPalette::Text, QColor("#D2D7DE"));
-    palette.setColor(QPalette::Button, QColor("#1C2025"));
-    palette.setColor(QPalette::ButtonText, QColor("#D2D7DE"));
-    palette.setColor(QPalette::Highlight, QColor("#35434F"));
-    palette.setColor(QPalette::HighlightedText, QColor("#E0E5EC"));
-    palette.setColor(QPalette::PlaceholderText, QColor("#68727F"));
-    palette.setColor(QPalette::ToolTipBase, QColor("#1B1F24"));
-    palette.setColor(QPalette::ToolTipText, QColor("#D2D7DE"));
+    palette.setColor(QPalette::Window, themeColor("#0E1013")); // gap between rounded panels
+    palette.setColor(QPalette::WindowText, themeColor("#ADB7C4"));
+    palette.setColor(QPalette::Base, themeColor("#16181B"));
+    palette.setColor(QPalette::AlternateBase, themeColor("#1D2024"));
+    palette.setColor(QPalette::Text, themeColor("#D2D7DE"));
+    palette.setColor(QPalette::Button, themeColor("#1C2025"));
+    palette.setColor(QPalette::ButtonText, themeColor("#D2D7DE"));
+    palette.setColor(QPalette::Highlight, themeColor("#35434F"));
+    palette.setColor(QPalette::HighlightedText, themeColor("#E0E5EC"));
+    palette.setColor(QPalette::PlaceholderText, themeColor("#68727F"));
+    palette.setColor(QPalette::ToolTipBase, themeColor("#1B1F24"));
+    palette.setColor(QPalette::ToolTipText, themeColor("#D2D7DE"));
     app.setPalette(palette);
     QFont ui = app.font(); ui.setPointSizeF(10); app.setFont(ui);
     // Spin-box arrows are hidden with width:0, not NoButtons: styled NoButtons spin boxes collapse the text field (Qt 6.12).
-    app.setStyleSheet(R"(
+    app.setStyleSheet(themed(R"(
         QToolButton, QPushButton { border:0; border-radius:4px; padding:4px 8px; background:transparent; }
         QPushButton:hover, QToolButton:hover { background:#20252B; }
         QPushButton#primary { background:#4F6F6B; color:#E0E5EC; padding:4px 12px; }
@@ -125,7 +126,7 @@ int main(int argc, char **argv)
         QToolTip { background:#1B1F24; color:#D2D7DE; border:1px solid #303842; }
         QToolButton#rootButton { font-weight:bold; color:#ADB7C4; text-align:left; padding:3px 4px; border-radius:0; }
         QToolButton#rootButton:hover { background:transparent; }
-)");
+)"));
     // One-time move of settings saved under former names (Folitex.conf, then TeXLite).
     QSettings settings;
     for (auto [organization, application] : {std::pair{"Folitex", "Folitex"}, std::pair{"TeXLite", "TeXLite"}})
@@ -147,12 +148,23 @@ int main(int argc, char **argv)
     window.openWorkspace(QSettings().value("workspace").toString());
     window.setWordWrap(QSettings().value("wordWrap", false).toBool());
     window.setMenuBarShown(QSettings().value("menuBar", true).toBool());
+    window.setBuildOnSave(QSettings().value("buildOnSave", false).toBool());
+    window.setRecentFiles(QSettings().value("recent").toStringList());
+    if (QSettings().contains("editorFont")) window.setEditorFont(QSettings().value("editorFont").value<QFont>());
+    window.setEngine(QSettings().value("engine").toString());
     // Saved here rather than in Window so tests never touch the user's settings.
     QObject::connect(&app, &QApplication::aboutToQuit, [&window]
     {
         QSettings().setValue("wordWrap", window.wordWrap());
         QSettings().setValue("menuBar", window.menuBarShown());
+        QSettings().setValue("buildOnSave", window.buildOnSave());
+        QSettings().setValue("recent", window.recentFiles());
+        QSettings().setValue("session", window.session());
+        QSettings().setValue("engine", window.engine());
+        if (window.editorFont() != QFont()) QSettings().setValue("editorFont", window.editorFont());
     });
+    // Files on the command line replace the last session, as in VS Code.
+    if (parser.positionalArguments().isEmpty()) window.restoreSession(QSettings().value("session").toMap());
     for (const auto &file : parser.positionalArguments())
     {
         if (file.endsWith(".pdf", Qt::CaseInsensitive)) window.openPdf(QFileInfo(file).absoluteFilePath());

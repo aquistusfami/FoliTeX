@@ -18,10 +18,16 @@
 #include <QProcess>
 #include <QPainter>
 #include <future>
+#include <QCryptographicHash>
+#include <QLabel>
+#include <QScreen>
+#include <QImageReader>
+#include <QTemporaryDir>
+#include <QToolTip>
+#include "window.h"
 #include "completiondata.h"
 #include <QMenu>
 #include <QHelpEvent>
-#include <QToolTip>
 #include <QAbstractTextDocumentLayout>
 #include <algorithm>
 #include <cmath>
@@ -176,28 +182,121 @@ static PackageWords scannedPackage(const QString &name, int depth = 0)
     return words;
 }
 
-// shortcut: only .bib files next to open sources are read, upgrade by resolving \bibliography/\addbibresource paths.
-static QStringList bibKeys(const QStringList &directories)
+// Source text: the open tab's (unsaved edits included), else the file on disk.
+static QString sourceText(const QString &path, const QList<Editor *> &editors)
+{
+    for (auto *editor : editors)
+        if (editor->property("path").toString() == path) return editor->toPlainText();
+    static QHash<QString, QPair<QDateTime, QString>> cache;
+    QFileInfo info(path);
+    if (!info.isFile()) return {};
+    auto &cached = cache[path];
+    if (cached.first != info.lastModified())
+    {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) return {};
+        cached = {info.lastModified(), QString::fromUtf8(file.readAll())};
+    }
+    return cached.second;
+}
+
+struct ProjectRefs { QStringList labels, bibFiles; };
+
+// Follows \input/\include/\subfile from the root as the build does, collecting labels and bibliographies.
+static ProjectRefs projectRefs(const QString &root, const QList<Editor *> &editors)
+{
+    static const QRegularExpression command(
+        R"(\\(input|include|subfile|bibliography|addbibresource|label)\s*(?:\[[^\]]*\])?\{([^{}]+)\})");
+    static const QRegularExpression comment(R"((?<!\\)(?:\\\\)*\K%.*$)", QRegularExpression::MultilineOption);
+    QDir base = QFileInfo(root).absoluteDir();
+    ProjectRefs refs;
+    QStringList queue{root};
+    QSet<QString> seen;
+    while (!queue.isEmpty() && seen.size() < 300)
+    {
+        QString path = queue.takeFirst();
+        if (seen.contains(path)) continue;
+        seen.insert(path);
+        QString text = sourceText(path, editors);
+        text.remove(comment);
+        for (auto it = command.globalMatch(text); it.hasNext();)
+        {
+            auto match = it.next();
+            QString kind = match.captured(1);
+            if (kind == "label") { refs.labels << match.captured(2).trimmed(); continue; }
+            bool bib = kind == "bibliography" || kind == "addbibresource";
+            QString suffix = bib ? ".bib" : ".tex";
+            for (const auto &name : match.captured(2).split(',', Qt::SkipEmptyParts))
+            {
+                QString file = QDir::cleanPath(base.absoluteFilePath(name.trimmed()));
+                if (!file.endsWith(suffix) && QFileInfo(file + suffix).isFile()) file += suffix; // TeX tries name.tex first
+                (bib ? refs.bibFiles : queue) << file;
+            }
+        }
+    }
+    return refs;
+}
+
+static QStringList bibKeys(const QStringList &files)
 {
     static QHash<QString, QPair<QDateTime, QStringList>> cache;
     static const QRegularExpression entry(R"(@(?!string|comment|preamble)[A-Za-z]+\s*[{(]\s*([^,\s{}()]+)\s*,)",
         QRegularExpression::CaseInsensitiveOption);
     QStringList keys;
-    for (const auto &directory : directories)
-        for (const auto &info : QDir(directory).entryInfoList({"*.bib"}, QDir::Files))
+    for (const auto &path : files)
+    {
+        QFileInfo info(path);
+        if (!info.isFile()) continue;
+        auto &cached = cache[info.absoluteFilePath()];
+        if (cached.first != info.lastModified())
         {
-            auto &cached = cache[info.absoluteFilePath()];
-            if (cached.first != info.lastModified())
-            {
-                QFile file(info.absoluteFilePath());
-                if (!file.open(QIODevice::ReadOnly)) continue;
-                cached = {info.lastModified(), {}};
-                for (auto it = entry.globalMatch(QString::fromUtf8(file.readAll())); it.hasNext();)
-                    cached.second << it.next().captured(1);
-            }
-            keys += cached.second;
+            QFile file(info.absoluteFilePath());
+            if (!file.open(QIODevice::ReadOnly)) continue;
+            cached = {info.lastModified(), {}};
+            for (auto it = entry.globalMatch(QString::fromUtf8(file.readAll())); it.hasNext();)
+                cached.second << it.next().captured(1);
         }
+        keys += cached.second;
+    }
     return keys;
+}
+
+static bool &lightFlag()
+{
+    static bool light = false;
+    return light;
+}
+
+void setLightTheme(bool on) { lightFlag() = on; }
+bool lightTheme() { return lightFlag(); }
+
+// Dark Modern (the default) -> Light Modern, as in VS Code.
+static const QHash<QString, QString> &lightColors()
+{
+    static const QHash<QString, QString> colors = {
+        {"#0E1013", "#E4E4E4"}, {"#121417", "#EBEBEB"}, {"#16181B", "#FFFFFF"}, {"#1B1F24", "#F8F8F8"},
+        {"#1C2025", "#FFFFFF"}, {"#1D2024", "#F2F4F7"}, {"#20252B", "#E8E8E8"}, {"#22272E", "#E0E0E0"},
+        {"#29333B", "#DCE6F2"}, {"#303842", "#CECECE"}, {"#35434F", "#ADD6FF"}, {"#4F6F6B", "#3F7A73"},
+        {"#5C807B", "#4E8D85"}, {"#68727F", "#8B949E"}, {"#6F9692", "#3F7A73"}, {"#7DA6A0", "#3F7A73"},
+        {"#8793A2", "#6A737D"}, {"#9AA6B5", "#57606A"}, {"#ADB7C4", "#3B3B3B"}, {"#B9C3CF", "#1F1F1F"},
+        {"#D2D7DE", "#1F1F1F"}, {"#E0E5EC", "#000000"}, {"#569CD6", "#0000FF"}, {"#4FC1FF", "#0070C1"},
+        {"#C586C0", "#AF00DB"}, {"#A074C4", "#8250DF"}, {"#CCA700", "#9A6700"}, {"#FFD700", "#0431FA"},
+        {"#8DC149", "#4D8C1A"}, {"#CBCB41", "#8A8A00"}, {"#F14C4C", "#E51400"}, {"#F48771", "#C72E0F"},
+        {"#4EC9B0", "#267F99"}, {"#DCDCAA", "#795E26"}, {"#CE9178", "#A31515"}, {"#A9DC76", "#098658"},
+        {"#D7BA7D", "#EE0000"}, {"#6A9955", "#008000"}, {"#DA70D6", "#319331"}, {"#179FFF", "#7B3814"}};
+    return colors;
+}
+
+QColor themeColor(const QString &dark)
+{
+    return QColor(lightFlag() ? lightColors().value(dark.toUpper(), dark) : dark);
+}
+
+QString themed(QString text)
+{
+    if (!lightFlag()) return text;
+    for (auto it = lightColors().cbegin(); it != lightColors().cend(); ++it) text.replace(it.key(), it.value(), Qt::CaseInsensitive);
+    return text;
 }
 
 SmoothScroll::SmoothScroll(QAbstractScrollArea *area, int wheelStep, double touchpadFactor)
@@ -291,37 +390,228 @@ bool SmoothScroll::eventFilter(QObject *, QEvent *event)
 
 LatexHighlighter::LatexHighlighter(QTextDocument *document) : QSyntaxHighlighter(document) {}
 
+namespace
+{
+// Block state: brace depth (bits 0-7), mode (bits 8-11), environment index (bits 12-19).
+enum Mode { Text, InlineMath, DisplayMath, MathEnvironment, Verbatim };
+const QStringList mathEnvironments = {"equation", "equation*", "align", "align*", "gather", "gather*", "multline", "multline*",
+    "flalign", "flalign*", "alignat", "alignat*", "eqnarray", "eqnarray*", "displaymath", "math"};
+const QStringList verbatimEnvironments = {"verbatim", "verbatim*", "Verbatim", "lstlisting", "minted", "comment", "filecontents"};
+const QStringList keywordCommands = {"begin", "end", "item", "part", "chapter", "section", "subsection", "subsubsection",
+    "paragraph", "subparagraph", "frametitle", "framesubtitle", "documentclass", "usepackage", "input", "include",
+    "maketitle", "tableofcontents", "newcommand", "renewcommand", "def", "usetheme"};
+const QStringList headingCommands = {"part", "chapter", "section", "subsection", "subsubsection", "paragraph",
+    "subparagraph", "frametitle", "framesubtitle", "title", "caption"};
+const QStringList keyCommands = {"label", "ref", "eqref", "pageref", "autoref", "cref", "Cref", "nameref", "cite", "citep",
+    "citet", "parencite", "textcite", "autocite", "footcite", "nocite", "includegraphics", "input", "include",
+    "usepackage", "documentclass", "bibliography", "addbibresource", "usetheme", "url", "href"};
+const QStringList textInMath = {"text", "textrm", "textbf", "textit", "mbox", "intertext", "operatorname"};
+
+struct Formats
+{
+    QTextCharFormat command, keyword, heading, environment, key, math, mathCommand, special, comment, plain;
+    QTextCharFormat braces[3];
+};
+
+const Formats &formats()
+{
+    static const Formats formats = []
+    {
+        // VS Code Dark Modern / LaTeX Workshop roles; themeColor() maps them for the light theme.
+        Formats f;
+        auto color = [](QTextCharFormat &format, const char *hex) { format.setForeground(themeColor(hex)); };
+        color(f.command, "#569CD6");
+        color(f.keyword, "#C586C0");
+        color(f.heading, "#DCDCAA");
+        f.heading.setFontWeight(QFont::Bold);
+        color(f.environment, "#4EC9B0");
+        color(f.key, "#CE9178");
+        color(f.math, "#A9DC76");
+        color(f.mathCommand, "#4FC1FF");
+        color(f.special, "#D7BA7D");
+        color(f.comment, "#6A9955");
+        f.comment.setFontItalic(true);
+        color(f.braces[0], "#FFD700");
+        color(f.braces[1], "#DA70D6");
+        color(f.braces[2], "#179FFF");
+        return f;
+    }();
+    return formats;
+}
+}
+
 void LatexHighlighter::highlightBlock(const QString &text)
 {
-    static const QRegularExpression commands(R"(\\(?:[A-Za-z@]+|.))");
-    static const QRegularExpression braces(R"([{}\[\]])");
-    static const QRegularExpression comment(R"((?<!\\)(?:\\\\)*\K%.*$)");
-    auto mark = [this, &text](const QRegularExpression &expression, const QColor &color)
+    const Formats &f = formats();
+    int state = std::max(0, previousBlockState());
+    int depth = state & 0xFF, mode = (state >> 8) & 0xF, environment = (state >> 12) & 0xFF;
+    // A blank line ends inline math (as in TeX) and resets bracket depth, so one stray $ or { only
+    // recolours its paragraph, not every later line of a long file.
+    if (text.trimmed().isEmpty())
     {
-        auto matches = expression.globalMatch(text);
-        while (matches.hasNext())
+        depth = 0;
+        if (mode == InlineMath) mode = Text;
+    }
+    bool math = mode == InlineMath || mode == DisplayMath || mode == MathEnvironment;
+    // Arguments coloured after the scan: headings and keys over plain text, \text{} back to plain in math.
+    enum Argument { None, Heading, Key, EnvironmentName, PlainText };
+    struct Range { int start, end; Argument kind; };
+    QList<Range> ranges;
+    Argument pending = None;
+    int pendingDepth = 0; // brace depth where the command stood; text inside its [options] keeps it pending
+    int argumentStart = -1, argumentDepth = -1;
+    Argument argumentKind = None;
+    const int n = int(text.size());
+    auto isSpecial = [](QChar c) { return c == '\\' || c == '%' || c == '$' || c == '{' || c == '}' || c == '[' || c == ']' || c == '&' || c == '~'; };
+    for (int i = 0; i < n;)
+    {
+        if (mode == Verbatim)
         {
-            auto match = matches.next();
-            setFormat(match.capturedStart(), match.capturedLength(), color);
+            // Raw until \end{name}; that line continues normally from the \end.
+            int close = int(text.indexOf("\\end{" + verbatimEnvironments.value(environment) + "}", i));
+            if (close < 0) break;
+            mode = Text;
+            i = close;
+            continue;
         }
-    };
-    mark(commands, QColor("#569CD6"));
-    mark(braces, QColor("#FFD700"));
-    auto match = comment.match(text);
-    if (match.hasMatch()) setFormat(match.capturedStart(), match.capturedLength(), QColor("#8793A2"));
+        const QChar c = text[i];
+        if (c == '%')
+        {
+            setFormat(i, n - i, f.comment);
+            break;
+        }
+        if (c == '\\' && i + 1 < n && text[i + 1].isLetter())
+        {
+            int end = i + 1;
+            while (end < n && (text[end].isLetter() || text[end] == '@')) ++end;
+            const QString name = text.mid(i + 1, end - i - 1);
+            if (end < n && text[end] == '*') ++end;
+            setFormat(i, end - i, keywordCommands.contains(name) ? f.keyword : math ? f.mathCommand : f.command);
+            pendingDepth = depth;
+            if (name == "begin" || name == "end") pending = EnvironmentName;
+            else if (headingCommands.contains(name) && !math) pending = Heading;
+            else if (keyCommands.contains(name)) pending = Key;
+            else if (math && textInMath.contains(name)) pending = PlainText;
+            else if (name == "verb" && end < n)
+            {
+                // \verb|…|: the delimiter is the next character.
+                int close = int(text.indexOf(text[end], end + 1));
+                end = close < 0 ? n : close + 1;
+                pending = None;
+            }
+            else pending = None;
+            if (headingCommands.contains(name) && !math)
+            {
+                QTextCharFormat bold = f.keyword;
+                bold.setFontWeight(QFont::Bold);
+                setFormat(i, end - i, bold);
+            }
+            i = end;
+            continue;
+        }
+        if (c == '\\' && i + 1 < n)
+        {
+            // Control symbols: \\ \[ \] \( \) and escapes such as \{ \$ \%.
+            const QChar next = text[i + 1];
+            if (!math && (next == '[' || next == '(')) { mode = next == '[' ? DisplayMath : InlineMath; math = true; setFormat(i, 2, f.math); }
+            else if (math && (next == ']' || next == ')') && mode != MathEnvironment) { setFormat(i, 2, f.math); mode = Text; math = false; }
+            else setFormat(i, 2, next == '\\' ? f.special : math ? f.mathCommand : f.command);
+            i += 2;
+            pending = None;
+            continue;
+        }
+        if (c == '$')
+        {
+            bool twice = i + 1 < n && text[i + 1] == '$';
+            if (!math) { mode = twice ? DisplayMath : InlineMath; math = true; }
+            else if (mode != MathEnvironment) { mode = Text; math = false; }
+            setFormat(i, twice ? 2 : 1, f.math);
+            i += twice ? 2 : 1;
+            pending = None;
+            continue;
+        }
+        if (c == '{' || c == '[')
+        {
+            setFormat(i, 1, f.braces[depth % 3]);
+            ++depth;
+            if (c == '{' && pending != None && argumentStart < 0)
+            {
+                argumentStart = i + 1;
+                argumentDepth = depth;
+                argumentKind = pending;
+                pending = None;
+            }
+            ++i;
+            continue;
+        }
+        if (c == '}' || c == ']')
+        {
+            if (c == '}' && argumentStart >= 0 && depth == argumentDepth)
+            {
+                ranges.append({argumentStart, i, argumentKind});
+                if (argumentKind == EnvironmentName)
+                {
+                    // \begin{equation} starts math, \begin{verbatim} raw text; the matching \end ends them.
+                    const QString name = text.mid(argumentStart, i - argumentStart);
+                    const bool opening = text.lastIndexOf("\\begin", argumentStart) > text.lastIndexOf("\\end", argumentStart);
+                    if (opening && !math && mathEnvironments.contains(name)) { mode = MathEnvironment; environment = int(mathEnvironments.indexOf(name)); math = true; }
+                    else if (opening && !math && verbatimEnvironments.contains(name)) { mode = Verbatim; environment = int(verbatimEnvironments.indexOf(name)); }
+                    else if (!opening && mode == MathEnvironment && mathEnvironments.value(environment) == name) { mode = Text; math = false; }
+                }
+                argumentStart = -1;
+            }
+            depth = std::max(0, depth - 1);
+            setFormat(i, 1, f.braces[depth % 3]);
+            ++i;
+            continue;
+        }
+        if (c == '&' || c == '~')
+        {
+            setFormat(i, 1, f.special);
+            ++i;
+            continue;
+        }
+        // A run of ordinary characters; at least one, so a lone \ at the end of a line moves on.
+        int end = i + 1;
+        while (end < n && !isSpecial(text[end])) ++end;
+        if (math) setFormat(i, end - i, f.math);
+        if (pending != None && depth == pendingDepth && !text.mid(i, end - i).trimmed().isEmpty()) pending = None;
+        i = end;
+    }
+    if (argumentStart >= 0) ranges.append({argumentStart, n, argumentKind}); // continues on the next line
+    for (const auto &range : ranges)
+        for (int j = range.start; j < range.end; ++j)
+        {
+            const QTextCharFormat current = format(j);
+            if (range.kind == PlainText) { if (current == f.math) setFormat(j, 1, f.plain); }
+            else if (current == QTextCharFormat() || current == f.math)
+                setFormat(j, 1, range.kind == Heading ? f.heading : range.kind == Key ? f.key : f.environment);
+        }
+    setCurrentBlockState(std::min(depth, 0xFF) | mode << 8 | environment << 12);
 }
 
 Editor::Editor(QWidget *parent) : QTextEdit(parent)
 {
     setAcceptRichText(false);
     setLineWrapMode(QTextEdit::NoWrap);
+    // A preview that finished rendering shows if the pointer still rests on its formula or figure.
+    m_previewPopup = new QLabel(this, Qt::ToolTip | Qt::FramelessWindowHint);
+    m_previewPopup->setObjectName("preview");
+    m_previewPopup->setStyleSheet(themed("QLabel#preview { background:white; border:1px solid #303842; border-radius:4px; padding:8px; }"));
+    viewport()->setMouseTracking(true);
+    connect(this, &Editor::previewReady, this, [this]
+    {
+        if (m_hoverPoint.isNull() || !isActiveWindow()) return;
+        QPixmap pixmap = preview(cursorForPosition(viewport()->mapFromGlobal(m_hoverPoint)).position());
+        if (!pixmap.isNull()) showPreview(pixmap, m_hoverPoint);
+    });
     setFrameShape(QFrame::NoFrame);
-    setTabStopDistance(fontMetrics().horizontalAdvance(' ') * 4);
     document()->setDocumentMargin(18);
     QFont mono("Input Mono");
     mono.setStyleHint(QFont::Monospace);
     mono.setPointSizeF(11);
     setFont(mono);
+    setTabStopDistance(QFontMetricsF(mono).horizontalAdvance(' ') * 4);
     new LatexHighlighter(document());
     new SmoothScroll(this);
     m_gutter = new QWidget(this);
@@ -330,7 +620,18 @@ Editor::Editor(QWidget *parent) : QTextEdit(parent)
     connect(document(), &QTextDocument::blockCountChanged, this, refreshGutter);
     connect(verticalScrollBar(), &QScrollBar::valueChanged, m_gutter, qOverload<>(&QWidget::update));
     connect(this, &QTextEdit::textChanged, m_gutter, qOverload<>(&QWidget::update));
-    connect(this, &QTextEdit::cursorPositionChanged, this, [this] { m_gutter->update(); updateHighlights(); });
+    connect(this, &QTextEdit::cursorPositionChanged, this, [this]
+    {
+        // Moving into folded lines (find, go to line, arrows) opens the folds around them.
+        for (QTextBlock block = textCursor().block(); !block.isVisible() && block.isValid(); block = textCursor().block())
+        {
+            QTextBlock owner = block;
+            while (owner.isValid() && !owner.isVisible()) owner = owner.previous();
+            if (!owner.isValid() || !toggleFold(owner.blockNumber())) break;
+        }
+        m_gutter->update();
+        updateHighlights();
+    });
     // Wrapped lines continue under the first non-blank character; applied after the edit settles.
     connect(document(), &QTextDocument::contentsChange, this, [this](int position, int, int added)
     {
@@ -495,6 +796,14 @@ void Editor::updateCompletion(bool request)
     // Open tabs form the project: their macros, environments, labels and .bib folders are offered.
     auto editors = window()->findChildren<Editor *>();
     if (!editors.contains(this)) editors << this;
+    auto roots = [&editors]
+    {
+        QStringList all;
+        for (auto *editor : editors)
+            if (!editor->property("path").toString().isEmpty()) all << BuildRunner::rootFile(editor->property("path").toString());
+        all.removeDuplicates();
+        return all;
+    };
     auto collect = [&editors](QStringList Editor::*list)
     {
         QStringList all;
@@ -525,16 +834,20 @@ void Editor::updateCompletion(bool request)
     {
         m_context = Context::Reference;
         words = collect(&Editor::m_labels);
+        for (const auto &root : roots()) words += projectRefs(root, editors).labels;
     }
     else if ((match = citation.match(before)).hasMatch())
     {
         m_context = Context::Citation;
-        QStringList directories;
+        // The bibliographies the project names, plus any .bib next to an open source.
+        QStringList files;
+        for (const auto &root : roots()) files += projectRefs(root, editors).bibFiles;
         for (auto *editor : editors)
             if (!editor->property("path").toString().isEmpty())
-                directories << QFileInfo(editor->property("path").toString()).absolutePath();
-        directories.removeDuplicates();
-        words = bibKeys(directories);
+                for (const auto &info : QFileInfo(editor->property("path").toString()).absoluteDir().entryInfoList({"*.bib"}, QDir::Files))
+                    files << QDir::cleanPath(info.absoluteFilePath());
+        files.removeDuplicates();
+        words = bibKeys(files);
     }
     else if ((match = package.match(before)).hasMatch())
     {
@@ -581,6 +894,7 @@ void Editor::updateCompletion(bool request)
 
 void Editor::keyPressEvent(QKeyEvent *event)
 {
+    m_previewPopup->hide();
     if (m_completion->popup()->isVisible() &&
         (event->key() == Qt::Key_Enter || event->key() == Qt::Key_Return || event->key() == Qt::Key_Escape || event->key() == Qt::Key_Tab))
     {
@@ -688,7 +1002,7 @@ void Editor::keyPressEvent(QKeyEvent *event)
 int Editor::gutterWidth() const
 {
     int digits = std::max(3, int(QString::number(document()->blockCount()).size()));
-    return fontMetrics().horizontalAdvance(QString(digits, '9')) + 20;
+    return fontMetrics().horizontalAdvance(QString(digits, '9')) + 34; // numbers, then the fold column
 }
 
 void Editor::resizeEvent(QResizeEvent *event)
@@ -701,7 +1015,193 @@ void Editor::resizeEvent(QResizeEvent *event)
 bool Editor::eventFilter(QObject *object, QEvent *event)
 {
     if (object == m_gutter && event->type() == QEvent::Paint) { paintGutter(); return true; }
+    if (object == m_gutter && event->type() == QEvent::MouseButtonPress)
+    {
+        // A click beside a foldable line folds or unfolds it.
+        int y = int(static_cast<QMouseEvent *>(event)->position().y());
+        toggleFold(cursorForPosition(QPoint(0, y)).blockNumber());
+        return true;
+    }
     return QTextEdit::eventFilter(object, event);
+}
+
+// The line without its comment.
+static QString codeOf(const QString &line)
+{
+    for (int i = 0; i < line.size(); ++i)
+        if (line[i] == '\\') ++i;
+        else if (line[i] == '%') return line.left(i);
+    return line;
+}
+
+static int headingLevel(const QString &code)
+{
+    static const QRegularExpression heading(R"(^\s*\\(part|chapter|section|subsection|subsubsection|paragraph)\b\*?\s*[\[{])");
+    static const QStringList levels = {"part", "chapter", "section", "subsection", "subsubsection", "paragraph"};
+    auto match = heading.match(code);
+    return match.hasMatch() ? int(levels.indexOf(match.captured(1))) : -1;
+}
+
+// The environment a line opens and does not close on the same line, or empty.
+static QString openedEnvironment(const QString &code)
+{
+    static const QRegularExpression begin(R"(\\begin\{([^{}]+)\})");
+    for (auto it = begin.globalMatch(code); it.hasNext();)
+    {
+        auto match = it.next();
+        QString name = match.captured(1);
+        if (code.count("\\begin{" + name + "}") > code.count("\\end{" + name + "}")) return name;
+    }
+    return {};
+}
+
+// Cheap test for the gutter, which paints every visible line; foldEnd() finds the real range.
+static bool looksFoldable(const QString &line)
+{
+    if (!line.contains('\\')) return false;
+    QString code = codeOf(line);
+    return headingLevel(code) >= 0 || !openedEnvironment(code).isEmpty();
+}
+
+int Editor::foldEnd(const QTextBlock &start) const
+{
+    QString code = codeOf(start.text());
+    int end = -1;
+    if (QString name = openedEnvironment(code); !name.isEmpty())
+    {
+        // Through the line before the matching \end, which stays visible.
+        const QString open = "\\begin{" + name + "}", close = "\\end{" + name + "}";
+        int depth = 0;
+        for (QTextBlock block = start; block.isValid() && block.blockNumber() - start.blockNumber() < 20000; block = block.next())
+        {
+            QString line = codeOf(block.text());
+            depth += int(line.count(open)) - int(line.count(close));
+            if (depth <= 0) { end = block.blockNumber() - 1; break; }
+        }
+    }
+    else if (int level = headingLevel(code); level >= 0)
+    {
+        // Up to the next heading of the same or a higher level, or the end of the document.
+        QTextBlock block = start.next();
+        for (; block.isValid(); block = block.next())
+        {
+            QString line = codeOf(block.text());
+            int other = headingLevel(line);
+            if ((other >= 0 && other <= level) || line.contains("\\end{document}")) break;
+        }
+        QTextBlock last = block.isValid() ? block.previous() : document()->lastBlock();
+        while (last.blockNumber() > start.blockNumber() && last.text().trimmed().isEmpty()) last = last.previous();
+        end = last.blockNumber();
+    }
+    return end > start.blockNumber() ? end : -1;
+}
+
+bool Editor::isFolded(int blockNumber) const
+{
+    QTextBlock block = document()->findBlockByNumber(blockNumber);
+    return block.isValid() && block.isVisible() && block.next().isValid() && !block.next().isVisible();
+}
+
+void Editor::refreshFold(const QTextBlock &from, const QTextBlock &to)
+{
+    // Relayout only; visibility is not part of the text or the undo history.
+    document()->markContentsDirty(from.position(), to.position() + to.length() - from.position());
+    setViewportMargins(gutterWidth(), 0, 0, 0);
+    m_gutter->update();
+    viewport()->update();
+}
+
+bool Editor::toggleFold(int blockNumber)
+{
+    QTextBlock start = document()->findBlockByNumber(blockNumber);
+    if (!start.isValid() || !start.isVisible()) return false;
+    if (isFolded(blockNumber))
+    {
+        // Everything hidden after the line comes back, folds nested inside included.
+        QTextBlock block = start.next(), last = block;
+        for (; block.isValid() && !block.isVisible(); block = block.next()) { block.setVisible(true); last = block; }
+        refreshFold(start, last);
+        return true;
+    }
+    int end = foldEnd(start);
+    if (end < 0) return false;
+    QTextBlock block = start.next(), last = block;
+    for (; block.isValid() && block.blockNumber() <= end; block = block.next()) { block.setVisible(false); last = block; }
+    if (textCursor().blockNumber() > blockNumber && textCursor().blockNumber() <= end)
+    {
+        QTextCursor cursor(start);
+        cursor.movePosition(QTextCursor::EndOfBlock);
+        setTextCursor(cursor);
+    }
+    refreshFold(start, last);
+    return true;
+}
+
+void Editor::foldAtCursor()
+{
+    // The innermost fold that contains the cursor line.
+    const int line = textCursor().blockNumber();
+    for (QTextBlock block = textCursor().block(); block.isValid() && line - block.blockNumber() < 5000; block = block.previous())
+        if (block.isVisible() && !isFolded(block.blockNumber()) && looksFoldable(block.text()))
+            if (int end = foldEnd(block); end >= line || block.blockNumber() == line)
+                if (end >= 0 && toggleFold(block.blockNumber())) return;
+}
+
+void Editor::unfoldAll()
+{
+    bool any = false;
+    for (QTextBlock block = document()->firstBlock(); block.isValid(); block = block.next())
+        if (!block.isVisible()) { block.setVisible(true); any = true; }
+    if (any) refreshFold(document()->firstBlock(), document()->lastBlock());
+}
+
+void Editor::paintEvent(QPaintEvent *event)
+{
+    QTextEdit::paintEvent(event);
+    // A ⋯ badge after each folded line, as in VS Code.
+    QPainter painter(viewport());
+    painter.setRenderHint(QPainter::Antialiasing);
+    QPointF scroll(horizontalScrollBar()->value(), verticalScrollBar()->value());
+    auto *layout = document()->documentLayout();
+    for (auto block = cursorForPosition(QPoint(0, 0)).block(); block.isValid(); block = block.next())
+    {
+        QRectF rect = layout->blockBoundingRect(block).translated(-scroll);
+        if (rect.top() > viewport()->height()) break;
+        if (!isFolded(block.blockNumber()) || !block.layout() || block.layout()->lineCount() == 0) continue;
+        QTextLine line = block.layout()->lineAt(block.layout()->lineCount() - 1);
+        QRectF badge(rect.left() + line.naturalTextRect().right() + 8, rect.top() + line.y() + 2,
+                     fontMetrics().horizontalAdvance("⋯") + 10, line.height() - 4);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(themeColor("#29333B"));
+        painter.drawRoundedRect(badge, 3, 3);
+        painter.setPen(themeColor("#ADB7C4"));
+        painter.drawText(badge, Qt::AlignCenter, "⋯");
+    }
+}
+
+void Editor::wheelEvent(QWheelEvent *event)
+{
+    if (event->modifiers().testFlag(Qt::ControlModifier))
+    {
+        // Whole notches only, so a touchpad does not zoom on every pixel.
+        static int travel = 0;
+        travel += event->angleDelta().y();
+        if (std::abs(travel) >= 120) { emit fontZoomRequested(travel / 120); travel %= 120; }
+        event->accept();
+        return;
+    }
+    QTextEdit::wheelEvent(event);
+}
+
+void Editor::setEditorFont(const QFont &font)
+{
+    setFont(font);
+    setTabStopDistance(QFontMetricsF(font).horizontalAdvance(' ') * 4);
+    setViewportMargins(gutterWidth(), 0, 0, 0);
+    m_indentFrom = 0;
+    m_indentTo = document()->blockCount() - 1;
+    applyWrapIndent();
+    m_gutter->update();
 }
 
 void Editor::paintGutter()
@@ -715,11 +1215,22 @@ void Editor::paintGutter()
     // Only visible blocks are painted, so the cost does not grow with document length.
     for (auto block = cursorForPosition(QPoint(0, 0)).block(); block.isValid(); block = block.next())
     {
+        if (!block.isVisible()) continue;
         QRectF rect = layout->blockBoundingRect(block).translated(0, -scroll);
         if (rect.top() > m_gutter->height()) break;
-        painter.setPen(block.blockNumber() == current ? QColor("#B9C3CF") : QColor("#68727F"));
-        painter.drawText(QRectF(0, rect.top(), m_gutter->width() - 12, rect.height()), Qt::AlignRight | Qt::AlignTop,
+        painter.setPen(block.blockNumber() == current ? themeColor("#B9C3CF") : themeColor("#68727F"));
+        painter.drawText(QRectF(0, rect.top(), m_gutter->width() - 26, rect.height()), Qt::AlignRight | Qt::AlignTop,
             QString::number(block.blockNumber() + 1));
+        // Fold column: › on folded lines, ⌄ (dim) on lines that start a fold.
+        bool folded = isFolded(block.blockNumber());
+        if (!folded && !looksFoldable(block.text())) continue;
+        double size = 3.5, x = m_gutter->width() - 15, y = rect.top() + fontMetrics().height() / 2.0;
+        painter.save();
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(QPen(folded ? themeColor("#D2D7DE") : themeColor("#68727F"), 1.3));
+        if (folded) painter.drawPolyline(QPolygonF({QPointF(x - size / 2, y - size), QPointF(x + size / 2, y), QPointF(x - size / 2, y + size)}));
+        else painter.drawPolyline(QPolygonF({QPointF(x - size, y - size / 2), QPointF(x, y + size / 2), QPointF(x + size, y - size / 2)}));
+        painter.restore();
     }
 }
 
@@ -744,7 +1255,7 @@ void Editor::updateHighlights()
 {
     QList<QTextEdit::ExtraSelection> selections;
     QTextEdit::ExtraSelection line;
-    line.format.setBackground(QColor("#1D2024"));
+    line.format.setBackground(themeColor("#1D2024"));
     line.format.setProperty(QTextFormat::FullWidthSelection, true);
     line.cursor = textCursor();
     line.cursor.clearSelection();
@@ -770,7 +1281,7 @@ void Editor::updateHighlights()
         QTextBlock block = mark.cursor.block();
         QTextEdit::ExtraSelection squiggle;
         squiggle.format.setUnderlineStyle(QTextCharFormat::WaveUnderline);
-        squiggle.format.setUnderlineColor(mark.error ? QColor("#F14C4C") : QColor("#CCA700"));
+        squiggle.format.setUnderlineColor(mark.error ? themeColor("#F14C4C") : themeColor("#CCA700"));
         squiggle.cursor = QTextCursor(block);
         // From the first non-blank character to the end of the line, as VS Code underlines.
         int indent = 0;
@@ -802,11 +1313,250 @@ bool Editor::viewportEvent(QEvent *event)
         QStringList messages;
         for (const auto &mark : m_marks)
             if (mark.cursor.blockNumber() == block) messages << (mark.error ? "Error: " : "Warning: ") + mark.message;
+        m_hoverPoint = help->globalPos();
+        QPixmap pixmap = messages.isEmpty() ? preview(cursorForPosition(help->pos()).position()) : QPixmap();
+        if (!pixmap.isNull()) { QToolTip::hideText(); showPreview(pixmap, help->globalPos()); return true; }
+        m_previewPopup->hide();
         if (messages.isEmpty()) QToolTip::hideText();
         else QToolTip::showText(help->globalPos(), messages.join('\n'), viewport());
         return true;
     }
+    if (event->type() == QEvent::MouseMove)
+    {
+        m_hoverPoint = static_cast<QMouseEvent *>(event)->globalPosition().toPoint();
+        if (m_previewPopup->isVisible() && (m_hoverPoint - m_previewPoint).manhattanLength() > 12) m_previewPopup->hide();
+    }
+    else if (event->type() == QEvent::Leave || event->type() == QEvent::MouseButtonPress || event->type() == QEvent::Wheel)
+    {
+        m_hoverPoint = {};
+        m_previewPopup->hide();
+    }
     return QTextEdit::viewportEvent(event);
+}
+
+// The popup is a window of its own: it does not hide when its tab is switched away.
+void Editor::hideEvent(QHideEvent *event)
+{
+    m_previewPopup->hide();
+    QTextEdit::hideEvent(event);
+}
+
+void Editor::focusOutEvent(QFocusEvent *event)
+{
+    m_previewPopup->hide();
+    QTextEdit::focusOutEvent(event);
+}
+
+void Editor::showPreview(const QPixmap &pixmap, const QPoint &global)
+{
+    m_previewPopup->setPixmap(pixmap);
+    m_previewPopup->adjustSize();
+    // Below and right of the pointer, kept on the screen.
+    QRect area = screen()->availableGeometry();
+    QPoint at = global + QPoint(12, 18);
+    if (at.x() + m_previewPopup->width() > area.right()) at.setX(area.right() - m_previewPopup->width());
+    if (at.y() + m_previewPopup->height() > area.bottom()) at.setY(global.y() - 8 - m_previewPopup->height());
+    m_previewPopup->move(at);
+    m_previewPopup->show();
+    m_previewPoint = global;
+}
+
+QString Editor::mathAt(int position) const
+{
+    QTextBlock block = document()->findBlock(position);
+    if (!block.isValid()) return {};
+    // Inline: $…$, $$…$$ and \(…\) on this line, before any comment.
+    const QString line = block.text();
+    const int at = position - block.position();
+    int open = -1;
+    QString opener;
+    for (int i = 0; i < line.size(); ++i)
+    {
+        if (line[i] == '%') break;
+        if (line[i] == '\\' && i + 1 < line.size())
+        {
+            if (line[i + 1] == '(' && open < 0) { open = i; opener = "\\("; }
+            else if (line[i + 1] == ')' && opener == "\\(")
+            {
+                if (at >= open && at <= i + 1) return line.mid(open, i + 2 - open);
+                open = -1; opener.clear();
+            }
+            ++i; // \$, \%, \\ and other escapes
+            continue;
+        }
+        if (line[i] != '$') continue;
+        QString token = line.mid(i, 2) == "$$" ? "$$" : "$";
+        if (open < 0) { open = i; opener = token; }
+        else if (opener == token)
+        {
+            int end = i + token.size();
+            if (at >= open && at < end)
+                return token == "$" ? line.mid(open, end - open) : "\\[" + line.mid(open + 2, i - open - 2) + "\\]";
+            open = -1; opener.clear();
+        }
+        i += token.size() - 1;
+    }
+    // Display: \[…\] and math environments, which may span lines; the nearest one enclosing position.
+    QTextBlock first = block, last = block;
+    for (int i = 0; i < 40 && first.previous().isValid(); ++i) first = first.previous();
+    for (int i = 0; i < 40 && last.next().isValid(); ++i) last = last.next();
+    QTextCursor range(document());
+    range.setPosition(first.position());
+    range.setPosition(last.position() + last.length() - 1, QTextCursor::KeepAnchor);
+    const QString text = range.selectedText().replace(QChar::ParagraphSeparator, '\n');
+    const int offset = position - first.position();
+    static const QRegularExpression display(
+        R"(\\begin\{(equation|align|alignat|gather|multline|flalign|eqnarray|displaymath|math)(\*?)\}|(?<!\\)\\\[)");
+    QString found;
+    for (auto it = display.globalMatch(text); it.hasNext();)
+    {
+        auto match = it.next();
+        if (match.capturedStart() > offset) break;
+        QString closer = match.captured(1).isEmpty() ? "\\]" : "\\end{" + match.captured(1) + match.captured(2) + "}";
+        int close = int(text.indexOf(closer, match.capturedEnd()));
+        if (close >= 0 && close + closer.size() > offset) found = text.mid(match.capturedStart(), close + closer.size() - match.capturedStart());
+    }
+    return found;
+}
+
+QString Editor::imageAt(int position) const
+{
+    QTextBlock block = document()->findBlock(position);
+    static const QRegularExpression graphic(R"(\\includegraphics\*?\s*(?:\[[^\]]*\])?\s*\{([^{}]+)\})");
+    const int at = position - block.position();
+    QString name;
+    for (auto it = graphic.globalMatch(block.text()); it.hasNext();)
+    {
+        auto match = it.next();
+        if (at >= match.capturedStart() && at <= match.capturedEnd()) name = match.captured(1).trimmed();
+    }
+    QString path = property("path").toString();
+    if (name.isEmpty() || path.isEmpty()) return {};
+    // Relative to the root, as the build sees it, then each \graphicspath folder.
+    QString root = BuildRunner::rootFile(path);
+    QDir base = QFileInfo(root).absoluteDir();
+    QStringList folders{""};
+    static const QRegularExpression graphicsPath(R"(\\graphicspath\s*\{((?:\s*\{[^{}]*\})+)\s*\})");
+    static const QRegularExpression folder(R"(\{([^{}]*)\})");
+    for (const QString &text : {toPlainText(), sourceText(root, window()->findChildren<Editor *>())})
+        if (auto match = graphicsPath.match(text); match.hasMatch())
+            for (auto it = folder.globalMatch(match.captured(1)); it.hasNext();) folders << it.next().captured(1);
+    for (const auto &directory : folders)
+        for (const char *suffix : {"", ".pdf", ".png", ".jpg", ".jpeg"})
+        {
+            QString file = base.absoluteFilePath(directory + name + suffix);
+            if (QFileInfo(file).isFile()) return QDir::cleanPath(file);
+        }
+    return {};
+}
+
+// At most 360 logical pixels, drawn 1:1 on screen pixels: dpr is the screen's, scale the image's pixels per logical pixel.
+static QPixmap previewPixmap(const QString &path, double scale, double dpr)
+{
+    QImageReader reader(path);
+    QSize size = reader.size();
+    if (!size.isValid()) return {};
+    QSizeF shown = QSizeF(size) / scale;
+    if (shown.width() > 360 || shown.height() > 360) shown.scale(360, 360, Qt::KeepAspectRatio);
+    QSize pixels = (shown * dpr).toSize();
+    if (pixels != size) reader.setScaledSize(pixels);
+    QPixmap pixmap = QPixmap::fromImage(reader.read());
+    pixmap.setDevicePixelRatio(dpr);
+    return pixmap;
+}
+
+QPixmap Editor::preview(int position)
+{
+    QString formula = mathAt(position);
+    QString image = formula.isEmpty() ? imageAt(position) : QString();
+    if (formula.isEmpty() && image.isEmpty()) return {};
+    QString source;
+    if (!formula.isEmpty())
+    {
+        // The document's own math packages and macro definitions, so \R or \norm render too.
+        QString path = property("path").toString();
+        QString text = path.isEmpty() ? toPlainText() : sourceText(BuildRunner::rootFile(path), window()->findChildren<Editor *>());
+        if (text.isEmpty()) text = toPlainText();
+        QString preamble = text.left(std::max(0, int(text.indexOf("\\begin{document}"))));
+        static const QStringList mathPackages = {"amsmath", "amssymb", "amsfonts", "mathtools", "bm", "physics", "siunitx",
+            "esint", "mathrsfs", "cancel", "braket", "nicefrac", "xfrac", "dsfont", "bbm", "stmaryrd", "upgreek", "amsthm"};
+        static const QRegularExpression package(R"(^\s*\\usepackage(?:\[[^\]]*\])?\{([^{}]+)\})", QRegularExpression::MultilineOption);
+        static const QRegularExpression definition(R"(^\s*\\(?:(?:re)?newcommand|providecommand|DeclareMathOperator|def)\b.*$)",
+            QRegularExpression::MultilineOption);
+        QStringList packages{"amsmath", "amssymb"};
+        for (auto it = package.globalMatch(preamble); it.hasNext();)
+            for (const auto &name : it.next().captured(1).split(',', Qt::SkipEmptyParts))
+                if (mathPackages.contains(name.trimmed())) packages << name.trimmed();
+        packages.removeDuplicates();
+        source = "\\documentclass[border=3pt,varwidth]{standalone}\n";
+        // Vietnamese and other accented text inside \text{…} needs T5 under pdfLaTeX.
+        if (std::any_of(formula.cbegin(), formula.cend(), [](QChar c) { return c.unicode() > 127; })) source += "\\usepackage[T5]{fontenc}\n";
+        source += "\\usepackage{" + packages.join(',') + "}\n";
+        for (auto it = definition.globalMatch(preamble); it.hasNext();) source += it.next().captured(0) + '\n';
+        source += "\\begin{document}\n" + formula + "\n\\end{document}\n";
+    }
+    QString key = formula.isEmpty() ? image + '\n' + QFileInfo(image).lastModified().toString(Qt::ISODateWithMs) : source;
+    if (auto *cached = m_previews.object(key)) return *cached;
+    if (!formula.isEmpty() || image.endsWith(".pdf", Qt::CaseInsensitive))
+    {
+        if (!m_rendering.contains(key)) renderPreview(key, source, image);
+        return {};
+    }
+    return remember(key, previewPixmap(image, 1, devicePixelRatioF())); // bitmaps need no rendering
+}
+
+QPixmap Editor::remember(const QString &key, const QPixmap &pixmap)
+{
+    // Bounded like the PDF tile cache: least recently shown previews go first.
+    m_previews.insert(key, new QPixmap(pixmap), std::max<qsizetype>(1, pixmap.width() * pixmap.height() * 4 / 1024));
+    return pixmap;
+}
+
+// pdfLaTeX for a formula, then pdftocairo for its (or a PDF figure's) first page, all in the background.
+void Editor::renderPreview(const QString &key, const QString &source, const QString &image)
+{
+    static QTemporaryDir directory; // removed when the app exits
+    if (!directory.isValid()) return;
+    m_rendering.insert(key);
+    const QString name = QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Md5).toHex();
+    const double dpr = devicePixelRatioF();
+    std::function<void(bool)> finish = [this, key, png = directory.filePath(name + ".png"), dpr](bool ok)
+    {
+        m_rendering.remove(key);
+        remember(key, ok ? previewPixmap(png, dpr, dpr) : QPixmap());
+        emit previewReady();
+    };
+    auto run = [this](const QString &program, const QStringList &arguments, std::function<void(bool)> done)
+    {
+        auto *process = new QProcess(this);
+        process->setWorkingDirectory(directory.path());
+        connect(process, &QProcess::finished, this, [process, done](int code, QProcess::ExitStatus status)
+        {
+            process->deleteLater();
+            done(code == 0 && status == QProcess::NormalExit);
+        });
+        connect(process, &QProcess::errorOccurred, this, [process, done](QProcess::ProcessError error)
+        {
+            if (error == QProcess::FailedToStart) { process->deleteLater(); done(false); }
+        });
+        QTimer::singleShot(15000, process, &QProcess::kill);
+        process->start(program, arguments);
+    };
+    const QStringList firstPage = {"-png", "-singlefile", "-f", "1", "-l", "1"};
+    if (source.isEmpty())
+    {
+        run("pdftocairo", firstPage + QStringList{"-scale-to", QString::number(qRound(360 * dpr)), image, name}, finish);
+        return;
+    }
+    QFile tex(directory.filePath(name + ".tex"));
+    if (!tex.open(QIODevice::WriteOnly) || tex.write(source.toUtf8()) < 0) { finish(false); return; }
+    tex.close();
+    run("pdflatex", {"-interaction=nonstopmode", "-halt-on-error", name + ".tex"}, [run, finish, firstPage, name, dpr](bool ok)
+    {
+        // 140 dpi per logical pixel: formulas a little larger than the 11 pt editor text, like Overleaf's.
+        if (ok) run("pdftocairo", firstPage + QStringList{"-r", QString::number(140 * dpr), name + ".pdf", name}, finish);
+        else finish(false);
+    });
 }
 
 QList<OutlineEntry> Editor::outline(const QString &text)

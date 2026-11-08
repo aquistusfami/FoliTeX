@@ -77,6 +77,25 @@ public:
     void setMenuBarShown(bool on);
     bool menuBarShown() const { return m_menuBarShown; }
     QString workspace() const { return m_workspace; }
+    // Open files, cursors and the PDF; main.cpp persists them so tests never touch the user's settings.
+    QVariantMap session() const;
+    void restoreSession(const QVariantMap &session);
+    QStringList recentFiles() const { return m_recent; }
+    void setRecentFiles(const QStringList &files) { m_recent = files; }
+    bool buildOnSave() const { return m_buildOnSaveAction->isChecked(); }
+    void setBuildOnSave(bool on) { m_buildOnSaveAction->setChecked(on); }
+    void addRecent(const QString &path);
+    QFont editorFont() const { return m_editorFont; }
+    void setEditorFont(const QFont &font);
+    QString engine() const { return m_engine->currentText(); }
+    void setEngine(const QString &name) { if (m_engine->findText(name) >= 0) m_engine->setCurrentText(name); }
+    void showSettings();
+    // Built-in document templates, then the user's *.tex in templatesFolder(); text uses U+2022 placeholders.
+    static QList<QPair<QString, QString>> builtinTemplates();
+    static QString templatesFolder();
+    Editor *newFromTemplate(const QString &text);
+    // Full-screen slide show of the PDF from the page in view.
+    PdfView *present();
 protected:
     void closeEvent(QCloseEvent *event) override;
     bool eventFilter(QObject *object, QEvent *event) override;
@@ -104,7 +123,12 @@ private:
     void showSide(QWidget *page, bool toggle = true);
     void syncOutline();
     void syncProcess(QStringList arguments, std::function<void(QString)> complete);
+    void countWords();
     QTabWidget *m_tabs;
+    QStringList m_recent;
+    QFont m_editorFont;
+    QString m_lastRoot; // root of the last build; what saving a .bib or .sty rebuilds
+    QAction *m_buildOnSaveAction;
     PdfView *m_pdf;
     QWidget *m_pdfPane;
     QPlainTextEdit *m_log;
@@ -126,6 +150,7 @@ private:
     QAction *m_menuBarAction;
     bool m_menuBarShown = true;
     bool m_altAlone = false;
+    bool m_viaShortcut = false; // an action is being triggered by its key, not from the menu
     QIcon m_stopIcon;
     QLabel *m_status;
     QLabel *m_pageCount;

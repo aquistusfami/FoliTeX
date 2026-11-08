@@ -16,14 +16,23 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
 ## Features
 
 **Editor**
-- Tabs, UTF-8 sources, LaTeX syntax highlighting, line numbers, current-line
+- Tabs, UTF-8 sources, LaTeX syntax highlighting (keywords, environment names, section
+  titles, labels and citations, maths, brackets by nesting depth, verbatim left raw),
+  line numbers, current-line
   highlight, bracket matching, auto-closing `{}` `[]` `()`, indentation kept on Enter.
 - Context-aware completion (Ctrl+Space, or automatically while typing):
   ~300 LaTeX/amsmath commands with snippet placeholders (Tab jumps to the next one),
-  environments with automatic `\end{…}`, `\ref` labels and `\cite` keys from your
-  document, your own `\newcommand`s, package/class names from the installed TeX Live, and
+  environments with automatic `\end{…}`, `\ref` labels and `\cite` keys from the whole
+  project (followed through `\input`/`\include` from the root, bibliographies named by
+  `\addbibresource`/`\bibliography`), your own `\newcommand`s, package/class names from the installed TeX Live, and
   the commands of the packages you load (curated for ~45 common packages, read from the
   `.sty` for the rest).
+- Hover a formula (`$…$`, `\[…\]`, `align`, …) or an `\includegraphics` to preview it;
+  formulas render in the background with your preamble's math packages and macros.
+- Fold environments and sections from the gutter or with Ctrl+Shift+[ / Ctrl+Shift+].
+- Settings (Ctrl+,) for the editor font, a light or dark theme, engine and build on save;
+  Ctrl+wheel resizes the editor text. File → New from Template starts an article,
+  report, beamer deck or letter, or one of your own templates.
 - Word wrap (Alt+Z or right-click → Word Wrap); wrapped lines stay aligned with their
   line's indentation.
 - VS Code-style find and replace over the editor (Ctrl+F, Ctrl+H): match case, whole word,
@@ -34,17 +43,22 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
   silently while the tab has no unsaved edits; the cursor stays put and Ctrl+Z undoes
   the external change. Unsaved edits are never overwritten.
 - Safe saving: atomic writes, BOM / NBSP / CRLF preserved, invalid UTF-8 refused.
+- The open files, cursors and PDF come back on the next start; File → Open Recent.
 
 **Build and preview**
 - One-key asynchronous builds through `latexmk` with pdfLaTeX, LuaLaTeX or XeLaTeX;
   `% !TeX root = …` for multi-file projects; output goes to `.folitex-build/`.
+  Build → Build on Save rebuilds on every Ctrl+S (in a `.bib` or `.sty` it rebuilds the
+  last document); Build → Word Count runs `texcount`.
 - Two-way SyncTeX: F7 jumps from the source to the PDF, Ctrl+click in the PDF jumps back.
 - Problems panel after each build: errors with file and line, LaTeX and package warnings,
   over/underfull boxes. Click one (or F8 / Shift+F8) to jump there; the lines get red or
   yellow squiggles with the message on hover, and the status bar counts them.
 - PDF viewer: continuous pages, text search (Ctrl+F in the PDF), select and copy text,
   clickable links, zoom, page jump, automatic reload after each build, right-click menu
-  with Jump to Source.
+  with Jump to Source. On beamer slides Jump to Source lands on the clicked word.
+- Present the PDF full screen (Shift+F5) from the page in view: arrows, Space, clicks or
+  the wheel change slides, Esc ends.
 - Background rendering at the display's native pixel density with a bounded image
   cache; image-heavy pages render in a single Poppler call (≈7× faster than small tiles).
 
@@ -76,13 +90,15 @@ Debian 13, Ubuntu 25.04 and newer:
 
 ```bash
 sudo apt install build-essential git cmake pkg-config qt6-base-dev qt6-svg-plugins \
-    libpoppler-qt6-dev latexmk texlive-latex-extra texlive-lang-other
+    libpoppler-qt6-dev poppler-utils latexmk texlive-latex-extra texlive-lang-other \
+    texlive-extra-utils
 ```
 
 The `texlive-…` packages and `latexmk` are what compile your documents. The
 `langother` / `lang-other` package adds Vietnamese and other languages; skip it if you
 only write in English. A TeX distribution you already have works too, as long as
-`latexmk`, `synctex` and `kpsewhich` are on your `PATH`.
+`latexmk`, `synctex` and `kpsewhich` are on your `PATH`. Formula and PDF-figure
+previews also need `pdflatex` and `pdftocairo` (poppler), Word Count needs `texcount`.
 
 ### 2. Download, build and install
 
@@ -160,7 +176,7 @@ Reports of Windows builds — working or not — are welcome as issues.
 ## Using FoliTeX
 
 Open a `.tex` file, press **F5** to build, and the PDF appears on the right. Settings
-(workspace folder, word wrap, menu bar) are stored in `~/.config/Folitex/`.
+(workspace folder, open files, recent files, font, theme, engine, word wrap, menu bar, build on save) are stored in `~/.config/Folitex/`.
 
 Keyboard shortcuts follow TeXstudio where TeXstudio documents them.
 
@@ -185,6 +201,9 @@ Keyboard shortcuts follow TeXstudio where TeXstudio documents them.
 | Alt+Return | Close the last open environment or brace |
 | Tab / Shift+Tab | Indent / outdent the selected lines |
 | Ctrl+/ | Toggle comment |
+| Ctrl+Shift+[ / Ctrl+Shift+] / Ctrl+K Ctrl+J | Fold / unfold at the cursor / unfold all |
+| Ctrl+, | Settings |
+| Ctrl+wheel in the editor | Larger / smaller editor text |
 | Alt+Z | Toggle word wrap |
 | Ctrl+F / F3 / Shift+F3 / Ctrl+G | Find (in the PDF when it has focus) / next / previous / go to line |
 | Ctrl+H or Ctrl+R | Replace, Replace All in the current file |
@@ -192,6 +211,7 @@ Keyboard shortcuts follow TeXstudio where TeXstudio documents them.
 | Ctrl+K Ctrl+O | Open a workspace folder |
 | Ctrl+PgDown / Ctrl+PgUp | Next / previous tab |
 | Ctrl+= / Ctrl+- / Ctrl+0 | Zoom the PDF in / out / fit width |
+| Shift+F5 | Present the PDF full screen from the current page (Esc ends) |
 | Ctrl+\ / Ctrl+J / Ctrl+Shift+O | Toggle PDF / Problems and Output panel / side bar |
 | View → Menu Bar, then Alt | Hide the menu bar; a lone Alt shows it until an item is used |
 
@@ -201,12 +221,13 @@ External Viewer.
 
 ## Status and limitations
 
-FoliTeX is young (0.6) and deliberately smaller than TeXstudio. Known gaps:
+FoliTeX is young (0.7) and deliberately smaller than TeXstudio. Known gaps:
 
-- No spell or grammar checking, no full LaTeX parser, no session restore.
+- No spell or grammar checking, no full LaTeX parser, no project-wide search.
 - The engine comes from the combo box; `% !TeX program` is not read yet.
-- The outline covers the current file only; `\cite` completion reads `.bib` files
-  next to open sources.
+- The outline covers the current file only.
+- Previews use pdfLaTeX and the preamble's math packages; formulas that need other
+  packages or beamer commands show no preview.
 - PDF text selection stays within one page.
 - Very large sources (tens of thousands of lines) use noticeably more memory, because
   the editor keeps pixel-smooth scrolling (Qt `QTextEdit`).

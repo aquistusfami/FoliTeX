@@ -180,7 +180,7 @@ PdfView::PdfView(QWidget *parent) : QAbstractScrollArea(parent), m_renderer(new 
     m_trimTimer.setInterval(5000);
     connect(&m_trimTimer, &QTimer::timeout, this, &PdfView::trimCache);
     // A wheel notch moves about a tenth of a page; touchpad travel is doubled for long documents.
-    new SmoothScroll(this, 120, 2);
+    m_smooth = new SmoothScroll(this, 120, 2);
     connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this] { emit pageChanged(currentPage()); });
     m_thread.start();
 }
@@ -251,37 +251,59 @@ void PdfView::layoutPages()
     m_pages.clear();
     m_pending.clear();
     if (m_sizes.isEmpty()) return;
-    double largest = 1;
-    for (const auto &size : m_sizes) largest = std::max(largest, size.width());
-    m_scale = std::max(32, viewport()->width() - 48) / largest * m_zoom;
+    double largest = 1, tallest = 1;
+    for (const auto &size : m_sizes) { largest = std::max(largest, size.width()); tallest = std::max(tallest, size.height()); }
+    const int screen = std::max(1, viewport()->height());
+    m_scale = m_presenting ? std::min(viewport()->width() / largest, screen / tallest)
+                           : std::max(32, viewport()->width() - 48) / largest * m_zoom;
     double dpr = devicePixelRatioF();
     m_renderDpr = renderDensity(viewport()->size(), dpr);
     double largestPage = 1;
     for (const auto &size : m_sizes) largestPage = std::max(largestPage, size.width() * size.height());
     double pagePixels = std::min(wholePagePixels, largestPage * std::pow(m_scale * m_renderDpr, 2));
     double workingBytes = std::max((viewport()->width() * m_renderDpr + 2 * tileSize)
-        * (viewport()->height() * m_renderDpr + 2 * tileSize), 2 * pagePixels) * 4 + 2 * 1024 * 1024;
+        * (viewport()->height() * m_renderDpr + 2 * tileSize), (m_presenting ? 4 : 2) * pagePixels) * 4 + 2 * 1024 * 1024;
     m_cache.setMaxCost(std::clamp(qCeil(workingBytes / 1024), 32 * 1024, 128 * 1024));
     m_targetDpi1000 = qRound(72 * m_scale * m_renderDpr * 1000);
     if (m_cache.isEmpty()) applyDpi();
     else if (m_targetDpi1000 != m_dpi1000) m_dpiTimer.start();
-    double width = std::max(double(viewport()->width()), largest * m_scale + 48);
+    double width = m_presenting ? viewport()->width() : std::max(double(viewport()->width()), largest * m_scale + 48);
     double y = 24;
     for (const auto &size : m_sizes)
     {
         double pageWidth = qRound(size.width() * m_scale * dpr) / dpr;
         double pageHeight = qRound(size.height() * m_scale * dpr) / dpr;
         double x = qRound((width - pageWidth) / 2 * dpr) / dpr;
+        if (m_presenting) y = m_pages.size() * double(screen) + (screen - pageHeight) / 2; // one screen per page
         y = qRound(y * dpr) / dpr;
         m_pages.append(QRectF(x, y, pageWidth, pageHeight));
         y += pageHeight + 16;
     }
+    if (m_presenting) y = m_pages.size() * double(screen) - 8;
     verticalScrollBar()->setPageStep(viewport()->height());
     verticalScrollBar()->setRange(0, std::max(0, int(std::ceil(y + 8 - viewport()->height()))));
     verticalScrollBar()->setSingleStep(24);
     horizontalScrollBar()->setPageStep(viewport()->width());
     horizontalScrollBar()->setRange(0, std::max(0, int(std::ceil(width - viewport()->width()))));
+    if (m_presenting) showSlide(m_slide);
     viewport()->update();
+}
+
+void PdfView::setPresentation(bool on)
+{
+    m_presenting = on;
+    setVerticalScrollBarPolicy(on ? Qt::ScrollBarAlwaysOff : Qt::ScrollBarAsNeeded);
+    setHorizontalScrollBarPolicy(on ? Qt::ScrollBarAlwaysOff : Qt::ScrollBarAsNeeded);
+    // Pages step whole; the smooth wheel animation would stop between them.
+    if (on) viewport()->removeEventFilter(m_smooth); else viewport()->installEventFilter(m_smooth);
+    layoutPages();
+}
+
+void PdfView::showSlide(int index)
+{
+    // Before the document loads the page is only remembered.
+    m_slide = m_sizes.isEmpty() ? std::max(0, index) : std::clamp(index, 0, int(m_sizes.size()) - 1);
+    if (!m_pages.isEmpty()) verticalScrollBar()->setValue(m_slide * std::max(1, viewport()->height()));
 }
 
 void PdfView::applyDpi()
@@ -316,10 +338,10 @@ void PdfView::trimCache()
 void PdfView::paintEvent(QPaintEvent *)
 {
     QPainter painter(viewport());
-    painter.fillRect(viewport()->rect(), QColor("#16181B"));
+    painter.fillRect(viewport()->rect(), m_presenting ? QColor(Qt::black) : themeColor("#16181B"));
     if (m_pages.isEmpty())
     {
-        painter.setPen(QColor("#8793A2"));
+        painter.setPen(themeColor("#8793A2"));
         painter.drawText(viewport()->rect().adjusted(24, 24, -24, -24), Qt::AlignCenter,
             !m_error.isEmpty() ? m_error : m_path.isEmpty() ? "The PDF appears here after building.\nF5 to build · F7 to jump to the PDF" : "Opening PDF…");
         return;
@@ -373,7 +395,7 @@ void PdfView::paintEvent(QPaintEvent *)
         painter.fillRect(onScreen, Qt::white);
         if (m_failedPages.contains(number))
         {
-            painter.setPen(QColor("#555555"));
+            painter.setPen(themeColor("#555555"));
             painter.drawText(onScreen.intersected(QRectF(viewport()->rect())), Qt::AlignCenter,
                 "Cannot render this page.");
             continue;
@@ -399,9 +421,18 @@ void PdfView::paintEvent(QPaintEvent *)
             painter.fillRect(QRectF(onScreen.topLeft() + match->box.topLeft() * m_scale, match->box.size() * m_scale),
                 match - m_matches.cbegin() == m_match ? QColor(255, 140, 0, 150) : QColor(255, 210, 0, 90));
         painter.restore();
-        painter.setPen(QColor("#22272E"));
+        painter.setPen(themeColor("#22272E"));
         painter.drawRect(onScreen);
     }
+    // Slides: render the next and previous page ahead, so stepping shows them at once instead of a blank page.
+    // They lie a screen above or below the viewport, so requesting them draws nothing.
+    if (m_presenting && settled)
+        for (int number : {m_slide + 1, m_slide - 1})
+            if (number >= 0 && number < m_pages.size() && !m_failedPages.contains(number))
+            {
+                visible = m_pages[number];
+                drawTiles(number, m_pages[number].translated(-scroll), m_dpi1000, true);
+            }
     if (!m_busy && !m_pending.isEmpty()) QTimer::singleShot(0, this, &PdfView::nextTile);
 }
 
@@ -440,6 +471,13 @@ bool PdfView::event(QEvent *event)
 
 void PdfView::wheelEvent(QWheelEvent *event)
 {
+    if (m_presenting)
+    {
+        m_wheelTravel += event->angleDelta().y();
+        if (std::abs(m_wheelTravel) >= 120) { showSlide(m_slide + (m_wheelTravel < 0 ? 1 : -1)); m_wheelTravel = 0; }
+        event->accept();
+        return;
+    }
     if (event->modifiers().testFlag(Qt::ControlModifier))
     {
         setZoom(m_zoom * std::pow(1.12, event->angleDelta().y() / 120.0));
@@ -461,6 +499,7 @@ void PdfView::fitWidth() { setZoom(1); }
 
 void PdfView::goToPage(int page, double yPoints)
 {
+    if (m_presenting) { showSlide(page - 1); return; } // also before the document has loaded
     if (page < 1 || page > m_pages.size()) return;
     verticalScrollBar()->setValue(qRound(m_pages[page - 1].top() + yPoints * m_scale - 32));
 }
@@ -508,6 +547,7 @@ void PdfView::showMatch()
 
 int PdfView::currentPage() const
 {
+    if (m_presenting) return m_slide + 1;
     double y = verticalScrollBar()->value() + viewport()->height() / 3.0;
     for (int i = 0; i < m_pages.size(); ++i) if (m_pages[i].bottom() >= y) return i + 1;
     return std::max(1, int(m_pages.size()));
@@ -599,6 +639,7 @@ void PdfView::followLink(const PdfLink &link)
 void PdfView::mousePressEvent(QMouseEvent *event)
 {
     setFocus();
+    if (m_presenting && event->button() == Qt::LeftButton) { showSlide(m_slide + 1); return; }
     QPointF local;
     int page = pageAt(event->position(), &local);
     if (event->button() != Qt::LeftButton || page < 0) return QAbstractScrollArea::mousePressEvent(event);
@@ -670,6 +711,18 @@ void PdfView::mouseDoubleClickEvent(QMouseEvent *event)
 void PdfView::keyPressEvent(QKeyEvent *event)
 {
     if (event->matches(QKeySequence::Copy)) { copySelection(); return; }
+    if (m_presenting)
+        switch (event->key())
+        {
+        case Qt::Key_Right: case Qt::Key_Down: case Qt::Key_PageDown: case Qt::Key_Space: case Qt::Key_Return: case Qt::Key_N:
+            showSlide(m_slide + 1); return;
+        case Qt::Key_Left: case Qt::Key_Up: case Qt::Key_PageUp: case Qt::Key_Backspace: case Qt::Key_P:
+            showSlide(m_slide - 1); return;
+        case Qt::Key_Home: showSlide(0); return;
+        case Qt::Key_End: showSlide(int(m_sizes.size()) - 1); return;
+        case Qt::Key_Escape: close(); return;
+        default: break;
+        }
     QAbstractScrollArea::keyPressEvent(event);
 }
 
