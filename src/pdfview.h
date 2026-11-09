@@ -78,6 +78,8 @@ public:
     void open(const QString &path);
     void fitWidth();
     void setZoom(double zoom);
+    bool darkPages() const { return m_dark; }
+    void setDarkPages(bool on) { m_dark = on; viewport()->update(); }
     void goToPage(int page, double yPoints = 0);
     int pageCount() const { return m_sizes.size(); }
     int currentPage() const;
@@ -110,6 +112,7 @@ signals:
     // words: the clicked word and its neighbours (empty if the page text is not loaded yet); clicked indexes it.
     void sourceRequested(int page, double xPoints, double yPoints, QStringList words, int clicked);
     void pageChanged(int page);
+    void scaleChanged(double scale); // logical pixels per PDF point
     void searchRequested(int generation, QString query, int flags);
     void matchChanged(int index, int count); // count -1: no search
 protected:
@@ -154,6 +157,7 @@ private:
     QTimer m_trimTimer; // trims the cache once scrolling and zooming pause
     double m_zoom = 1;
     bool m_presenting = false;
+    bool m_dark = false; // inverts pages at paint time, so cached tiles stay valid
     int m_slide = 0; // 0-based page shown while presenting
     int m_wheelTravel = 0;
     SmoothScroll *m_smooth;

@@ -108,6 +108,7 @@ protected:
     void paintEvent(QPaintEvent *event) override;
     void hideEvent(QHideEvent *event) override;
     void focusOutEvent(QFocusEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
     bool eventFilter(QObject *object, QEvent *event) override;
@@ -141,6 +142,8 @@ private:
     QCache<QString, QPixmap> m_previews{16 * 1024}; // key -> image (cost in KiB), null when rendering failed
     QPixmap remember(const QString &key, const QPixmap &pixmap);
     QSet<QString> m_rendering;
+    QFrame *m_selectionBar; // formatting buttons above a mouse selection
+    void showSelectionBar();
     QLabel *m_previewPopup; // a tooltip-like window that shows the pixmap 1:1, unlike QToolTip's scaled <img>
     QPoint m_previewPoint; // global position the popup was shown for
     QPoint m_hoverPoint; // global pointer position while it rests over the text, null otherwise

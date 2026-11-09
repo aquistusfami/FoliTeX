@@ -1,8 +1,14 @@
 #include "window.h"
+#include "palette.h"
+#include <QListWidget>
 #include <QToolButton>
 #include <QStackedWidget>
 #include <QTabBar>
 #include <QMenuBar>
+#include <QStatusBar>
+#include <QToolTip>
+#include <QHelpEvent>
+#include <QPushButton>
 #include <QtTest>
 #include <QTemporaryDir>
 #include <QFile>
@@ -50,6 +56,7 @@ private slots:
     void folding();
     void syntaxColors();
     void buildOnSave();
+    void explorerOperations();
     void fontThemeAndTemplates();
     void undoWithWrapIndent();
     void tabScrolling();
@@ -63,6 +70,11 @@ private slots:
     void touchpadPixels();
     void wheelAnimation();
     void tiledPdf();
+    void navigationHistory();
+    void quickOpenAndCommands();
+    void selectionBarAndFocusMode();
+    void honestEmptyStates();
+    void darkPdfPages();
     void compilation();
     void utf8AndInvalidInput();
     void pdfErrors();
@@ -270,7 +282,7 @@ void Tests::workspaceTree()
     QVERIFY(QDir(dir.path()).mkpath(".folitex-build"));
     write(dir.filePath("main.tex"), "\\section{Main}\n");
     write(dir.filePath("chapters/one.tex"), "one");
-    write(dir.filePath("notes.txt"), "ignored");
+    write(dir.filePath("main.log"), "ignored"); // build clutter stays hidden
     write(dir.filePath(".folitex-build/main.pdf"), "ignored");
 
     Window window;
@@ -297,6 +309,15 @@ void Tests::workspaceTree()
     for (int row = 0; row < model->rowCount(root); ++row) names << model->fileName(model->index(row, 0, root));
     names.sort();
     QCOMPARE(names, QStringList({"chapters", "main.tex"}));
+    // Collapse Folders is enabled only while a folder is open, and closes them all.
+    QToolButton *collapse = nullptr;
+    for (auto *button : window.findChildren<QToolButton *>("explorerAction")) if (button->toolTip() == "Collapse Folders") collapse = button;
+    QVERIFY(collapse && !collapse->isEnabled());
+    QModelIndex chapters = model->index(dir.filePath("chapters"));
+    window.filesView()->expand(chapters);
+    QVERIFY(collapse->isEnabled());
+    QTest::mouseClick(collapse, Qt::LeftButton);
+    QVERIFY(!window.filesView()->isExpanded(chapters) && !collapse->isEnabled());
     auto main = model->index(dir.filePath("main.tex"));
     window.filesView()->clicked(main);
     QCOMPARE(window.currentEditor()->property("path").toString(), QFileInfo(dir.filePath("main.tex")).absoluteFilePath());
@@ -834,25 +855,26 @@ void Tests::syntaxColors()
     };
     QCOMPARE(color(1, 1), "#C586C0");   // \begin
     QCOMPARE(color(1, 8), "#4EC9B0");   // align
-    QCOMPARE(color(1, 6), "#FFD700");   // { at depth 0
+    QCOMPARE(color(1, 6), "#C8B466");   // { at depth 0
     QCOMPARE(color(2, 2), "#A9DC76");   // math continues on the next line
     QCOMPARE(color(2, 4), "#D7BA7D");   // &
     QCOMPARE(color(2, 13), "plain");    // \text{if} is text inside math
     QCOMPARE(color(2, 19), "#6A9955");  // comment
     QCOMPARE(color(3, 6), "#4EC9B0");   // \end{align} ends math
-    QCOMPARE(color(4, 10), "#DCDCAA");  // heading text
-    QVERIFY(bold(4, 10) && bold(4, 2));
-    QCOMPARE(color(4, 22), "#CE9178");  // label key
+    QCOMPARE(color(4, 2), "#DCDCAA");   // \section: bold, heading colour
+    QVERIFY(bold(4, 2) && !bold(4, 10));
+    QCOMPARE(color(4, 10), "plain");    // heading text stays plain
+    QCOMPARE(color(4, 22), "plain");    // label key stays plain
     QCOMPARE(color(4, 28), "#A9DC76");  // $x$
     QCOMPARE(color(4, 31), "#569CD6");  // \$ is an escape, not math
     QCOMPARE(color(6, 1), "plain");     // verbatim stays raw: no command, math or comment
     QCOMPARE(color(6, 9), "plain");
     QCOMPARE(color(7, 6), "#4EC9B0");   // \end{verbatim} itself
-    QCOMPARE(color(7, 43), "#CE9178");  // the file after [width=1cm]
+    QCOMPARE(color(7, 43), "plain");    // the file after [width=1cm]
     editor.setPlainText("text \\"); // a backslash being typed at the end of a line once hung the scan
     QCOMPARE(color(1, 5), "plain");    // A stray { colours only its paragraph: the blank line resets the depth.
     editor.setPlainText("{ open\n\n{x}");
-    QCOMPARE(color(3, 0), "#FFD700");
+    QCOMPARE(color(3, 0), "#C8B466");
     QCOMPARE(editor.document()->findBlockByNumber(2).userState() & 0xFF, 0);
     // The hover popup is a window of its own; it hides with its tab.
     QStackedWidget tabs;
@@ -866,6 +888,56 @@ void Tests::syntaxColors()
     popup->show();
     tabs.setCurrentWidget(other);
     QVERIFY(!popup->isVisible());
+}
+
+void Tests::explorerOperations()
+{
+    QTemporaryDir dir;
+    // The trash goes to a folder of the test, never the user's.
+    QVERIFY(QDir(dir.path()).mkpath("data"));
+    QByteArray dataHome = qgetenv("XDG_DATA_HOME");
+    qputenv("XDG_DATA_HOME", dir.filePath("data").toUtf8());
+    auto restore = qScopeGuard([dataHome] { if (dataHome.isEmpty()) qunsetenv("XDG_DATA_HOME"); else qputenv("XDG_DATA_HOME", dataHome); });
+    QString root = QDir::cleanPath(dir.path());
+    Window window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    window.openWorkspace(root);
+    auto *model = static_cast<QFileSystemModel *>(window.filesView()->model());
+    auto inlineEditor = [&] { return window.filesView()->findChild<QLineEdit *>(); };
+    // New file: named inline with the extension left out of the selection, then opened.
+    QString created = window.newEntry(root, false);
+    QCOMPARE(created, root + "/untitled.tex");
+    QTRY_VERIFY(inlineEditor() && inlineEditor()->isVisible());
+    QTRY_COMPARE(inlineEditor()->selectedText(), "untitled");
+    inlineEditor()->setText("chapter.tex");
+    QTest::keyClick(inlineEditor(), Qt::Key_Return);
+    QTRY_VERIFY(QFileInfo::exists(root + "/chapter.tex") && !QFileInfo::exists(created));
+    QCOMPARE(window.currentEditor()->property("path").toString(), root + "/chapter.tex");
+    // Renaming an open file moves its tab along.
+    QVERIFY(model->setData(model->index(root + "/chapter.tex"), "intro.tex"));
+    QCOMPARE(window.currentEditor()->property("path").toString(), root + "/intro.tex");
+    // A new folder; renaming it moves the tabs of the files inside.
+    QString folder = window.newEntry(root, true);
+    QCOMPARE(folder, root + "/New Folder");
+    QTRY_VERIFY(inlineEditor() && inlineEditor()->isVisible());
+    QTest::keyClick(inlineEditor(), Qt::Key_Escape);
+    write(folder + "/part.tex", "x");
+    QVERIFY(window.openSource(folder + "/part.tex"));
+    QVERIFY(model->setData(model->index(folder), "parts"));
+    QCOMPARE(window.currentEditor()->property("path").toString(), root + "/parts/part.tex");
+    // Delete moves to the trash; unmodified tabs close, a tab with unsaved edits stays.
+    window.currentEditor()->insertPlainText("unsaved ");
+    auto *tabs = window.findChild<QTabWidget *>("editorTabs");
+    QCOMPARE(tabs->count(), 2);
+    QVERIFY(window.deleteEntry(root + "/intro.tex", false));
+    QCOMPARE(tabs->count(), 1);
+    QVERIFY(window.deleteEntry(root + "/parts", false));
+    QCOMPARE(tabs->count(), 1);
+    QCOMPARE(window.currentEditor()->property("path").toString(), root + "/parts/part.tex");
+    QVERIFY(!QFileInfo::exists(root + "/intro.tex") && !QFileInfo::exists(root + "/parts"));
+    QCOMPARE(QDir(dir.filePath("data/Trash/files")).entryList(QDir::AllEntries | QDir::NoDotAndDotDot).size(), 2);
+    QVERIFY(!window.deleteEntry(root, false)); // never the workspace itself
 }
 
 void Tests::buildOnSave()
@@ -1141,8 +1213,11 @@ void Tests::wordWrap()
     QAction *logAction = nullptr;
     for (auto *action : window.actions()) if (action->shortcut() == QKeySequence("Ctrl+J")) logAction = action;
     QVERIFY(logAction);
-    logAction->trigger();
     auto *log = window.findChild<QTabWidget *>("bottomPanel");
+    QVERIFY(log->isVisible()); // open from the start, showing the empty Problems list
+    logAction->trigger();
+    QVERIFY(!log->isVisible());
+    logAction->trigger();
     QTRY_VERIFY(log && log->isVisible() && log->width() > 0);
     auto *editorTabs = window.findChild<QTabWidget *>("editorTabs");
     int logLeft = log->mapTo(&window, QPoint()).x(), tabsLeft = editorTabs->mapTo(&window, QPoint()).x();
@@ -1306,6 +1381,202 @@ void Tests::tiledPdf()
     viewer.viewport()->repaint();
     QTest::qWait(100);
     QCOMPARE(viewer.renderRequests(), requests);
+}
+
+void Tests::darkPdfPages()
+{
+    QTemporaryDir dir;
+    QString path = dir.filePath("dark.pdf");
+    {
+        QPdfWriter writer(path);
+        writer.setResolution(72);
+        QPainter painter(&writer);
+        painter.drawText(QPointF(60, 80), "Dark pages");
+    }
+    PdfView viewer;
+    viewer.resize(700, 650);
+    viewer.show();
+    QSignalSpy loaded(&viewer, &PdfView::documentReady);
+    viewer.open(path);
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
+    viewer.viewport()->repaint();
+    QTRY_VERIFY_WITH_TIMEOUT(viewer.renderingIdle(), 5000);
+    auto paper = [&] { return viewer.viewport()->grab().toImage().pixelColor(350, 400); };
+    viewer.viewport()->repaint();
+    QCOMPARE(paper(), QColor(Qt::white));
+    viewer.setDarkPages(true);
+    QVERIFY(paper().lightness() < 60);
+    viewer.setDarkPages(false);
+    QCOMPARE(paper(), QColor(Qt::white));
+}
+
+void Tests::navigationHistory()
+{
+    QTemporaryDir dir;
+    QByteArray text;
+    for (int i = 1; i <= 80; ++i) text += "line " + QByteArray::number(i) + "\n";
+    write(dir.filePath("a.tex"), text);
+    write(dir.filePath("b.tex"), "other\n");
+    Window window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QToolButton *back = nullptr, *forward = nullptr;
+    for (auto *button : window.findChildren<QToolButton *>("navButton")) (button->toolTip().startsWith("Go back") ? back : forward) = button;
+    QVERIFY(back && forward);
+    QVERIFY(window.openSource(dir.filePath("a.tex")));
+    auto *editor = window.currentEditor();
+    editor->goToLine(2);
+    editor->goToLine(5); // a small move is not a place to return to
+    QVERIFY(!back->isEnabled());
+    editor->goToLine(60);
+    QVERIFY(back->isEnabled());
+    QVERIFY(!forward->isEnabled());
+    back->click();
+    QCOMPARE(editor->lineNumber(), 5);
+    QVERIFY(forward->isEnabled());
+    forward->click();
+    QCOMPARE(editor->lineNumber(), 60);
+    // Switching tabs counts as a move; back returns to the first tab, and a closed tab is skipped.
+    QVERIFY(window.openSource(dir.filePath("b.tex")));
+    QVERIFY(window.currentEditor() != editor);
+    back->click();
+    QCOMPARE(window.currentEditor(), editor);
+    QCOMPARE(editor->lineNumber(), 60);
+}
+
+void Tests::quickOpenAndCommands()
+{
+    QCOMPARE(Palette::score("Build / stop", "xyz"), 0);
+    QVERIFY(Palette::score("Build / stop", "bs") > 0);
+    QVERIFY(Palette::score("xpdf", "pdf") > Palette::score("xpxdxf", "pdf")); // consecutive letters win
+    QTemporaryDir dir;
+    QVERIFY(QDir(dir.path()).mkpath("chapters"));
+    QVERIFY(QDir(dir.path()).mkpath(".folitex-build"));
+    write(dir.filePath("main.tex"), "\\section{Main}\n");
+    write(dir.filePath("chapters/one.tex"), "one");
+    write(dir.filePath(".folitex-build/hidden.tex"), "hidden");
+    write(dir.filePath("picture.png"), "x");
+    Window window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    window.openWorkspace(dir.path());
+    auto trigger = [&](const QString &name)
+    {
+        for (QAction *action : window.actions()) if (action->text() == name) { action->trigger(); return true; }
+        return false;
+    };
+    auto *palette = window.findChild<Palette *>();
+    auto *list = palette->findChild<QListWidget *>();
+    auto *input = palette->findChild<QLineEdit *>();
+    QVERIFY(trigger("Quick open…"));
+    QVERIFY(palette->isVisible());
+    QStringList names;
+    for (int row = 0; row < list->count(); ++row) names << list->item(row)->text();
+    QVERIFY(names.contains("main.tex") && names.contains("chapters/one.tex"));
+    QVERIFY(!names.join(' ').contains("hidden") && !names.join(' ').contains("picture"));
+    QTest::keyClicks(input, "one");
+    QCOMPARE(list->item(0)->text(), QString("chapters/one.tex"));
+    QTest::keyClick(input, Qt::Key_Return);
+    QVERIFY(!palette->isVisible());
+    QCOMPARE(window.currentEditor()->property("path").toString(), dir.filePath("chapters/one.tex"));
+    // Commands come from the menus and run the real action.
+    QVERIFY(trigger("Command palette…"));
+    QTest::keyClicks(input, "word wrap");
+    QVERIFY(list->count() >= 1);
+    bool wrapped = window.wordWrap();
+    QTest::keyClick(input, Qt::Key_Return);
+    QCOMPARE(window.wordWrap(), !wrapped);
+    QTest::keyClick(input, Qt::Key_Escape);
+    QVERIFY(!palette->isVisible());
+    QTest::keyClick(&window, Qt::Key_K, Qt::ControlModifier); // the real shortcut, not the action
+    QVERIFY(palette->isVisible());
+    QTest::keyClick(input, Qt::Key_Escape);
+}
+
+void Tests::selectionBarAndFocusMode()
+{
+    Editor editor;
+    editor.resize(500, 300);
+    editor.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&editor));
+    editor.setPlainText("hello world");
+    auto *bar = editor.findChild<QFrame *>("selectionBar");
+    QVERIFY(bar && !bar->isVisible());
+    auto cursor = editor.textCursor();
+    cursor.setPosition(0);
+    cursor.setPosition(5, QTextCursor::KeepAnchor);
+    editor.setTextCursor(cursor);
+    QTest::mouseRelease(editor.viewport(), Qt::LeftButton);
+    QVERIFY(bar->isVisible());
+    QToolButton *bold = nullptr;
+    for (auto *button : bar->findChildren<QToolButton *>()) if (button->text() == "B") bold = button;
+    QVERIFY(bold);
+    bold->click();
+    QCOMPARE(editor.toPlainText(), QString("\\textbf{hello} world"));
+    QVERIFY(!bar->isVisible());
+    // Typing hides it again.
+    cursor = editor.textCursor();
+    cursor.select(QTextCursor::WordUnderCursor);
+    editor.setTextCursor(cursor);
+    QTest::mouseRelease(editor.viewport(), Qt::LeftButton);
+    QTest::keyClick(&editor, Qt::Key_Right);
+    QVERIFY(!bar->isVisible());
+
+    Window window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QVERIFY(window.statusBar()->isVisible());
+    auto toggle = [&]
+    {
+        for (QAction *action : window.actions()) if (action->text() == "Distraction free") { action->trigger(); return; }
+        QFAIL("no Distraction free action");
+    };
+    toggle();
+    QVERIFY(!window.statusBar()->isVisible());
+    QVERIFY(window.currentEditor() == nullptr || window.currentEditor()->isVisible());
+    toggle();
+    QVERIFY(window.statusBar()->isVisible());
+
+    // "Name · Key" tooltips show the key as a chip; Esc leaves focus mode from the editor.
+    auto *build = window.findChild<QPushButton *>("editorAction");
+    QVERIFY(build && build->toolTip().contains("F5"));
+    QHelpEvent help(QEvent::ToolTip, QPoint(5, 5), build->mapToGlobal(QPoint(5, 5)));
+    QApplication::sendEvent(build, &help);
+    QVERIFY(QToolTip::text().contains("background-color") && QToolTip::text().contains("F5"));
+    QToolTip::hideText();
+    QTemporaryDir focusDir;
+    write(focusDir.filePath("f.tex"), "text\n");
+    QVERIFY(window.openSource(focusDir.filePath("f.tex")));
+    toggle();
+    QVERIFY(!window.statusBar()->isVisible());
+    window.currentEditor()->setFocus();
+    QTest::keyClick(window.currentEditor(), Qt::Key_Escape);
+    QVERIFY(window.statusBar()->isVisible());
+}
+
+void Tests::honestEmptyStates()
+{
+    Window window;
+    window.resize(1200, 800);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    // Before any build the Problems panel promises nothing and shrinks to its tab strip.
+    auto *panel = window.findChild<QTabWidget *>("bottomPanel");
+    QCOMPARE(window.findChild<QLabel *>("emptyTitle")->text(), QString("No problems yet"));
+    QVERIFY(panel->isVisible() && panel->height() < 80);
+    QTest::mouseClick(panel->tabBar(), Qt::LeftButton, {}, panel->tabBar()->tabRect(0).center());
+    QTRY_VERIFY(panel->height() > 100); // a click on its tab opens it
+    // No PDF: the page counter says so and the zoom controls are off.
+    auto *bar = window.findChild<QWidget *>("pdfBar");
+    QVERIFY(bar);
+    for (auto *child : bar->findChildren<QToolButton *>()) QVERIFY(!child->isVisible());
+    // An empty Untitled tab offers the ways in; typing hides them.
+    for (QAction *action : window.actions()) if (action->text() == "New document" && !window.currentEditor()) action->trigger();
+    QVERIFY(window.currentEditor());
+    auto *welcome = window.findChild<QFrame *>("welcome");
+    QVERIFY(welcome && welcome->isVisible());
+    QTest::keyClicks(window.currentEditor(), "x");
+    QVERIFY(!welcome->isVisible());
 }
 
 void Tests::compilation()

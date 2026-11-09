@@ -23,6 +23,8 @@
 #include <QScreen>
 #include <QImageReader>
 #include <QTemporaryDir>
+#include <QHBoxLayout>
+#include <QToolButton>
 #include <QToolTip>
 #include "window.h"
 #include "completiondata.h"
@@ -280,10 +282,10 @@ static const QHash<QString, QString> &lightColors()
         {"#5C807B", "#4E8D85"}, {"#68727F", "#8B949E"}, {"#6F9692", "#3F7A73"}, {"#7DA6A0", "#3F7A73"},
         {"#8793A2", "#6A737D"}, {"#9AA6B5", "#57606A"}, {"#ADB7C4", "#3B3B3B"}, {"#B9C3CF", "#1F1F1F"},
         {"#D2D7DE", "#1F1F1F"}, {"#E0E5EC", "#000000"}, {"#569CD6", "#0000FF"}, {"#4FC1FF", "#0070C1"},
-        {"#C586C0", "#AF00DB"}, {"#A074C4", "#8250DF"}, {"#CCA700", "#9A6700"}, {"#FFD700", "#0431FA"},
+        {"#C586C0", "#AF00DB"}, {"#A074C4", "#8250DF"}, {"#CCA700", "#9A6700"}, {"#C8B466", "#0431FA"},
         {"#8DC149", "#4D8C1A"}, {"#CBCB41", "#8A8A00"}, {"#F14C4C", "#E51400"}, {"#F48771", "#C72E0F"},
         {"#4EC9B0", "#267F99"}, {"#DCDCAA", "#795E26"}, {"#CE9178", "#A31515"}, {"#A9DC76", "#098658"},
-        {"#D7BA7D", "#EE0000"}, {"#6A9955", "#008000"}, {"#DA70D6", "#319331"}, {"#179FFF", "#7B3814"}};
+        {"#D7BA7D", "#EE0000"}, {"#6A9955", "#008000"}, {"#B084B0", "#319331"}, {"#6B9DB8", "#7B3814"}};
     return colors;
 }
 
@@ -399,7 +401,8 @@ const QStringList mathEnvironments = {"equation", "equation*", "align", "align*"
 const QStringList verbatimEnvironments = {"verbatim", "verbatim*", "Verbatim", "lstlisting", "minted", "comment", "filecontents"};
 const QStringList keywordCommands = {"begin", "end", "item", "part", "chapter", "section", "subsection", "subsubsection",
     "paragraph", "subparagraph", "frametitle", "framesubtitle", "documentclass", "usepackage", "input", "include",
-    "maketitle", "tableofcontents", "newcommand", "renewcommand", "def", "usetheme"};
+    "maketitle", "tableofcontents", "newcommand", "renewcommand", "def", "usetheme", "title", "author", "date", "label",
+    "ref", "eqref", "cite"};
 const QStringList headingCommands = {"part", "chapter", "section", "subsection", "subsubsection", "paragraph",
     "subparagraph", "frametitle", "framesubtitle", "title", "caption"};
 const QStringList keyCommands = {"label", "ref", "eqref", "pageref", "autoref", "cref", "Cref", "nameref", "cite", "citep",
@@ -431,9 +434,9 @@ const Formats &formats()
         color(f.special, "#D7BA7D");
         color(f.comment, "#6A9955");
         f.comment.setFontItalic(true);
-        color(f.braces[0], "#FFD700");
-        color(f.braces[1], "#DA70D6");
-        color(f.braces[2], "#179FFF");
+        color(f.braces[0], "#C8B466");
+        color(f.braces[1], "#B084B0");
+        color(f.braces[2], "#6B9DB8");
         return f;
     }();
     return formats;
@@ -500,12 +503,8 @@ void LatexHighlighter::highlightBlock(const QString &text)
                 pending = None;
             }
             else pending = None;
-            if (headingCommands.contains(name) && !math)
-            {
-                QTextCharFormat bold = f.keyword;
-                bold.setFontWeight(QFont::Bold);
-                setFormat(i, end - i, bold);
-            }
+            if (headingCommands.contains(name) && !math && name != "title" && name != "caption")
+                setFormat(i, end - i, f.heading); // \section and friends: bold, in the heading colour
             i = end;
             continue;
         }
@@ -584,8 +583,8 @@ void LatexHighlighter::highlightBlock(const QString &text)
         {
             const QTextCharFormat current = format(j);
             if (range.kind == PlainText) { if (current == f.math) setFormat(j, 1, f.plain); }
-            else if (current == QTextCharFormat() || current == f.math)
-                setFormat(j, 1, range.kind == Heading ? f.heading : range.kind == Key ? f.key : f.environment);
+            else if (range.kind == EnvironmentName && (current == QTextCharFormat() || current == f.math))
+                setFormat(j, 1, f.environment); // heading and key arguments stay plain text
         }
     setCurrentBlockState(std::min(depth, 0xFF) | mode << 8 | environment << 12);
 }
@@ -606,10 +605,11 @@ Editor::Editor(QWidget *parent) : QTextEdit(parent)
         if (!pixmap.isNull()) showPreview(pixmap, m_hoverPoint);
     });
     setFrameShape(QFrame::NoFrame);
-    document()->setDocumentMargin(18);
-    QFont mono("Input Mono");
+    document()->setDocumentMargin(8);
+    QFont mono;
+    mono.setFamilies({"JetBrains Mono", "JetBrainsMono Nerd Font Mono", "Input Mono", "monospace"});
     mono.setStyleHint(QFont::Monospace);
-    mono.setPointSizeF(11);
+    mono.setPointSizeF(10.5);
     setFont(mono);
     setTabStopDistance(QFontMetricsF(mono).horizontalAdvance(' ') * 4);
     new LatexHighlighter(document());
@@ -642,6 +642,38 @@ Editor::Editor(QWidget *parent) : QTextEdit(parent)
         m_indentFrom = m_indentFrom < 0 ? from : std::min(m_indentFrom, from);
         m_indentTo = std::max(m_indentTo, to);
     });
+    m_selectionBar = new QFrame(viewport());
+    m_selectionBar->setObjectName("selectionBar");
+    auto *barLayout = new QHBoxLayout(m_selectionBar);
+    barLayout->setContentsMargins(3, 3, 3, 3);
+    barLayout->setSpacing(1);
+    // Same templates as the Insert menu, so selected text is wrapped exactly as Ctrl+B and friends do.
+    for (const auto &[label, tip, text] : {std::tuple{"B", "Bold · Ctrl+B", "\\textbf{\u2022}"}, {"I", "Italic · Ctrl+I", "\\textit{\u2022}"},
+             {"E", "Emphasis · Ctrl+Shift+E", "\\emph{\u2022}"}, {"tt", "Typewriter · Ctrl+Shift+T", "\\texttt{\u2022}"},
+             {"$", "Inline math · Ctrl+Shift+M", "$\u2022$"}, {"%", "Toggle comment · Ctrl+/", ""}})
+    {
+        if (QString(label) == "$")
+        {
+            auto *divider = new QFrame;
+            divider->setFixedWidth(1);
+            divider->setStyleSheet(themed("background:#303842;"));
+            barLayout->addWidget(divider);
+        }
+        auto *button = new QToolButton;
+        button->setText(label);
+        button->setToolTip(tip);
+        button->setFocusPolicy(Qt::NoFocus); // the selection and focus stay in the editor
+        connect(button, &QToolButton::clicked, this, [this, text = QString::fromUtf8(text)]
+        {
+            m_selectionBar->hide();
+            if (text.isEmpty()) toggleComment(); else insertTemplate(text);
+            setFocus();
+        });
+        barLayout->addWidget(button);
+    }
+    m_selectionBar->hide();
+    connect(this, &QTextEdit::selectionChanged, this, [this] { if (!textCursor().hasSelection()) m_selectionBar->hide(); });
+    connect(verticalScrollBar(), &QScrollBar::valueChanged, m_selectionBar, &QWidget::hide);
     refreshGutter();
     updateHighlights();
     texTreeLoad(); // starts reading TeX Live's file lists in the background
@@ -895,6 +927,7 @@ void Editor::updateCompletion(bool request)
 void Editor::keyPressEvent(QKeyEvent *event)
 {
     m_previewPopup->hide();
+    m_selectionBar->hide();
     if (m_completion->popup()->isVisible() &&
         (event->key() == Qt::Key_Enter || event->key() == Qt::Key_Return || event->key() == Qt::Key_Escape || event->key() == Qt::Key_Tab))
     {
@@ -1002,7 +1035,7 @@ void Editor::keyPressEvent(QKeyEvent *event)
 int Editor::gutterWidth() const
 {
     int digits = std::max(3, int(QString::number(document()->blockCount()).size()));
-    return fontMetrics().horizontalAdvance(QString(digits, '9')) + 34; // numbers, then the fold column
+    return fontMetrics().horizontalAdvance(QString(digits, '9')) + 22; // fold column, then the numbers
 }
 
 void Editor::resizeEvent(QResizeEvent *event)
@@ -1218,13 +1251,18 @@ void Editor::paintGutter()
         if (!block.isVisible()) continue;
         QRectF rect = layout->blockBoundingRect(block).translated(0, -scroll);
         if (rect.top() > m_gutter->height()) break;
-        painter.setPen(block.blockNumber() == current ? themeColor("#B9C3CF") : themeColor("#68727F"));
-        painter.drawText(QRectF(0, rect.top(), m_gutter->width() - 26, rect.height()), Qt::AlignRight | Qt::AlignTop,
+        const bool here = block.blockNumber() == current;
+        if (here) painter.fillRect(QRectF(0, rect.top(), m_gutter->width(), rect.height()), themeColor("#1D2024")); // the current-line band runs through the gutter
+        QFont number = font();
+        number.setBold(here);
+        painter.setFont(number);
+        painter.setPen(here ? themeColor("#B9C3CF") : themeColor("#8793A2"));
+        painter.drawText(QRectF(0, rect.top(), m_gutter->width() - 6, fontMetrics().lineSpacing()), Qt::AlignRight | Qt::AlignVCenter,
             QString::number(block.blockNumber() + 1));
-        // Fold column: › on folded lines, ⌄ (dim) on lines that start a fold.
+        // Fold column, left of the number: › on folded lines, ⌄ (dim) on lines that start a fold.
         bool folded = isFolded(block.blockNumber());
         if (!folded && !looksFoldable(block.text())) continue;
-        double size = 3.5, x = m_gutter->width() - 15, y = rect.top() + fontMetrics().height() / 2.0;
+        double size = 3.5, x = 10, y = rect.top() + fontMetrics().lineSpacing() / 2.0;
         painter.save();
         painter.setRenderHint(QPainter::Antialiasing);
         painter.setPen(QPen(folded ? themeColor("#D2D7DE") : themeColor("#68727F"), 1.3));
@@ -1335,9 +1373,32 @@ bool Editor::viewportEvent(QEvent *event)
 }
 
 // The popup is a window of its own: it does not hide when its tab is switched away.
+void Editor::mouseReleaseEvent(QMouseEvent *event)
+{
+    QTextEdit::mouseReleaseEvent(event);
+    if (event->button() == Qt::LeftButton) showSelectionBar();
+}
+
+void Editor::showSelectionBar()
+{
+    auto cursor = textCursor();
+    if (!cursor.hasSelection()) { m_selectionBar->hide(); return; }
+    QTextCursor start(document());
+    start.setPosition(cursor.selectionStart());
+    const QRect line = cursorRect(start);
+    m_selectionBar->adjustSize();
+    int x = std::clamp(line.left() - 8, 4, std::max(4, viewport()->width() - m_selectionBar->width() - 4));
+    int y = line.top() - m_selectionBar->height() - 6;
+    if (y < 2) y = line.bottom() + 6; // no room above the first visible line
+    m_selectionBar->move(x, y);
+    m_selectionBar->show();
+    m_selectionBar->raise();
+}
+
 void Editor::hideEvent(QHideEvent *event)
 {
     m_previewPopup->hide();
+    m_selectionBar->hide();
     QTextEdit::hideEvent(event);
 }
 
@@ -1616,13 +1677,15 @@ void Editor::applyWrapIndent()
             else break;
         }
         width = std::min(width, cap);
-        if (qAbs(block.blockFormat().leftMargin() - width) < 0.01) continue;
+        // 111% of the font's own spacing, about 1.55 em as in the design; set here with the indent so each block is touched once.
+        if (qAbs(block.blockFormat().leftMargin() - width) < 0.01 && block.blockFormat().lineHeight() == 111) continue;
         // Joined to the edit that caused it, so undo restores text and indent together.
         if (!editing) { fresh ? cursor.beginEditBlock() : cursor.joinPreviousEditBlock(); editing = true; }
         cursor.setPosition(block.position());
         QTextBlockFormat format = block.blockFormat();
         format.setLeftMargin(width);
         format.setTextIndent(-width);
+        format.setLineHeight(111, QTextBlockFormat::ProportionalHeight);
         cursor.setBlockFormat(format);
     }
     if (!editing) return;

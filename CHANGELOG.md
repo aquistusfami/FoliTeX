@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.8.0 — 2026-11-10
+
+### Added
+- Explorer file operations, as in VS Code: New File / New Folder (buttons on the root row
+  or right-click), inline Rename (F2, the name selected without its extension), Delete
+  (Del, to the trash after asking), Copy Path, Copy Relative Path, Reveal in File Manager,
+  Collapse Folders. Open tabs follow renamed files and folders; tabs of deleted files close
+  unless they hold unsaved edits. A new file opens once named.
+- The explorer also lists images (`.png`, `.jpg`, `.svg`, `.eps`), `.txt` and `.md`;
+  images open in the system viewer.
+
+- Command palette (Ctrl+K or Ctrl+Shift+P) over every menu command, quick open (Ctrl+P) for
+  files and sections, Back/Forward through earlier cursor positions (Alt+Left/Right and buttons
+  by the tabs), distraction-free mode (Ctrl+Alt+Z) and a formatting bar above mouse selections.
+- Build button labelled "Build"/"Stop", failures shown in red; dark PDF pages; zoom percentage;
+  quieter brace colours; cursor position and line ending at the right of the status bar.
+
+### Changed
+- The Problems panel is open at start (empty list explains what appears and offers Build), the
+  menu bar has a Focus button (Esc leaves focus mode), the palette dims the window and marks the
+  matched letters, and "Name · Key" tooltips show the key as a chip. The saved "hide menu bar"
+  choice is reset once (setting renamed), so the menu bar shows again until you hide it.
+- Look matched to the interface design: JetBrains Mono at 10.5 pt with ~1.55 em lines, fold
+  markers left of the line numbers and the current-line band through the gutter, commands
+  coloured while their arguments stay plain (\section bold), × on tabs only under the pointer,
+  no underlined menu mnemonics, the Problems actions shown only once there are problems, and a
+  page counter that reads "1 / 12". The editor font saved before is reset once (setting renamed).
+- Empty and idle states tell the truth: Problems says "No problems yet" until a build has run
+  (and names the build time after one), the panel shrinks to its Problems | Output strip when
+  there is nothing to report and opens on a failed build or a click, the PDF bar shows only
+  "No PDF" until a document loads, and an empty Untitled tab offers Open Folder, Open File, New
+  from Template, the command palette and recent files. The zoom percentage can be typed.
+  Light theme fixes for empty-state and focus-mode text; keyboard focus is outlined in the
+  Explorer and Problems lists.
+- Open folder moves from Ctrl+K Ctrl+O to Ctrl+Alt+O and Unfold all from Ctrl+K Ctrl+J to
+  Ctrl+Alt+], so Ctrl+K can open the command palette.
+
 ## 0.7.0 — 2026-11-08
 
 ### Added

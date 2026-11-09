@@ -63,8 +63,9 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
   cache; image-heavy pages render in a single Poppler call (≈7× faster than small tiles).
 
 **Workspace and interface**
-- Open a folder as a workspace (Ctrl+K Ctrl+O) to browse TeX/BibTeX/PDF files, with
-  file-type icons and a collapsible root folder.
+- Open a folder as a workspace (Ctrl+Alt+O) to browse TeX/BibTeX/PDF/image files, with
+  file-type icons and a collapsible root folder. Create, rename (F2), delete (Del, to the
+  trash) and copy the path of files and folders, as in VS Code; open tabs follow renames.
 - Outline of sections, labels, included files and TODOs; click to jump.
 - Dark interface modelled on VS Code: rounded panels, flat tabs that scroll sideways and
   name the folder when two files share a name, the build log (Ctrl+J) under the editor.
@@ -201,14 +202,17 @@ Keyboard shortcuts follow TeXstudio where TeXstudio documents them.
 | Alt+Return | Close the last open environment or brace |
 | Tab / Shift+Tab | Indent / outdent the selected lines |
 | Ctrl+/ | Toggle comment |
-| Ctrl+Shift+[ / Ctrl+Shift+] / Ctrl+K Ctrl+J | Fold / unfold at the cursor / unfold all |
+| Ctrl+Shift+[ / Ctrl+Shift+] / Ctrl+Alt+] | Fold / unfold at the cursor / unfold all |
 | Ctrl+, | Settings |
 | Ctrl+wheel in the editor | Larger / smaller editor text |
 | Alt+Z | Toggle word wrap |
 | Ctrl+F / F3 / Shift+F3 / Ctrl+G | Find (in the PDF when it has focus) / next / previous / go to line |
 | Ctrl+H or Ctrl+R | Replace, Replace All in the current file |
 | Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+Shift+S / Ctrl+W | New / open / save / save as / close |
-| Ctrl+K Ctrl+O | Open a workspace folder |
+| Ctrl+Alt+O | Open a workspace folder |
+| Ctrl+K or Ctrl+Shift+P / Ctrl+P | Command palette (every menu command) / quick open (files and sections) |
+| Alt+Left / Alt+Right | Go back / forward through earlier cursor positions |
+| Ctrl+Alt+Z | Distraction-free mode: only the editor (press again to restore) |
 | Ctrl+PgDown / Ctrl+PgUp | Next / previous tab |
 | Ctrl+= / Ctrl+- / Ctrl+0 | Zoom the PDF in / out / fit width |
 | Shift+F5 | Present the PDF full screen from the current page (Esc ends) |

@@ -1,4 +1,5 @@
 #include "window.h"
+#include "palette.h"
 #include <QApplication>
 #include <QFileDialog>
 #include <QMessageBox>
@@ -34,9 +35,15 @@
 #include <QHeaderView>
 #include <QTreeView>
 #include <QFileSystemModel>
+#include <QGuiApplication>
+#include <QClipboard>
+#include <QStyledItemDelegate>
 #include <QUrl>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
+#include <QDirIterator>
+#include <QHelpEvent>
+#include <QToolTip>
 #include <QFontComboBox>
 #include <QFormLayout>
 #include <QDialog>
@@ -397,7 +404,7 @@ Window::Window() : m_runner(this)
         m_find->selectAll();
     };
     add("New document", QKeySequence::New, [this] { newDocument(); });
-    auto *templates = menu->addMenu("New from template");
+    auto *templates = m_templatesMenu = menu->addMenu("New from template");
     connect(templates, &QMenu::aboutToShow, this, [this, templates]
     {
         templates->clear();
@@ -425,8 +432,8 @@ Window::Window() : m_runner(this)
         if (path.isEmpty()) return;
         if (path.endsWith(".pdf", Qt::CaseInsensitive)) openPdf(path); else openSource(path);
     });
-    // Ctrl+Shift+E is \emph in TeXstudio, so the folder takes VS Code's Ctrl+K Ctrl+O.
-    auto *openFolder = add("Open folder…", QKeySequence("Ctrl+K, Ctrl+O"), [this]
+    // Ctrl+Shift+E is \emph in TeXstudio, so the folder takes Ctrl+Alt+O (Ctrl+K opens the command palette).
+    auto *openFolder = add("Open folder…", QKeySequence("Ctrl+Alt+O"), [this]
     {
         QString directory = QFileDialog::getExistingDirectory(this, "Open folder", m_workspace);
         if (directory.isEmpty()) return;
@@ -440,12 +447,7 @@ Window::Window() : m_runner(this)
     {
         recent->clear();
         for (const auto &path : m_recent)
-            recent->addAction(QDir::toNativeSeparators(path), this, [this, path]
-            {
-                if (QFileInfo(path).isDir()) { openWorkspace(path); addRecent(path); QSettings().setValue("workspace", m_workspace); }
-                else if (QFileInfo(path).suffix().compare("pdf", Qt::CaseInsensitive) == 0) openPdf(path);
-                else openSource(path);
-            });
+            recent->addAction(QDir::toNativeSeparators(path), this, [this, path] { openRecent(path); });
         if (m_recent.isEmpty()) recent->addAction("No recent files")->setEnabled(false);
         else { recent->addSeparator(); recent->addAction("Clear recent", this, [this] { m_recent.clear(); }); }
     });
@@ -486,7 +488,7 @@ Window::Window() : m_runner(this)
         for (QTextBlock block = editor->textCursor().block(); block.isValid(); block = block.previous())
             if (editor->isFolded(block.blockNumber())) { editor->toggleFold(block.blockNumber()); return; }
     });
-    add("Unfold all", QKeySequence("Ctrl+K, Ctrl+J"), [this] { if (auto *editor = currentEditor()) editor->unfoldAll(); });
+    add("Unfold all", QKeySequence("Ctrl+Alt+]"), [this] { if (auto *editor = currentEditor()) editor->unfoldAll(); });
     menu = menuBar->addMenu("&Insert");
     add("Bold", QKeySequence("Ctrl+B"), insert("\\textbf{\u2022}"));
     add("Italic", QKeySequence("Ctrl+I"), insert("\\textit{\u2022}"));
@@ -537,6 +539,12 @@ Window::Window() : m_runner(this)
     m_buildOnSaveAction->setCheckable(true);
     add("Word count", QKeySequence(), [this] { countWords(); });
     menu = menuBar->addMenu("&View");
+    add("Command palette…", QKeySequence("Ctrl+K"), [this] { showPalette(false); })->setShortcuts({QKeySequence("Ctrl+K"), QKeySequence("Ctrl+Shift+P")});
+    add("Quick open…", QKeySequence("Ctrl+P"), [this] { showPalette(true); });
+    add("Go back", QKeySequence("Alt+Left"), [this] { navigate(false); });
+    add("Go forward", QKeySequence("Alt+Right"), [this] { navigate(true); });
+    add("Distraction free", QKeySequence("Ctrl+Alt+Z"), [this] { toggleZen(); });
+    menu->addSeparator();
     add("Toggle side bar", QKeySequence("Ctrl+Shift+O"), [this] { showSide(m_outlineButton->isChecked() ? m_outline : m_files); });
     add("Toggle PDF", QKeySequence("Ctrl+\\"), [this] { m_pdfPane->setVisible(!m_pdfPane->isVisible()); });
     add("Toggle panel", QKeySequence("Ctrl+J"), [this] { m_panel->setVisible(!m_panel->isVisible()); });
@@ -563,6 +571,15 @@ Window::Window() : m_runner(this)
     add("Previous tab", QKeySequence("Ctrl+PgUp"), [this] { m_tabs->setCurrentIndex((m_tabs->currentIndex() + m_tabs->count() - 1) % m_tabs->count()); });
     bar->addWidget(menuBar);
     bar->addStretch();
+    auto *focusButton = new QToolButton;
+    focusButton->setObjectName("focusButton");
+    focusButton->setText("Focus");
+    focusButton->setIcon(QIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg>)", "#ADB7C4", 14)));
+    focusButton->setIconSize(QSize(14, 14));
+    focusButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    focusButton->setToolTip("Distraction free · Ctrl+Alt+Z");
+    connect(focusButton, &QToolButton::clicked, this, [this] { toggleZen(); });
+    bar->addWidget(focusButton);
     // Each control sits with what it acts on: Build with the editor tabs, zoom and pages with the PDF.
     // VS Code-style editor action: outlined run triangle, a stop square while building.
     m_runIcon = QIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M4.5 2.8v10.4L12.8 8z"/></svg>)", "#ADB7C4", 16));
@@ -571,10 +588,11 @@ Window::Window() : m_runner(this)
     m_build->setObjectName("editorAction");
     m_build->setIcon(m_runIcon);
     m_build->setIconSize(QSize(16, 16));
+    m_build->setText("Build");
     m_build->setToolTip("Build · F5");
     connect(m_build, &QPushButton::clicked, this, &Window::build);
     m_pdf = new PdfView;
-    m_status = new QLabel("Ready");
+    m_status = new QLabel;
     // VS Code's problem counters: click to open the Problems panel.
     auto counter = [this](const char *svg, const char *color, const QString &tip)
     {
@@ -596,17 +614,20 @@ Window::Window() : m_runner(this)
     m_errorCount = counter(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M5.8 5.8l4.4 4.4m0-4.4l-4.4 4.4"/></svg>)", "#F14C4C", "Errors · F8");
     m_warningCount = counter(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3.2m0 1.6v.1"/></svg>)", "#CCA700", "Warnings");
     statusBar()->addWidget(m_status, 1);
+    m_position = new QLabel;
+    m_position->setToolTip("Cursor position · line ending");
+    statusBar()->addPermanentWidget(m_position);
     m_engine = new QComboBox;
     m_engine->addItems({"pdfLaTeX", "LuaLaTeX", "XeLaTeX"});
     m_engine->setToolTip("TeX engine");
     m_page = new QSpinBox;
     m_page->setRange(1, 1);
-    m_page->setFixedWidth(40);
+    m_page->setFixedWidth(16);
     m_page->setAlignment(Qt::AlignRight);
     m_page->setToolTip("PDF page");
     connect(m_page, qOverload<int>(&QSpinBox::valueChanged), this, [this](int page) { m_pdf->goToPage(page); });
     m_pageCount = new QLabel("/ 0");
-    auto *pdfBar = new QWidget;
+    auto *pdfBar = m_pdfBar = new QWidget;
     pdfBar->setObjectName("pdfBar");
     pdfBar->setFixedHeight(35);
     auto *pdfBarLayout = new QHBoxLayout(pdfBar);
@@ -624,8 +645,39 @@ Window::Window() : m_runner(this)
         pdfBarLayout->addWidget(button);
     };
     pdfButton("−", "Zoom out · Ctrl+-", [this] { m_pdf->setZoom(m_pdf->zoom() / 1.25); });
+    // 100% is actual size at 96 dpi: a PDF point is 96/72 logical pixels, so percent = scale * 75.
+    // Typing a percentage zooms to it; "–" until a document has a scale.
+    m_zoomBox = new QSpinBox;
+    m_zoomBox->setRange(9, 600);
+    m_zoomBox->setSpecialValueText("–");
+    m_zoomBox->setSuffix("%");
+    m_zoomBox->setKeyboardTracking(false);
+    m_zoomBox->setFixedWidth(52);
+    m_zoomBox->setAlignment(Qt::AlignCenter);
+    m_zoomBox->setToolTip("Zoom (100% = actual size)");
+    connect(m_pdf, &PdfView::scaleChanged, m_zoomBox, [this](double scale)
+    {
+        m_pdfScale = scale;
+        QSignalBlocker blocker(m_zoomBox);
+        m_zoomBox->setValue(qRound(scale * 75));
+    });
+    connect(m_zoomBox, &QSpinBox::editingFinished, this, [this]
+    {
+        if (m_pdfScale > 0 && m_zoomBox->value() >= 10) m_pdf->setZoom(m_pdf->zoom() * m_zoomBox->value() / (m_pdfScale * 75));
+    });
+    pdfBarLayout->addWidget(m_zoomBox);
     pdfButton("+", "Zoom in · Ctrl+=", [this] { m_pdf->setZoom(m_pdf->zoom() * 1.25); });
     pdfButton("Fit width", "Fit PDF width · Ctrl+0", [this] { m_pdf->fitWidth(); });
+    m_darkButton = new QToolButton;
+    m_darkButton->setText("Dark");
+    m_darkButton->setCheckable(true);
+    m_darkButton->setToolTip("Dark PDF pages (images are inverted too)");
+    m_darkButton->setIcon(QIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg>)", "#ADB7C4", 14)));
+    m_darkButton->setIconSize(QSize(14, 14));
+    m_darkButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon); // a toggle, drawn like the other state buttons (Focus, Build)
+    connect(m_darkButton, &QToolButton::toggled, this, [this](bool on) { m_pdf->setDarkPages(on); });
+    pdfBarLayout->addWidget(m_darkButton);
+    setPdfLoaded(false);
     m_pdfFindBar = new QWidget;
     m_pdfFindBar->setObjectName("pdfFindBar");
     auto *pdfFindLayout = new QHBoxLayout(m_pdfFindBar);
@@ -804,7 +856,30 @@ Window::Window() : m_runner(this)
     cornerLayout->addWidget(m_engine);
     cornerLayout->addWidget(m_build);
     m_tabs->setCornerWidget(buildCorner, Qt::TopRightCorner);
-    connect(m_tabs, &QTabWidget::currentChanged, this, [this] { if (currentEditor()) setTabTitle(currentEditor()); refreshOutline(); updateTabButtons(); });
+    auto *navCorner = new QWidget;
+    auto *navLayout = new QHBoxLayout(navCorner);
+    navLayout->setContentsMargins(4, 0, 0, 6);
+    navLayout->setSpacing(0);
+    auto navButton = [&](const char *svg, const QString &tip, bool forward)
+    {
+        auto *button = new QToolButton;
+        button->setObjectName("navButton");
+        button->setAccessibleName(tip.section(" · ", 0, 0));
+        QIcon icon(svgPixmap(svg, "#ADB7C4", 16));
+        icon.addPixmap(svgPixmap(svg, "#464E58", 16), QIcon::Disabled); // Qt's own greying barely dims it
+        button->setIcon(icon);
+        button->setIconSize(QSize(16, 16));
+        button->setToolTip(tip);
+        button->setEnabled(false);
+        connect(button, &QToolButton::clicked, this, [this, forward] { navigate(forward); });
+        navLayout->addWidget(button);
+        return button;
+    };
+    m_backButton = navButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5"/></svg>)", "Go back · Alt+Left", false);
+    m_forwardButton = navButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>)", "Go forward · Alt+Right", true);
+    m_tabs->setCornerWidget(navCorner, Qt::TopLeftCorner);
+    m_palette = new Palette(this);
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this] { if (currentEditor()) setTabTitle(currentEditor()); refreshOutline(); updateTabButtons(); updatePosition(); noteLocation(); updateWelcome(); });
     m_outline = new QTreeWidget;
     m_outline->setHeaderHidden(true);
     m_outline->setIndentation(16);
@@ -813,7 +888,19 @@ Window::Window() : m_runner(this)
     static FileIconProvider iconProvider;
     m_fileModel->setIconProvider(&iconProvider);
     m_fileModel->setFilter(QDir::AllDirs | QDir::Files | QDir::NoDotAndDotDot); // no QDir::Hidden: hides .folitex-build
-    m_fileModel->setNameFilters({"*.tex", "*.bib", "*.sty", "*.cls", "*.pdf"});
+    m_fileModel->setNameFilters({"*.tex", "*.bib", "*.sty", "*.cls", "*.pdf", "*.png", "*.jpg", "*.jpeg", "*.svg", "*.eps",
+        "*.txt", "*.md"});
+    m_fileModel->setReadOnly(false); // inline rename (F2)
+    connect(m_fileModel, &QAbstractItemModel::rowsInserted, this, [this](const QModelIndex &parent, int first, int last)
+    {
+        for (int row = first; row <= last && !m_pendingRename.isEmpty(); ++row)
+            if (m_fileModel->filePath(m_fileModel->index(row, 0, parent)) == m_pendingRename)
+                QTimer::singleShot(0, this, [this, path = m_pendingRename] { startRename(path); }); // after the view has the row
+    });
+    connect(m_fileModel, &QFileSystemModel::fileRenamed, this, [this](const QString &directory, const QString &from, const QString &to)
+    {
+        entryRenamed(QDir(directory).filePath(from), QDir(directory).filePath(to));
+    });
     m_fileModel->setNameFilterDisables(false);
     m_files = new QTreeView;
     m_files->setModel(m_fileModel);
@@ -825,8 +912,49 @@ Window::Window() : m_runner(this)
     {
         if (m_fileModel->isDir(index)) { m_files->setExpanded(index, !m_files->isExpanded(index)); return; }
         QString path = m_fileModel->filePath(index);
-        if (path.endsWith(".pdf", Qt::CaseInsensitive)) openPdf(path); else openSource(path);
+        QString suffix = QFileInfo(path).suffix().toLower();
+        if (suffix == "pdf") openPdf(path);
+        else if (QStringList{"png", "jpg", "jpeg", "svg", "eps"}.contains(suffix)) QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+        else openSource(path);
     });
+    // Rename selects the name without its extension, as VS Code does.
+    struct RenameDelegate : QStyledItemDelegate
+    {
+        using QStyledItemDelegate::QStyledItemDelegate;
+        void setEditorData(QWidget *editor, const QModelIndex &index) const override
+        {
+            QStyledItemDelegate::setEditorData(editor, index);
+            // After QAbstractItemView::edit(), which selects all once the editor is open.
+            if (auto *line = qobject_cast<QLineEdit *>(editor))
+                QTimer::singleShot(0, line, [line]
+                {
+                    int dot = int(line->text().lastIndexOf('.'));
+                    line->setSelection(0, dot > 0 ? dot : int(line->text().size()));
+                });
+        }
+    };
+    auto *delegate = new RenameDelegate(m_files);
+    m_files->setItemDelegate(delegate);
+    m_files->setEditTriggers(QAbstractItemView::EditKeyPressed);
+    connect(delegate, &QAbstractItemDelegate::closeEditor, this, [this]
+    {
+        // A new file opens once its name is set (or kept with Escape).
+        QString path = std::exchange(m_newFile, QString());
+        if (!path.isEmpty() && QFileInfo(path).isFile() && !QStringList{"pdf", "png", "jpg", "jpeg", "svg", "eps"}.contains(QFileInfo(path).suffix().toLower()))
+            openSource(path);
+    });
+    auto selectedPath = [this] { return m_files->currentIndex().isValid() ? m_fileModel->filePath(m_files->currentIndex()) : QString(); };
+    auto *rename = new QAction("Rename", m_files);
+    rename->setShortcut(QKeySequence("F2"));
+    rename->setShortcutContext(Qt::WidgetShortcut);
+    connect(rename, &QAction::triggered, this, [this] { if (m_files->currentIndex().isValid()) m_files->edit(m_files->currentIndex()); });
+    auto *remove = new QAction("Delete", m_files);
+    remove->setShortcuts({QKeySequence::Delete, QKeySequence("Ctrl+Backspace")});
+    remove->setShortcutContext(Qt::WidgetShortcut);
+    connect(remove, &QAction::triggered, this, [this, selectedPath] { if (!selectedPath().isEmpty()) deleteEntry(selectedPath()); });
+    m_files->addActions({rename, remove});
+    m_files->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_files, &QWidget::customContextMenuRequested, this, &Window::explorerMenu);
     // Side bar: VS Code proportions (48 px activity bar, 35 px uppercase title, 22 px rows).
     m_noFolder = new QWidget;
     auto *noFolderLayout = new QVBoxLayout(m_noFolder);
@@ -857,7 +985,53 @@ Window::Window() : m_runner(this)
     m_rootButton->setIcon(chevrons);
     m_rootButton->setIconSize(QSize(16, 16));
     connect(m_rootButton, &QToolButton::toggled, m_files, &QWidget::setVisible);
-    filesLayout->addWidget(m_rootButton);
+    // VS Code's explorer title actions: new file, new folder, collapse all.
+    auto *rootRow = new QHBoxLayout;
+    rootRow->setContentsMargins(0, 0, 6, 0);
+    rootRow->setSpacing(0);
+    rootRow->addWidget(m_rootButton, 1);
+    auto target = [this]
+    {
+        // The selected folder, or the selected file's folder, else the workspace.
+        QModelIndex index = m_files->currentIndex();
+        if (!index.isValid()) return m_workspace;
+        return m_fileModel->isDir(index) ? m_fileModel->filePath(index) : QFileInfo(m_fileModel->filePath(index)).absolutePath();
+    };
+    auto rootAction = [&](const char *svg, const QString &tip, auto handler)
+    {
+        auto *button = new QToolButton;
+        button->setObjectName("explorerAction");
+        button->setIcon(QIcon(svgPixmap(svg, "#ADB7C4", 16)));
+        button->setIconSize(QSize(16, 16));
+        button->setToolTip(tip);
+        button->setAutoRaise(true);
+        connect(button, &QToolButton::clicked, this, handler);
+        rootRow->addWidget(button);
+        return button;
+    };
+    rootAction(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"><path d="M9.5 1.5h-6v13h5"/><path d="M9.5 1.5l3 3v4"/><path d="M9.5 1.5v3h3"/><path d="M12.5 10.5v5M10 13h5"/></svg>)",
+        "New File…", [this, target] { newEntry(target(), false); });
+    rootAction(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"><path d="M8.5 13.5h-7v-11h4.5l1.5 1.5h7v4"/><path d="M12.5 9.5v5M10 12h5"/></svg>)",
+        "New Folder…", [this, target] { newEntry(target(), true); });
+    m_collapseButton = rootAction(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"><rect x="3.5" y="3.5" width="9" height="9" rx="1"/><path d="M6 8h4"/><path d="M5.5 1.5h9v9"/></svg>)",
+        "Collapse Folders", [this]
+        {
+            m_files->collapseAll();
+            m_expandedFolders.clear();
+            m_collapseButton->setEnabled(false);
+        });
+    m_collapseButton->setEnabled(false);
+    connect(m_files, &QTreeView::expanded, this, [this](const QModelIndex &index)
+    {
+        m_expandedFolders.insert(m_fileModel->filePath(index));
+        m_collapseButton->setEnabled(true);
+    });
+    connect(m_files, &QTreeView::collapsed, this, [this](const QModelIndex &index)
+    {
+        m_expandedFolders.remove(m_fileModel->filePath(index));
+        m_collapseButton->setEnabled(!m_expandedFolders.isEmpty());
+    });
+    filesLayout->addLayout(rootRow);
     filesLayout->addWidget(m_files, 1);
     filesLayout->addStretch(); // keeps the root row at the top while the tree is collapsed
     m_sideStack->addWidget(filesPage);
@@ -875,7 +1049,7 @@ Window::Window() : m_runner(this)
     auto icon = [](const char *svg)
     {
         QIcon result;
-        for (auto [color, state] : {std::pair{"#68727F", QIcon::Off}, std::pair{"#D2D7DE", QIcon::On}})
+        for (auto [color, state] : {std::pair{"#8793A2", QIcon::Off}, std::pair{"#D2D7DE", QIcon::On}})
             result.addPixmap(svgPixmap(svg, color, 24), QIcon::Normal, state);
         return result;
     };
@@ -889,6 +1063,7 @@ Window::Window() : m_runner(this)
     {
         auto *button = new QToolButton;
         button->setObjectName("activityButton");
+        button->setAccessibleName(tip.section(" · ", 0, 0));
         button->setIcon(icon(svg));
         button->setIconSize(QSize(24, 24));
         button->setFixedSize(48, 48);
@@ -899,7 +1074,7 @@ Window::Window() : m_runner(this)
         return button;
     };
     m_filesButton = activityButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M13.5 3H6.5a1.5 1.5 0 0 0-1.5 1.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8.5z"/><path d="M13.5 3v5.5H19"/></svg>)",
-        "Files · Ctrl+Shift+E", m_files);
+        "Explorer · Ctrl+Shift+O", m_files);
     m_outlineButton = activityButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 5.5h16M8 12h12M8 18.5h12M4.5 12h.01M4.5 18.5h.01"/></svg>)",
         "Outline", m_outline);
     activityLayout->addStretch();
@@ -919,6 +1094,29 @@ Window::Window() : m_runner(this)
     m_problemsView->setHeaderHidden(true);
     m_problemsView->setIndentation(16);
     m_problemsView->setFrameShape(QFrame::NoFrame);
+    // Until the first build the list is empty: say what will appear and offer the build.
+    m_problemsEmpty = new QWidget(m_problemsView->viewport());
+    auto *emptyLayout = new QVBoxLayout(m_problemsEmpty);
+    emptyLayout->setAlignment(Qt::AlignVCenter);
+    emptyLayout->setContentsMargins(24, 0, 24, 0);
+    emptyLayout->setSpacing(8);
+    auto *emptyTitle = new QLabel("No problems yet");
+    emptyTitle->setObjectName("emptyTitle");
+    emptyTitle->setStyleSheet(themed("font-weight:bold; color:#ADB7C4;"));
+    auto *emptyText = new QLabel("Build the document to check it. Warnings and errors appear here, and F8 steps through them.");
+    emptyText->setObjectName("emptyText");
+    emptyText->setWordWrap(true);
+    emptyText->setAlignment(Qt::AlignCenter);
+    emptyText->setStyleSheet(themed("color:#8793A2;"));
+    auto *emptyBuild = new QPushButton("Build · F5");
+    emptyBuild->setObjectName("primary");
+    connect(emptyBuild, &QPushButton::clicked, this, &Window::build);
+    emptyLayout->addWidget(emptyTitle, 0, Qt::AlignHCenter);
+    emptyLayout->addWidget(emptyText); // full width, so it wraps only when the panel is narrow
+    emptyLayout->addWidget(emptyBuild, 0, Qt::AlignHCenter);
+    auto *viewportLayout = new QVBoxLayout(m_problemsView->viewport());
+    viewportLayout->setContentsMargins(0, 0, 0, 0);
+    viewportLayout->addWidget(m_problemsEmpty);
     connect(m_problemsView, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item)
     {
         if (item->data(0, Qt::UserRole).isValid()) goToProblem(item->data(0, Qt::UserRole).toInt());
@@ -931,7 +1129,6 @@ Window::Window() : m_runner(this)
     m_panel->tabBar()->setDrawBase(false);
     m_panel->addTab(m_problemsView, "Problems");
     m_panel->addTab(m_log, "Output");
-    m_panel->hide();
     // VS Code's panel header: filter, collapse all, maximize and close on the right of the tabs.
     auto *panelActions = new QWidget;
     auto *panelLayout = new QHBoxLayout(panelActions);
@@ -940,7 +1137,7 @@ Window::Window() : m_runner(this)
     auto *filter = new QLineEdit;
     filter->setObjectName("problemFilter");
     filter->setPlaceholderText("Filter (e.g. text, main.tex)");
-    filter->setFixedWidth(220);
+    filter->setFixedWidth(150);
     filter->setClearButtonEnabled(true);
     connect(filter, &QLineEdit::textChanged, this, [this](const QString &text)
     {
@@ -979,6 +1176,7 @@ Window::Window() : m_runner(this)
     auto *closePanel = panelButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M4.5 4.5l7 7m0-7l-7 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg>)", "Close Panel · Ctrl+J");
     connect(closePanel, &QToolButton::clicked, this, [this] { m_panel->hide(); m_tabs->show(); });
     m_panel->setCornerWidget(panelActions, Qt::TopRightCorner);
+    panelActions->hide(); // shown with the first problems
     setProblems({}, {}); // shows the empty-state line
     // The build log opens under the editor only, like VS Code's panel inside the editor column.
     m_vertical = new QSplitter(Qt::Vertical);
@@ -987,6 +1185,8 @@ Window::Window() : m_runner(this)
     m_vertical->setStretchFactor(0, 1);
     m_vertical->setStretchFactor(1, 0);
     m_vertical->setChildrenCollapsible(false);
+    setPanelCollapsed(true);
+    connect(m_panel, &QTabWidget::tabBarClicked, this, [this] { if (m_panelCollapsed) setPanelCollapsed(false); });
     m_horizontal = new QSplitter;
     m_horizontal->addWidget(m_side);
     m_horizontal->addWidget(m_vertical);
@@ -998,7 +1198,7 @@ Window::Window() : m_runner(this)
     m_horizontal->setChildrenCollapsible(false);
     for (auto *splitter : {m_horizontal, m_vertical}) splitter->setHandleWidth(6);
     for (QWidget *panel : std::initializer_list<QWidget *>{m_side, m_tabs, m_panel, m_pdfPane}) new RoundedCorners(panel);
-    auto *row = new QHBoxLayout;
+    auto *row = m_row = new QHBoxLayout;
     row->setSpacing(0);
     row->addWidget(activity);
     row->setContentsMargins(0, 6, 6, 6);
@@ -1014,6 +1214,7 @@ Window::Window() : m_runner(this)
     connect(&m_runner, &BuildRunner::finished, this, [this](bool success, const QString &pdf)
     {
         m_build->setIcon(m_runIcon);
+        m_build->setText("Build");
         m_build->setToolTip("Build · F5");
         if (m_runner.cancelled()) { m_status->setText("Build stopped"); return; }
         // Always the latest log: when nothing changed, latexmk does not rerun and keeps the old
@@ -1028,6 +1229,7 @@ Window::Window() : m_runner(this)
         m_warningCount->show();
         int errors = int(std::count_if(problems.cbegin(), problems.cend(), [](const Problem &p) { return p.error; }));
         int warnings = int(problems.size()) - errors;
+        m_status->setStyleSheet(success ? QString() : "color:#F48771;");
         if (success)
             m_status->setText(warnings ? QString("Build succeeded · %1 warning%2").arg(warnings).arg(warnings == 1 ? "" : "s") : "Build succeeded");
         else
@@ -1039,16 +1241,19 @@ Window::Window() : m_runner(this)
         {
             m_panel->setCurrentWidget(errors ? static_cast<QWidget *>(m_problemsView) : m_log);
             m_panel->show();
-            m_vertical->setSizes({580, 170});
+            setPanelCollapsed(false);
         }
     });
     connect(m_pdf, &PdfView::documentReady, this, [this](int pages)
     {
+        setPdfLoaded(pages > 0);
         m_page->setMaximum(std::max(1, pages));
         m_pageCount->setText("/ " + QString::number(pages));
+        // As wide as its digits, so "1 / 12" reads as one phrase from the left edge, not a box with a gap.
+        m_page->setFixedWidth(m_page->fontMetrics().horizontalAdvance(QString(QString::number(std::max(1, pages)).size(), '0')) + 8);
         if (m_pendingPage) { m_pdf->goToPage(m_pendingPage, m_pendingY); m_pendingPage = 0; }
     });
-    connect(m_pdf, &PdfView::loadFailed, this, [this](const QString &error) { m_status->setText(error); });
+    connect(m_pdf, &PdfView::loadFailed, this, [this](const QString &error) { m_status->setText(error); setPdfLoaded(false); });
     connect(m_pdf, &PdfView::pageChanged, this, [this](int page)
     {
         QSignalBlocker blocker(m_page); m_page->setValue(page);
@@ -1182,6 +1387,8 @@ void Window::openWorkspace(const QString &directory)
     if (!info.isDir()) return;
     m_workspace = QDir::cleanPath(info.absoluteFilePath()); // no trailing slash, so the folder has a name
     m_files->setRootIndex(m_fileModel->setRootPath(m_workspace));
+    m_expandedFolders.clear();
+    m_collapseButton->setEnabled(false);
     m_rootButton->setText(QFileInfo(m_workspace).fileName());
     m_rootButton->setToolTip(m_workspace);
     showSide(m_files, false);
@@ -1198,6 +1405,239 @@ void Window::showSide(QWidget *page, bool toggle)
     m_sideTitle->setText(page == m_outline ? "Outline" : "Explorer");
     m_filesButton->setChecked(!close && page == m_files);
     m_outlineButton->setChecked(!close && page == m_outline);
+}
+
+void Window::toggleZen()
+{
+    if (!m_zenHidden.isEmpty())
+    {
+        for (auto &widget : m_zenHidden) if (widget) widget->show();
+        m_zenHidden.clear();
+        m_zenHint->hide();
+        m_row->setContentsMargins(0, 6, 6, 6);
+        return;
+    }
+    if (!m_zenHint)
+    {
+        m_zenHint = new QLabel("Esc to leave focus mode", this);
+        m_zenHint->setStyleSheet(themed("color:#8793A2; font-size:11px;"));
+        m_zenHint->adjustSize();
+    }
+    for (QWidget *widget : {findChild<QWidget *>("activity"), m_side, m_pdfPane, static_cast<QWidget *>(m_panel), m_topBar, static_cast<QWidget *>(statusBar())})
+        if (widget && widget->isVisible()) { m_zenHidden << widget; widget->hide(); }
+    if (!m_zenHidden.isEmpty())
+    {
+        placeZen();
+        m_zenHint->move(width() - m_zenHint->width() - 18, height() - m_zenHint->height() - 8); // bottom right: the status bar is hidden
+        m_zenHint->show();
+        m_zenHint->raise();
+    }
+    if (auto *editor = currentEditor()) editor->setFocus();
+}
+
+void Window::setPanelCollapsed(bool on)
+{
+    m_panelCollapsed = on;
+    const int strip = m_panel->tabBar()->sizeHint().height() + 12;
+    m_panel->setMaximumHeight(on ? strip : QWIDGETSIZE_MAX);
+    // The splitter keeps the old height for a capped widget and leaves it empty; hand it to the editor.
+    if (on) { m_vertical->setSizes({10000, strip}); return; }
+    const QList<int> sizes = m_vertical->sizes();
+    const int total = sizes.value(0) + sizes.value(1);
+    if (sizes.value(1) < 120 && total > 400) m_vertical->setSizes({total - 170, 170});
+}
+
+void Window::setPdfLoaded(bool loaded)
+{
+    // Without a document the bar says so and nothing else: no page, zoom or toggles to press.
+    for (auto *child : m_pdfBar->findChildren<QWidget *>(Qt::FindDirectChildrenOnly)) child->setVisible(loaded || child == m_pageCount);
+    if (!loaded) m_pageCount->setText("No PDF");
+}
+
+void Window::openRecent(const QString &path)
+{
+    if (QFileInfo(path).isDir()) { openWorkspace(path); addRecent(path); QSettings().setValue("workspace", m_workspace); }
+    else if (QFileInfo(path).suffix().compare("pdf", Qt::CaseInsensitive) == 0) openPdf(path);
+    else openSource(path);
+}
+
+// First run and new windows: an empty Untitled tab offers the ways in, each with its key.
+void Window::updateWelcome()
+{
+    auto *editor = currentEditor();
+    const bool show = editor && editor->property("path").toString().isEmpty() && editor->document()->isEmpty();
+    if (!show) { if (m_welcome) m_welcome->hide(); return; }
+    if (!m_welcome || m_welcome->parentWidget() != editor->viewport())
+    {
+        delete m_welcome;
+        m_welcome = new QFrame(editor->viewport());
+        m_welcome->setObjectName("welcome");
+        auto *layout = new QVBoxLayout(m_welcome);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(2);
+        auto *title = new QLabel("Start a document");
+        title->setObjectName("welcomeTitle");
+        auto *hint = new QLabel("Type here, or open your work.");
+        hint->setObjectName("welcomeHint");
+        layout->addWidget(title);
+        layout->addWidget(hint);
+        layout->addSpacing(10);
+        auto row = [&](const QString &text, const QString &keys, auto handler, const QString &tip = {})
+        {
+            auto *button = new QPushButton;
+            button->setObjectName("welcomeAction");
+            button->setToolTip(tip);
+            button->setCursor(Qt::PointingHandCursor);
+            auto *rowLayout = new QHBoxLayout(button);
+            rowLayout->setContentsMargins(8, 0, 8, 0);
+            auto *name = new QLabel(text);
+            name->setObjectName("welcomeName");
+            auto *key = new QLabel(keys);
+            key->setObjectName("welcomeKey");
+            for (auto *label : {name, key}) label->setAttribute(Qt::WA_TransparentForMouseEvents);
+            rowLayout->addWidget(name);
+            rowLayout->addStretch();
+            rowLayout->addWidget(key);
+            button->setMinimumSize(320, 28);
+            connect(button, &QPushButton::clicked, this, handler);
+            layout->addWidget(button);
+            return button;
+        };
+        auto trigger = [this](const QString &name) { for (QAction *action : actions()) if (action->text() == name) { action->trigger(); return; } };
+        row("Open Folder…", "Ctrl+Alt+O", [trigger] { trigger("Open folder…"); });
+        row("Open File…", "Ctrl+O", [trigger] { trigger("Open TeX or PDF…"); });
+        QPushButton *fromTemplate = row("New from Template…", "", [] {}); // opens the template menu below it
+        connect(fromTemplate, &QPushButton::clicked, this, [this, fromTemplate] { m_templatesMenu->popup(fromTemplate->mapToGlobal(QPoint(0, fromTemplate->height()))); });
+        row("Command Palette", "Ctrl+K", [this] { showPalette(false); });
+        if (!m_recent.isEmpty())
+        {
+            layout->addSpacing(12);
+            auto *recentTitle = new QLabel("Recent");
+            recentTitle->setObjectName("welcomeHint");
+            layout->addWidget(recentTitle);
+            for (const QString &path : m_recent.mid(0, 5))
+            {
+                QString parent = QDir::toNativeSeparators(QFileInfo(path).absolutePath()).replace(QDir::homePath(), "~");
+                // The folder is a hint; keep the row one line wide, eliding the middle of long paths.
+                parent = fontMetrics().elidedText(parent, Qt::ElideMiddle, 280 - fontMetrics().horizontalAdvance(QFileInfo(path).fileName()));
+                row(QFileInfo(path).fileName(), parent, [this, path] { openRecent(path); }, QDir::toNativeSeparators(path));
+            }
+        }
+        m_welcome->adjustSize();
+    }
+    placeWelcome();
+    m_welcome->show();
+    m_welcome->raise();
+}
+
+void Window::placeWelcome()
+{
+    if (!m_welcome) return;
+    QWidget *area = m_welcome->parentWidget();
+    m_welcome->move(std::max(16, (area->width() - m_welcome->width()) / 2), std::max(24, (area->height() - m_welcome->height()) / 3));
+}
+
+// Focus mode: the editor as a centred column of readable width, not a full-width sheet.
+void Window::placeZen()
+{
+    int side = std::max(6, (width() - 1000) / 2);
+    m_row->setContentsMargins(side, 6, side, 6);
+}
+
+void Window::noteLocation()
+{
+    auto *editor = currentEditor();
+    if (!editor) return;
+    Place here{editor, editor->lineNumber()};
+    if (!m_navigating && m_here.editor && (m_here.editor != editor || qAbs(m_here.line - here.line) > 10))
+    {
+        m_back.append(m_here);
+        if (m_back.size() > 50) m_back.removeFirst();
+        m_forward.clear();
+    }
+    m_here = here;
+    m_backButton->setEnabled(!m_back.isEmpty());
+    m_forwardButton->setEnabled(!m_forward.isEmpty());
+}
+
+void Window::navigate(bool forward)
+{
+    auto &from = forward ? m_forward : m_back;
+    auto &to = forward ? m_back : m_forward;
+    while (!from.isEmpty())
+    {
+        Place place = from.takeLast();
+        if (!place.editor || m_tabs->indexOf(place.editor) < 0) continue; // its tab was closed
+        to.append(m_here);
+        m_navigating = true;
+        m_tabs->setCurrentWidget(place.editor);
+        place.editor->goToLine(place.line);
+        noteLocation();
+        m_navigating = false;
+        return;
+    }
+}
+
+void Window::showPalette(bool files)
+{
+    QList<PaletteItem> items;
+    if (!files)
+    {
+        for (QAction *top : m_menuBar->actions())
+        {
+            QMenu *menu = top->menu();
+            if (!menu) continue;
+            const QString group = QString(menu->title()).remove('&');
+            for (QAction *action : menu->actions())
+                if (!action->isSeparator() && !action->menu() && action->isEnabled() && !action->text().isEmpty())
+                    items.append({QString(action->text()).remove('&'), group, action->shortcut().toString(QKeySequence::NativeText),
+                                  [action] { action->trigger(); }});
+        }
+        m_palette->open("Type a command…", "Commands  ·  Ctrl+P for files", items);
+        return;
+    }
+    auto *editor = currentEditor();
+    if (editor)
+        for (const auto &entry : Editor::outline(editor->toPlainText()))
+            if (entry.kind == OutlineEntry::Section && !entry.title.isEmpty())
+                items.append({entry.title, "Section", QString("line %1").arg(entry.line),
+                              [editor, line = entry.line] { if (editor) editor->goToLine(line); }});
+    QSet<QString> seen;
+    auto addFile = [&](const QString &path, const QString &label, const QString &group)
+    {
+        if (seen.contains(path)) return;
+        seen.insert(path);
+        items.append({label, group, QString(), [this, path]
+        {
+            if (path.endsWith(".pdf", Qt::CaseInsensitive)) openPdf(path); else openSource(path);
+        }});
+    };
+    for (int i = 0; i < m_tabs->count(); ++i)
+        if (QString path = m_tabs->widget(i)->property("path").toString(); !path.isEmpty())
+            addFile(path, QFileInfo(path).fileName(), "Open");
+    if (!m_workspace.isEmpty())
+    {
+        static const QStringList suffixes = {"tex", "ltx", "bib", "sty", "cls", "bst", "dtx", "md", "txt", "pdf"};
+        const QDir base(m_workspace);
+        int count = 0;
+        for (QDirIterator it(m_workspace, QDir::Files, QDirIterator::Subdirectories); it.hasNext() && count < 5000;)
+        {
+            QString path = it.next();
+            if (!suffixes.contains(QFileInfo(path).suffix().toLower())) continue;
+            addFile(path, base.relativeFilePath(path), "File");
+            ++count;
+        }
+    }
+    m_palette->open("Open a file or jump to a section…", "Files and outline  ·  Ctrl+Shift+P for commands", items);
+}
+
+void Window::updatePosition()
+{
+    auto *editor = currentEditor();
+    if (!editor) { m_position->clear(); return; }
+    const QString ending = editor->property("lineEnding").toString();
+    m_position->setText(QString("Ln %1, Col %2  ·  %3").arg(editor->lineNumber()).arg(editor->textCursor().positionInBlock() + 1)
+        .arg(ending == "\r\n" ? "CRLF" : ending == "\r" ? "CR" : "LF"));
 }
 
 void Window::syncOutline()
@@ -1218,7 +1658,7 @@ Editor *Window::newDocument(const QString &text)
     editor->setPlainText(text);
     editor->document()->setModified(false);
     int index = m_tabs->addTab(editor, "Untitled");
-    // × and the file icon share one left widget, so their spacing is ours, not QTabBar's.
+    // × and the file icon share one 16 px slot: the icon, or × under the pointer, or • when modified.
     auto *lead = new QWidget;
     auto *leadLayout = new QHBoxLayout(lead);
     leadLayout->setContentsMargins(6, 0, 0, 0);
@@ -1234,6 +1674,8 @@ Editor *Window::newDocument(const QString &text)
     leadLayout->addWidget(close);
     leadLayout->addWidget(icon);
     icon->setFixedSize(16, 16);
+    close->setFixedSize(16, 16);
+    close->hide();
     lead->setFixedSize(lead->sizeHint()); // QTabBar would squeeze it otherwise
     m_tabs->tabBar()->setTabButton(index, QTabBar::LeftSide, lead); // left, as tabActionLocation: left
     m_tabs->setCurrentWidget(editor);
@@ -1248,12 +1690,18 @@ Editor *Window::newDocument(const QString &text)
         font.setPointSizeF(std::clamp(font.pointSizeF() + steps, 6.0, 40.0));
         setEditorFont(font);
     });
-    connect(editor, &QTextEdit::textChanged, this, [this, editor] { if (editor == currentEditor()) m_outlineTimer.start(); });
+    connect(editor, &QTextEdit::textChanged, this, [this, editor] { if (editor == currentEditor()) { m_outlineTimer.start(); updateWelcome(); } });
     connect(editor, &QTextEdit::cursorPositionChanged, this, [this, editor]
     {
         if (editor == currentEditor()) syncOutline();
-        if (editor == currentEditor() && !m_runner.running())
-            m_status->setText(QString("Ln %1, Col %2").arg(editor->lineNumber()).arg(editor->textCursor().positionInBlock() + 1));
+        if (editor != currentEditor()) return;
+        updatePosition();
+        noteLocation();
+        if (!m_runner.running())
+        {
+            m_status->setStyleSheet({});
+            m_status->clear(); // the right side already shows where the cursor is
+        }
     });
     editor->setFocus();
     return editor;
@@ -1395,6 +1843,104 @@ void Window::showSettings()
     setWordWrap(wrap->isChecked());
     // Read at start-up, before any widget exists; the other settings are saved on quit (main.cpp).
     QSettings().setValue("theme", theme->currentIndex() == 1 ? "light" : "dark");
+}
+
+QString Window::newEntry(const QString &directory, bool folder)
+{
+    if (directory.isEmpty() || !QFileInfo(directory).isDir()) return {};
+    QDir parent(directory);
+    QString name = folder ? "New Folder" : "untitled.tex";
+    for (int i = 2; QFileInfo::exists(parent.filePath(name)); ++i)
+        name = folder ? QString("New Folder %1").arg(i) : QString("untitled-%1.tex").arg(i);
+    QString path = parent.filePath(name);
+    QFile file(path);
+    if (folder ? !parent.mkdir(name) : !file.open(QIODevice::WriteOnly | QIODevice::NewOnly))
+    {
+        m_status->setText("Cannot create " + name + (folder ? QString() : ": " + file.errorString()));
+        return {};
+    }
+    file.close();
+    if (!folder) m_newFile = path;
+    // Asking the model for the new entry now would add it twice: its watcher removes and re-adds
+    // it moments later, which closes the inline editor. Rename once the model lists it itself.
+    m_pendingRename = path;
+    if (directory != m_workspace) m_files->expand(m_fileModel->index(directory));
+    QTimer::singleShot(1000, this, [this, path] { if (m_pendingRename == path) startRename(path); });
+    return path;
+}
+
+void Window::startRename(const QString &path)
+{
+    m_pendingRename.clear();
+    QModelIndex index = m_fileModel->index(path);
+    if (!index.isValid()) return;
+    m_files->setCurrentIndex(index);
+    m_files->scrollTo(index);
+    m_files->setFocus();
+    m_files->edit(index); // the name is selected without its extension
+}
+
+bool Window::deleteEntry(const QString &path, bool ask)
+{
+    QFileInfo info(path);
+    if (!info.exists() || QDir::cleanPath(path) == m_workspace) return false;
+    if (ask && QMessageBox::question(this, "Delete", QString("Move \u2018%1\u2019%2 to the trash?")
+            .arg(info.fileName(), info.isDir() ? " and its contents" : ""), QMessageBox::Yes | QMessageBox::Cancel) != QMessageBox::Yes)
+        return false;
+    if (!QFile::moveToTrash(path)) { m_status->setText("Cannot move " + info.fileName() + " to the trash."); return false; }
+    // Tabs of deleted files close unless they hold unsaved edits, which a save writes back.
+    const QString prefix = QDir::cleanPath(info.absoluteFilePath());
+    for (int i = m_tabs->count() - 1; i >= 0; --i)
+    {
+        auto *editor = qobject_cast<Editor *>(m_tabs->widget(i));
+        QString open = editor ? editor->property("path").toString() : QString();
+        if (!open.isEmpty() && (open == prefix || open.startsWith(prefix + '/')) && !editor->document()->isModified()) closeTab(i);
+    }
+    return true;
+}
+
+void Window::entryRenamed(const QString &from, const QString &to)
+{
+    // Open tabs follow a renamed file, or files inside a renamed folder.
+    if (m_newFile == from) m_newFile = to;
+    for (int i = 0; i < m_tabs->count(); ++i)
+    {
+        auto *editor = qobject_cast<Editor *>(m_tabs->widget(i));
+        QString open = editor ? editor->property("path").toString() : QString();
+        if (open.isEmpty() || (open != from && !open.startsWith(from + '/'))) continue;
+        QString moved = to + open.mid(from.size());
+        m_sourceWatcher.removePath(open);
+        editor->setProperty("path", moved);
+        editor->setProperty("mtime", QFileInfo(moved).lastModified());
+        watchSource(moved);
+        setTabTitle(editor);
+    }
+    for (auto &path : m_recent)
+        if (path == from || path.startsWith(from + '/')) path = to + path.mid(from.size());
+}
+
+void Window::explorerMenu(const QPoint &position)
+{
+    QModelIndex index = m_files->indexAt(position);
+    if (index.isValid()) m_files->setCurrentIndex(index);
+    QString path = index.isValid() ? m_fileModel->filePath(index) : m_workspace;
+    if (path.isEmpty()) return;
+    bool folder = QFileInfo(path).isDir();
+    QString directory = folder ? path : QFileInfo(path).absolutePath();
+    QMenu menu(this);
+    menu.addAction("New File…", this, [this, directory] { newEntry(directory, false); });
+    menu.addAction("New Folder…", this, [this, directory] { newEntry(directory, true); });
+    menu.addSeparator();
+    menu.addAction("Reveal in File Manager", this, [directory] { QDesktopServices::openUrl(QUrl::fromLocalFile(directory)); });
+    menu.addAction("Copy Path", this, [path] { QGuiApplication::clipboard()->setText(QDir::toNativeSeparators(path)); });
+    menu.addAction("Copy Relative Path", this, [this, path] { QGuiApplication::clipboard()->setText(QDir(m_workspace).relativeFilePath(path)); });
+    if (index.isValid())
+    {
+        menu.addSeparator();
+        menu.addAction("Rename\tF2", this, [this, index] { m_files->edit(index); });
+        menu.addAction("Delete\tDel", this, [this, path] { deleteEntry(path); });
+    }
+    menu.exec(m_files->viewport()->mapToGlobal(position));
 }
 
 void Window::addRecent(const QString &path)
@@ -1566,7 +2112,8 @@ void Window::build()
     }
     m_log->clear();
     m_buildStarted = QDateTime::currentDateTime();
-    m_status->setText("Building…"); m_build->setIcon(m_stopIcon); m_build->setToolTip("Stop build · F5");
+    m_status->setStyleSheet({});
+    m_status->setText("Building…"); m_build->setIcon(m_stopIcon); m_build->setText("Stop"); m_build->setToolTip("Stop build · F5");
     m_lastRoot = root;
     m_runner.start(source, m_engine->currentText());
 }
@@ -1667,7 +2214,6 @@ void Window::updateTabButtons()
     static const char *closeSvg = R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M4.5 4.5l7 7m0-7l-7 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg>)";
     static const char *dotSvg = R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3.5" fill="currentColor"/></svg>)";
     static const QPixmap closePixmap = svgPixmap(closeSvg, "#ADB7C4", 16), dotPixmap = svgPixmap(dotSvg, "#ADB7C4", 16);
-    static const QPixmap blank = [] { QPixmap pixmap(48, 48); pixmap.fill(Qt::transparent); pixmap.setDevicePixelRatio(3); return pixmap; }();
     for (int i = 0; i < m_tabs->count(); ++i)
     {
         QWidget *lead = m_tabs->tabBar()->tabButton(i, QTabBar::LeftSide);
@@ -1675,10 +2221,12 @@ void Window::updateTabButtons()
         auto *editor = qobject_cast<Editor *>(m_tabs->widget(i));
         if (!button || !editor) continue;
         bool modified = editor->document()->isModified();
-        bool shown = i == m_tabs->currentIndex() || i == m_hoverTab;
-        QIcon icon(modified ? dotPixmap : shown ? closePixmap : blank);
+        bool hover = i == m_hoverTab;
+        QIcon icon(hover ? closePixmap : dotPixmap);
         icon.addPixmap(closePixmap, QIcon::Active);
         button->setIcon(icon);
+        button->setVisible(hover || modified);
+        if (auto *file = lead->findChild<QLabel *>()) file->setVisible(!hover && !modified);
     }
 }
 
@@ -1719,13 +2267,29 @@ void Window::updateTabHints()
 
 // The application-wide filter must go before child widgets are destroyed: their events would
 // otherwise reach eventFilter, which uses those children.
-Window::~Window() { qApp->removeEventFilter(this); }
+Window::~Window()
+{
+    qApp->removeEventFilter(this);
+    // An inline rename still open commits while the tree is destroyed; tabs must not react.
+    m_files->itemDelegate()->disconnect(this);
+    m_fileModel->disconnect(this);
+}
 
 // Problems panel, grouped by file like VS Code's; editors get squiggles for their file.
 void Window::setProblems(const QList<Problem> &problems, const QString &directory)
 {
     static const QIcon errorIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M5.8 5.8l4.4 4.4m0-4.4l-4.4 4.4"/></svg>)", "#F14C4C", 16));
     static const QIcon warningIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3.2m0 1.6v.1"/></svg>)", "#CCA700", 16));
+    // Empty: the centred message instead of a list; the filter and list actions only once there is a list.
+    m_problemsEmpty->setVisible(problems.isEmpty());
+    // Before any build there is nothing to vouch for: say so instead of reporting a clean result.
+    const bool built = !directory.isEmpty();
+    m_problemsEmpty->findChild<QLabel *>("emptyTitle")->setText(built ? "No problems" : "No problems yet");
+    m_problemsEmpty->findChild<QLabel *>("emptyText")->setText(built
+        ? QString("The build at %1 reported no errors or warnings.").arg(QTime::currentTime().toString("HH:mm"))
+        : "Build the document to check it. Warnings and errors appear here, and F8 steps through them.");
+    if (problems.isEmpty() && m_vertical) setPanelCollapsed(true);
+    if (auto *actions = m_panel->cornerWidget(Qt::TopRightCorner)) actions->setVisible(!problems.isEmpty());
     m_problems = problems;
     m_problemsTime = QDateTime::currentDateTime();
     m_problemIndex = -1;
@@ -1752,8 +2316,6 @@ void Window::setProblems(const QList<Problem> &problems, const QString &director
         item->setToolTip(0, problem.message);
         item->setData(0, Qt::UserRole, i);
     }
-    if (problems.isEmpty())
-        (new QTreeWidgetItem(m_problemsView, {"No problems have been detected in the workspace."}))->setFlags(Qt::NoItemFlags);
     m_problemsView->expandAll();
     int errors = int(std::count_if(problems.cbegin(), problems.cend(), [](const Problem &p) { return p.error; }));
     m_errorCount->setText(QString::number(errors));
@@ -1807,6 +2369,29 @@ bool Window::eventFilter(QObject *object, QEvent *event)
         m_altAlone = false;
         if (!m_menuBarShown) m_topBar->setVisible(!m_topBar->isVisible());
     }
+    // "Name · Ctrl+K" tooltips show the key as a small chip, like the command palette does.
+    if (event->type() == QEvent::ToolTip && object->isWidgetType())
+    {
+        auto *widget = static_cast<QWidget *>(object);
+        static const QRegularExpression keyed(R"(^(.+) · ((?:(?:Ctrl|Alt|Shift|Meta)\+)*\S{1,8})$)");
+        if (auto match = keyed.match(widget->toolTip()); match.hasMatch())
+        {
+            QToolTip::showText(static_cast<QHelpEvent *>(event)->globalPos(),
+                themed(match.captured(1).toHtmlEscaped() + "&nbsp;&nbsp;<span style=\"background-color:#20252B; color:#D2D7DE; font-size:small;\">&nbsp;"
+                    + match.captured(2).toHtmlEscaped() + "&nbsp;</span>"), widget);
+            return true;
+        }
+    }
+    if (event->type() == QEvent::KeyPress && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape && !m_zenHidden.isEmpty()
+        && !QApplication::activePopupWidget() && !m_findBar->isVisible() && QApplication::focusWidget() == currentEditor())
+    {
+        toggleZen();
+        return true;
+    }
+    if (object == this && event->type() == QEvent::Resize && !m_zenHidden.isEmpty()) placeZen();
+    if (m_welcome && object == m_welcome->parentWidget() && event->type() == QEvent::Resize) placeWelcome();
+    if (object == this && event->type() == QEvent::Resize && m_zenHint && m_zenHint->isVisible())
+        m_zenHint->move(width() - m_zenHint->width() - 18, height() - m_zenHint->height() - 8); // bottom right: the status bar is hidden
     if (event->type() == QEvent::Shortcut && qobject_cast<QAction *>(object))
     {
         m_viaShortcut = true; // the action triggers synchronously inside this event

@@ -286,6 +286,7 @@ void PdfView::layoutPages()
     horizontalScrollBar()->setPageStep(viewport()->width());
     horizontalScrollBar()->setRange(0, std::max(0, int(std::ceil(width - viewport()->width()))));
     if (m_presenting) showSlide(m_slide);
+    emit scaleChanged(m_scale);
     viewport()->update();
 }
 
@@ -407,6 +408,13 @@ void PdfView::paintEvent(QPaintEvent *)
         {
             drawTiles(number, onScreen, m_previousDpi1000, false);
             drawTiles(number, onScreen, m_dpi1000, false);
+        }
+        if (m_dark && !m_presenting)
+        {
+            // |page - 226| turns white into a dark grey and black into light grey; images are inverted too.
+            painter.setCompositionMode(QPainter::CompositionMode_Difference);
+            painter.fillRect(onScreen, QColor(226, 226, 226));
+            painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
         }
         if (number == m_selectionPage)
             if (auto *text = m_text.object(number))

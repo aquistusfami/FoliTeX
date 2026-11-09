@@ -4,6 +4,7 @@
 #include <QFileInfo>
 #include <QTimer>
 #include <QStyleFactory>
+#include <QProxyStyle>
 #include <QPalette>
 #include <QIcon>
 #include <QSettings>
@@ -21,12 +22,21 @@ int main(int argc, char **argv)
     QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
     QApplication app(argc, argv);
     app.setApplicationName("FoliTeX");
-    app.setApplicationVersion("0.7.0");
+    app.setApplicationVersion("0.8.0");
     app.setOrganizationName("Folitex");
     // Wayland app_id must match folitex.desktop so launchers and docks show the right icon.
     app.setDesktopFileName("folitex");
     app.setWindowIcon(QIcon(":/folitex.svg"));
-    app.setStyle(QStyleFactory::create("Fusion"));
+    // Fusion without underlined menu mnemonics (File, Edit…); Alt+F and friends still work.
+    struct Style : QProxyStyle
+    {
+        using QProxyStyle::QProxyStyle;
+        int styleHint(StyleHint hint, const QStyleOption *option, const QWidget *widget, QStyleHintReturn *data) const override
+        {
+            return hint == SH_UnderlineShortcut ? 0 : QProxyStyle::styleHint(hint, option, widget, data);
+        }
+    };
+    app.setStyle(new Style(QStyleFactory::create("Fusion")));
     setLightTheme(QSettings().value("theme").toString() == "light");
     // Colors follow the author's VS Code setup: Dark Modern with muted workbench.colorCustomizations.
     QPalette palette;
@@ -48,6 +58,7 @@ int main(int argc, char **argv)
     app.setStyleSheet(themed(R"(
         QToolButton, QPushButton { border:0; border-radius:4px; padding:4px 8px; background:transparent; }
         QPushButton:hover, QToolButton:hover { background:#20252B; }
+        QPushButton:pressed, QToolButton:pressed { background:#29333B; }
         QPushButton#primary { background:#4F6F6B; color:#E0E5EC; padding:4px 12px; }
         QPushButton#primary:hover { background:#5C807B; }
         QComboBox, QSpinBox, QLineEdit { background:#1C2025; border:1px solid #303842; border-radius:4px; padding:3px 6px; }
@@ -57,7 +68,7 @@ int main(int argc, char **argv)
         QToolButton::menu-indicator { image:none; width:0; }
         QTabWidget::pane { border:0; }
         QTabBar { background:#16181B; }
-        QTabBar::tab { background:transparent; color:#8793A2; height:25px; padding:0 10px 0 0; margin:5px 0 5px 4px; border:0; border-radius:5px; }
+        QTabBar::tab { background:transparent; color:#8793A2; height:25px; padding:0 8px 0 0; margin:5px 0 5px 2px; border:0; border-radius:4px; }
         QTabBar::tab:selected { background:#22272E; color:#D2D7DE; }
         QTabBar::tab:hover:!selected { background:#1D2024; color:#ADB7C4; }
         QSplitter::handle { background:#0E1013; }
@@ -71,6 +82,25 @@ int main(int argc, char **argv)
         QWidget#findWidget QToolButton#replaceToggle:checked { background:transparent; border:0; }
         QWidget#pdfFindBar { background:#16181B; border-bottom:1px solid #22272E; }
         QWidget#pdfBar QToolButton { min-width:22px; padding:3px 6px; }
+        QWidget#pdfBar QToolButton:checked { background:#29333B; }
+        QToolButton#navButton { padding:2px; }
+        QTreeView::item:focus { border:1px solid #6F9692; border-radius:3px; }
+        QLabel#welcomeTitle { font-size:15px; font-weight:bold; color:#D2D7DE; padding-left:8px; }
+        QLabel#welcomeHint { color:#8793A2; padding-left:8px; }
+        QPushButton#welcomeAction { text-align:left; padding:0; border-radius:4px; background:transparent; }
+        QPushButton#welcomeAction:hover { background:#20252B; }
+        QPushButton#welcomeAction:pressed { background:#29333B; }
+        QLabel#welcomeName { color:#7DA6A0; }
+        QLabel#welcomeKey { color:#8793A2; }
+        QFrame#selectionBar { background:#1F252B; border:1px solid #303842; border-radius:6px; }
+        QFrame#selectionBar QToolButton { padding:0; min-width:26px; max-width:26px; min-height:24px; max-height:24px; border-radius:4px; font-weight:bold; }
+        QFrame#paletteBox { background:#1A1E23; border:1px solid #303842; border-radius:8px; }
+        QFrame#paletteBox QLineEdit { background:transparent; border:0; border-bottom:1px solid #22272E; border-radius:0; padding:9px 12px; font-size:14px; }
+        QLabel#paletteScope { color:#8793A2; font-size:11px; padding:6px 12px 0 12px; }
+        QFrame#paletteBox QListWidget { background:transparent; border:0; outline:0; padding:3px; }
+        QFrame#paletteBox QListWidget::item { border-radius:5px; }
+        QFrame#paletteBox QListWidget::item:selected { background:#29333B; }
+        QToolButton#focusButton { padding:3px 8px; }
         QTabWidget#editorTabs, QTabWidget#bottomPanel { background:#16181B; }
         QTreeWidget#problems { background:#16181B; }
         QTabBar::scroller { width:0; }
@@ -78,7 +108,9 @@ int main(int argc, char **argv)
         QTabBar QToolButton#ScrollLeftButton, QTabBar QToolButton#ScrollRightButton { width:0; border:0; padding:0; }
         QWidget#buildCorner QComboBox { background:transparent; border:0; padding:2px 4px; }
         QWidget#buildCorner QComboBox:hover { background:#20252B; }
-        QPushButton#editorAction { background:transparent; border:0; border-radius:4px; padding:3px; }
+        QWidget#buildCorner QComboBox::drop-down { border:0; width:16px; }
+        QWidget#buildCorner QComboBox::down-arrow { image:url(:/chevron-down.svg); width:12px; height:12px; }
+        QPushButton#editorAction { background:transparent; border:0; border-radius:4px; padding:3px 8px 3px 5px; }
         QPushButton#editorAction:hover { background:#20252B; }
         QWidget#activity { background:#0E1013; }
         QToolButton#activityButton { border:0; border-radius:0; border-left:2px solid transparent; padding:0; }
@@ -126,6 +158,7 @@ int main(int argc, char **argv)
         QToolTip { background:#1B1F24; color:#D2D7DE; border:1px solid #303842; }
         QToolButton#rootButton { font-weight:bold; color:#ADB7C4; text-align:left; padding:3px 4px; border-radius:0; }
         QToolButton#rootButton:hover { background:transparent; }
+        QToolButton#explorerAction { padding:3px; }
 )"));
     // One-time move of settings saved under former names (Folitex.conf, then TeXLite).
     QSettings settings;
@@ -147,21 +180,23 @@ int main(int argc, char **argv)
     Window window;
     window.openWorkspace(QSettings().value("workspace").toString());
     window.setWordWrap(QSettings().value("wordWrap", false).toBool());
-    window.setMenuBarShown(QSettings().value("menuBar", true).toBool());
+    window.setMenuBarShown(QSettings().value("menuBarShown", true).toBool());
+    window.setDarkPdf(QSettings().value("darkPdf", false).toBool());
     window.setBuildOnSave(QSettings().value("buildOnSave", false).toBool());
     window.setRecentFiles(QSettings().value("recent").toStringList());
-    if (QSettings().contains("editorFont")) window.setEditorFont(QSettings().value("editorFont").value<QFont>());
+    if (QSettings().contains("editorFontChoice")) window.setEditorFont(QSettings().value("editorFontChoice").value<QFont>());
     window.setEngine(QSettings().value("engine").toString());
     // Saved here rather than in Window so tests never touch the user's settings.
     QObject::connect(&app, &QApplication::aboutToQuit, [&window]
     {
         QSettings().setValue("wordWrap", window.wordWrap());
-        QSettings().setValue("menuBar", window.menuBarShown());
+        QSettings().setValue("menuBarShown", window.menuBarShown());
         QSettings().setValue("buildOnSave", window.buildOnSave());
+        QSettings().setValue("darkPdf", window.darkPdf());
         QSettings().setValue("recent", window.recentFiles());
         QSettings().setValue("session", window.session());
         QSettings().setValue("engine", window.engine());
-        if (window.editorFont() != QFont()) QSettings().setValue("editorFont", window.editorFont());
+        if (window.editorFont() != QFont()) QSettings().setValue("editorFontChoice", window.editorFont());
     });
     // Files on the command line replace the last session, as in VS Code.
     if (parser.positionalArguments().isEmpty()) window.restoreSession(QSettings().value("session").toMap());

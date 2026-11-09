@@ -2,6 +2,7 @@
 #include <QMainWindow>
 #include <functional>
 #include <QHash>
+#include <QPointer>
 #include <QSet>
 class QLineEdit;
 class QCheckBox;
@@ -11,12 +12,15 @@ class QFileSystemModel;
 class QStackedWidget;
 class QToolButton;
 class QMenuBar;
+class Palette;
+class Editor;
 #include <QProcess>
 #include <QTabWidget>
 #include <QPlainTextEdit>
 #include <QLabel>
 #include <QComboBox>
 #include <QPushButton>
+#include <QToolButton>
 #include <QSplitter>
 #include <QSpinBox>
 #include <QFileSystemWatcher>
@@ -74,6 +78,8 @@ public:
     void openWorkspace(const QString &directory);
     void setWordWrap(bool on);
     bool wordWrap() const { return m_wordWrap; }
+    bool darkPdf() const { return m_pdf->darkPages(); }
+    void setDarkPdf(bool on) { m_darkButton->setChecked(on); }
     void setMenuBarShown(bool on);
     bool menuBarShown() const { return m_menuBarShown; }
     QString workspace() const { return m_workspace; }
@@ -81,7 +87,7 @@ public:
     QVariantMap session() const;
     void restoreSession(const QVariantMap &session);
     QStringList recentFiles() const { return m_recent; }
-    void setRecentFiles(const QStringList &files) { m_recent = files; }
+    void setRecentFiles(const QStringList &files) { m_recent = files; delete m_welcome; updateWelcome(); } // the start actions list them
     bool buildOnSave() const { return m_buildOnSaveAction->isChecked(); }
     void setBuildOnSave(bool on) { m_buildOnSaveAction->setChecked(on); }
     void addRecent(const QString &path);
@@ -94,6 +100,10 @@ public:
     static QList<QPair<QString, QString>> builtinTemplates();
     static QString templatesFolder();
     Editor *newFromTemplate(const QString &text);
+    // Explorer: a new file or folder with a free default name, renamed inline; returns its path.
+    QString newEntry(const QString &directory, bool folder);
+    // Moves a file or folder to the trash (after asking) and closes its unmodified tabs.
+    bool deleteEntry(const QString &path, bool ask = true);
     // Full-screen slide show of the PDF from the page in view.
     PdfView *present();
 protected:
@@ -124,6 +134,13 @@ private:
     void syncOutline();
     void syncProcess(QStringList arguments, std::function<void(QString)> complete);
     void countWords();
+    void entryRenamed(const QString &from, const QString &to);
+    void explorerMenu(const QPoint &position);
+    QString m_newFile; // created from the explorer, opened once its name is confirmed
+    QToolButton *m_collapseButton;
+    QSet<QString> m_expandedFolders; // Collapse Folders is enabled only while one is open
+    QString m_pendingRename; // created on disk, renamed inline once the model lists it
+    void startRename(const QString &path);
     QTabWidget *m_tabs;
     QStringList m_recent;
     QFont m_editorFont;
@@ -142,6 +159,7 @@ private:
     QDateTime m_problemsTime; // when m_problems were read
     QComboBox *m_engine;
     QPushButton *m_build;
+    QToolButton *m_darkButton;
     QIcon m_runIcon;
     QAction *m_wrapAction;
     bool m_wordWrap = false;
@@ -153,10 +171,40 @@ private:
     bool m_viaShortcut = false; // an action is being triggered by its key, not from the menu
     QIcon m_stopIcon;
     QLabel *m_status;
+    // Navigation history: a jump of more than 10 lines, or another tab, leaves a place to go back to.
+    struct Place { QPointer<Editor> editor; int line = 0; };
+    QList<Place> m_back, m_forward;
+    Place m_here;
+    bool m_navigating = false;
+    QToolButton *m_backButton;
+    QToolButton *m_forwardButton;
+    Palette *m_palette;
+    QList<QPointer<QWidget>> m_zenHidden; // what distraction-free mode hid, shown again by the next toggle
+    void toggleZen();
+    void placeZen();
+    bool m_panelCollapsed = false;
+    void setPanelCollapsed(bool on); // only the Problems | Output strip while there is nothing to report
+    QWidget *m_pdfBar;
+    void setPdfLoaded(bool loaded);
+    class QSpinBox *m_zoomBox;
+    double m_pdfScale = 0;
+    QMenu *m_templatesMenu;
+    QPointer<QWidget> m_welcome; // start actions over an empty Untitled tab
+    void updateWelcome();
+    void placeWelcome();
+    void openRecent(const QString &path);
+    QLabel *m_zenHint = nullptr;
+    class QHBoxLayout *m_row; // holds the splitter; centres it in focus mode
+    QWidget *m_problemsEmpty;
+    void noteLocation();
+    void navigate(bool forward);
+    void showPalette(bool files);
+    QLabel *m_position; // right of the status bar: cursor and line ending of the current tab
+    void updatePosition();
     QLabel *m_pageCount;
     QSpinBox *m_page;
     QSplitter *m_horizontal;
-    QSplitter *m_vertical;
+    QSplitter *m_vertical = nullptr;
     QWidget *m_findBar;
     QLineEdit *m_find;
     QWidget *m_replaceRow;
