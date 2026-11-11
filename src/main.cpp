@@ -22,7 +22,7 @@ int main(int argc, char **argv)
     QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
     QApplication app(argc, argv);
     app.setApplicationName("FoliTeX");
-    app.setApplicationVersion("0.8.0");
+    app.setApplicationVersion("0.8.1");
     app.setOrganizationName("Folitex");
     // Wayland app_id must match folitex.desktop so launchers and docks show the right icon.
     app.setDesktopFileName("folitex");
@@ -175,7 +175,10 @@ int main(int argc, char **argv)
     QCommandLineOption quitAfter("quit-after", "Exit after N milliseconds (offscreen testing).", "milliseconds");
     QCommandLineOption screenshot("screenshot", "Save a window screenshot after rendering.", "path");
     QCommandLineOption pdfOnly("pdf-only", "Start with the source editor hidden.");
+    QCommandLineOption buildOpt("build", "Build the document immediately on startup.");
+    QCommandLineOption quitOnBuild("quit-on-build", "Exit after the startup build finishes (code 0 on success, 1 on error).");
     parser.addOption(quitAfter); parser.addOption(screenshot); parser.addOption(pdfOnly);
+    parser.addOption(buildOpt); parser.addOption(quitOnBuild);
     parser.process(app);
     Window window;
     window.openWorkspace(QSettings().value("workspace").toString());
@@ -208,6 +211,10 @@ int main(int argc, char **argv)
     if (parser.isSet(pdfOnly))
         for (auto *tabs : window.findChildren<QTabWidget *>()) tabs->hide();
     window.show();
+    if (parser.isSet(quitOnBuild))
+        QObject::connect(&window, &Window::buildFinished, [&app](bool ok) { app.exit(ok ? 0 : 1); });
+    if (parser.isSet(buildOpt) || parser.isSet(quitOnBuild))
+        window.build();
     if (parser.isSet(screenshot))
         QTimer::singleShot(2500, &window, [&window, path = parser.value(screenshot)] { window.grab().save(path); });
     if (parser.isSet(quitAfter))

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.1 — 2026-11-11
+
+### Fixed
+- Multi-folder projects using `\include{dir/file}` failed with "I can't write on file"
+  because `latexmk -file-line-error -outdir=.folitex-build` did not create missing subdirectories.
+  `BuildRunner` now mirrors the project's subdirectory tree into `.folitex-build/` before invoking `latexmk`.
+
+### Added
+- `--build` and `--quit-on-build` command-line options for running builds directly and for headless testing.
+
 ## 0.8.0 — 2026-11-10
 
 ### Added
