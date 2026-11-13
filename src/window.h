@@ -106,6 +106,9 @@ public:
     bool deleteEntry(const QString &path, bool ask = true);
     // Full-screen slide show of the PDF from the page in view.
     PdfView *present();
+    void build();
+signals:
+    void buildFinished(bool success);
 protected:
     void closeEvent(QCloseEvent *event) override;
     bool eventFilter(QObject *object, QEvent *event) override;
@@ -123,7 +126,6 @@ private:
     bool save(Editor *editor, bool saveAs = false);
     bool mayClose(Editor *editor);
     void closeTab(int index);
-    void build();
     void setTabTitle(Editor *editor);
     void keepStatus(const QString &text);
     void forwardSync();

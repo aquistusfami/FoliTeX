@@ -228,6 +228,17 @@ bool BuildRunner::start(const QString &source, const QString &engine)
     }
     m_pdf = pdfPath(root);
     m_process.setWorkingDirectory(QFileInfo(root).absolutePath());
+    // Ensure all project subdirectories exist in .folitex-build so \include and aux files succeed.
+    QDir projectDir(QFileInfo(root).absolutePath());
+    QDir buildDir(projectDir.filePath(".folitex-build"));
+    buildDir.mkpath(".");
+    for (QDirIterator it(projectDir.path(), QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories); it.hasNext();)
+    {
+        it.next();
+        QString rel = projectDir.relativeFilePath(it.filePath());
+        if (!rel.startsWith('.') && !rel.startsWith("build"))
+            buildDir.mkpath(rel);
+    }
     // Unwrapped log lines (TeX folds at 79 characters by default), so messages parse whole.
     auto environment = QProcessEnvironment::systemEnvironment();
     environment.insert("max_print_line", "10000");
@@ -1271,6 +1282,7 @@ Window::Window() : m_runner(this)
             m_panel->show();
             setPanelCollapsed(false);
         }
+        emit buildFinished(success);
     });
     connect(m_pdf, &PdfView::documentReady, this, [this](int pages)
     {
