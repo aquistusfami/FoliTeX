@@ -343,7 +343,7 @@ void PdfView::paintEvent(QPaintEvent *)
     if (m_pages.isEmpty())
     {
         painter.setPen(themeColor("#8793A2"));
-        painter.drawText(viewport()->rect().adjusted(24, 24, -24, -24), Qt::AlignCenter,
+        painter.drawText(viewport()->rect().adjusted(24, 24, -24, -24), Qt::AlignCenter | Qt::TextWordWrap,
             !m_error.isEmpty() ? m_error : m_path.isEmpty() ? "The PDF appears here after building.\nF5 to build · F7 to jump to the PDF" : "Opening PDF…");
         return;
     }

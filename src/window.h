@@ -125,6 +125,7 @@ private:
     void closeTab(int index);
     void build();
     void setTabTitle(Editor *editor);
+    void keepStatus(const QString &text);
     void forwardSync();
     void inverseSync(int page, double x, double y, const QStringList &words, int clicked);
     void reloadSource(Editor *editor);
@@ -144,6 +145,7 @@ private:
     QTabWidget *m_tabs;
     QStringList m_recent;
     QFont m_editorFont;
+    QString m_statusKeep; // a message that outlives cursor moves: build result, disk conflict
     QString m_lastRoot; // root of the last build; what saving a .bib or .sty rebuilds
     QAction *m_buildOnSaveAction;
     PdfView *m_pdf;

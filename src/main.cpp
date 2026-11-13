@@ -49,7 +49,7 @@ int main(int argc, char **argv)
     palette.setColor(QPalette::ButtonText, themeColor("#D2D7DE"));
     palette.setColor(QPalette::Highlight, themeColor("#35434F"));
     palette.setColor(QPalette::HighlightedText, themeColor("#E0E5EC"));
-    palette.setColor(QPalette::PlaceholderText, themeColor("#68727F"));
+    palette.setColor(QPalette::PlaceholderText, themeColor("#7C8794"));
     palette.setColor(QPalette::ToolTipBase, themeColor("#1B1F24"));
     palette.setColor(QPalette::ToolTipText, themeColor("#D2D7DE"));
     app.setPalette(palette);
@@ -63,6 +63,12 @@ int main(int argc, char **argv)
         QPushButton#primary:hover { background:#5C807B; }
         QComboBox, QSpinBox, QLineEdit { background:#1C2025; border:1px solid #303842; border-radius:4px; padding:3px 6px; }
         QSpinBox QLineEdit { background:transparent; border:0; padding:0; }
+        QCheckBox::indicator { width:13px; height:13px; border:1px solid #7C8794; border-radius:3px; background:#1C2025; }
+        QCheckBox::indicator:checked { background:#4F6F6B; border-color:#4F6F6B; image:url(:/check.svg); }
+        QDialog QPushButton { background:#1C2025; border:1px solid #303842; padding:4px 14px; min-width:52px; }
+        QDialog QPushButton:hover { background:#20252B; }
+        QDialog QPushButton:default { background:#4F6F6B; border-color:#4F6F6B; color:#E0E5EC; }
+        QDialog QPushButton:default:hover { background:#5C807B; }
         QComboBox:focus, QSpinBox:focus, QLineEdit:focus { border-color:#6F9692; }
         QComboBox QAbstractItemView { background:#1B1F24; border:1px solid #303842; selection-background-color:#29333B; }
         QToolButton::menu-indicator { image:none; width:0; }
@@ -85,8 +91,8 @@ int main(int argc, char **argv)
         QWidget#pdfBar QToolButton:checked { background:#29333B; }
         QToolButton#navButton { padding:2px; }
         QTreeView::item:focus { border:1px solid #6F9692; border-radius:3px; }
-        QLabel#welcomeTitle { font-size:15px; font-weight:bold; color:#D2D7DE; padding-left:8px; }
-        QLabel#welcomeHint { color:#8793A2; padding-left:8px; }
+        QLabel#welcomeTitle { font-size:15px; font-weight:bold; color:#D2D7DE; padding-left:4px; }
+        QLabel#welcomeHint { color:#8793A2; padding-left:4px; }
         QPushButton#welcomeAction { text-align:left; padding:0; border-radius:4px; background:transparent; }
         QPushButton#welcomeAction:hover { background:#20252B; }
         QPushButton#welcomeAction:pressed { background:#29333B; }
@@ -136,7 +142,7 @@ int main(int argc, char **argv)
         QLineEdit#problemFilter { padding:2px 6px; }
         QToolButton#problemCount { padding:0 6px; border-radius:0; }
         QToolButton#tabClose:hover { background:#29333B; }
-        QLabel#tabHint { color:#68727F; padding:0 4px 0 0; margin:0; }
+        QLabel#tabHint { color:#7C8794; padding:0 4px 0 0; margin:0; }
         QTreeView::item:hover { background:#20252B; }
         QTreeView::item:selected { background:#29333B; color:#E0E5EC; }
         QPlainTextEdit { background:#16181B; border:0; padding:4px 6px; }

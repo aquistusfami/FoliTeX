@@ -1,4 +1,5 @@
 #include "palette.h"
+#include "editor.h"
 #include <QApplication>
 #include <QKeyEvent>
 #include <QLabel>
@@ -30,12 +31,13 @@ public:
         painter->drawText(area, Qt::AlignRight | Qt::AlignVCenter, right);
         int reserved = painter->fontMetrics().horizontalAdvance(right) + 16;
         const QString title = index.data().toString();
+        const bool none = !(index.flags() & Qt::ItemIsEnabled); // the "No matching…" row
         const QRect room = area.adjusted(0, 0, -reserved, 0);
         const QFontMetrics metrics = painter->fontMetrics();
         const QColor normal = option.palette.color(option.state & QStyle::State_Selected ? QPalette::HighlightedText : QPalette::Text);
-        if (metrics.horizontalAdvance(title) > room.width() || m_query->isEmpty())
+        if (metrics.horizontalAdvance(title) > room.width() || m_query->isEmpty() || none)
         {
-            painter->setPen(normal);
+            painter->setPen(none ? option.palette.color(QPalette::PlaceholderText) : normal);
             painter->drawText(room, Qt::AlignLeft | Qt::AlignVCenter, metrics.elidedText(title, Qt::ElideMiddle, room.width()));
             return;
         }
@@ -48,7 +50,7 @@ public:
             const bool hit = next < m_query->size() && ch.toLower() == (*m_query)[next].toLower();
             if (hit) ++next;
             painter->setFont(hit ? bold : option.font);
-            painter->setPen(hit ? QColor("#DCDCAA") : normal);
+            painter->setPen(hit ? themeColor("#DCDCAA") : normal);
             painter->drawText(QRect(x, room.top(), 40, room.height()), Qt::AlignLeft | Qt::AlignVCenter, QString(ch));
             x += QFontMetrics(hit ? bold : option.font).horizontalAdvance(ch);
         }
@@ -138,6 +140,7 @@ void Palette::refresh()
         m_shown << index;
     }
     if (m_list->count()) m_list->setCurrentRow(0);
+    else (new QListWidgetItem("No matching results", m_list))->setFlags(Qt::NoItemFlags);
     m_list->setFixedHeight(std::clamp(m_list->count(), 1, 11) * 26 + 6);
     const int width = std::min(560, this->width() - 24);
     m_box->setFixedWidth(width);

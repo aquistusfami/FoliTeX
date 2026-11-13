@@ -279,13 +279,15 @@ static const QHash<QString, QString> &lightColors()
         {"#0E1013", "#E4E4E4"}, {"#121417", "#EBEBEB"}, {"#16181B", "#FFFFFF"}, {"#1B1F24", "#F8F8F8"},
         {"#1C2025", "#FFFFFF"}, {"#1D2024", "#F2F4F7"}, {"#20252B", "#E8E8E8"}, {"#22272E", "#E0E0E0"},
         {"#29333B", "#DCE6F2"}, {"#303842", "#CECECE"}, {"#35434F", "#ADD6FF"}, {"#4F6F6B", "#3F7A73"},
-        {"#5C807B", "#4E8D85"}, {"#68727F", "#8B949E"}, {"#6F9692", "#3F7A73"}, {"#7DA6A0", "#3F7A73"},
+        {"#5C807B", "#4E8D85"}, {"#7C8794", "#69727C"}, {"#6F9692", "#3F7A73"}, {"#7DA6A0", "#3F7A73"},
         {"#8793A2", "#6A737D"}, {"#9AA6B5", "#57606A"}, {"#ADB7C4", "#3B3B3B"}, {"#B9C3CF", "#1F1F1F"},
-        {"#D2D7DE", "#1F1F1F"}, {"#E0E5EC", "#000000"}, {"#569CD6", "#0000FF"}, {"#4FC1FF", "#0070C1"},
-        {"#C586C0", "#AF00DB"}, {"#A074C4", "#8250DF"}, {"#CCA700", "#9A6700"}, {"#C8B466", "#0431FA"},
+        {"#D2D7DE", "#1F1F1F"}, {"#E0E5EC", "#000000"}, {"#7FA8C9", "#2F5F8A"}, {"#79BFD6", "#1C6E8C"},
+        {"#B294BB", "#7A4E8C"}, {"#A074C4", "#8250DF"}, {"#CCA700", "#9A6700"}, {"#C8B466", "#7A6420"},
         {"#8DC149", "#4D8C1A"}, {"#CBCB41", "#8A8A00"}, {"#F14C4C", "#E51400"}, {"#F48771", "#C72E0F"},
-        {"#4EC9B0", "#267F99"}, {"#DCDCAA", "#795E26"}, {"#CE9178", "#A31515"}, {"#A9DC76", "#098658"},
-        {"#D7BA7D", "#EE0000"}, {"#6A9955", "#008000"}, {"#B084B0", "#319331"}, {"#6B9DB8", "#7B3814"}};
+        {"#7DC4B4", "#1F7A70"}, {"#DCDCAA", "#795E26"}, {"#C9A28A", "#9A4A2E"}, {"#A8C98A", "#3D7A2E"},
+        {"#CDB483", "#9A6700"}, {"#6F9080", "#4A7460"}, {"#B084B0", "#8A5A8A"}, {"#6B9DB8", "#3E6C8A"},
+        {"#1A1E23", "#F8F8F8"}, {"#1F252B", "#F2F4F7"}, {"#464E58", "#B4BAC2"},
+        {"#555555", "#555555"}, {"#CC3E44", "#CC3E44"}}; // the last two read on both themes
     return colors;
 }
 
@@ -420,19 +422,19 @@ const Formats &formats()
 {
     static const Formats formats = []
     {
-        // VS Code Dark Modern / LaTeX Workshop roles; themeColor() maps them for the light theme.
+        // LaTeX Workshop roles in muted hues that sit with the teal chrome; themeColor() maps them for the light theme.
         Formats f;
         auto color = [](QTextCharFormat &format, const char *hex) { format.setForeground(themeColor(hex)); };
-        color(f.command, "#569CD6");
-        color(f.keyword, "#C586C0");
+        color(f.command, "#7FA8C9");
+        color(f.keyword, "#B294BB");
         color(f.heading, "#DCDCAA");
         f.heading.setFontWeight(QFont::Bold);
-        color(f.environment, "#4EC9B0");
-        color(f.key, "#CE9178");
-        color(f.math, "#A9DC76");
-        color(f.mathCommand, "#4FC1FF");
-        color(f.special, "#D7BA7D");
-        color(f.comment, "#6A9955");
+        color(f.environment, "#7DC4B4");
+        color(f.key, "#C9A28A");
+        color(f.math, "#A8C98A");
+        color(f.mathCommand, "#79BFD6");
+        color(f.special, "#CDB483");
+        color(f.comment, "#6F9080");
         f.comment.setFontItalic(true);
         color(f.braces[0], "#C8B466");
         color(f.braces[1], "#B084B0");
@@ -1265,7 +1267,7 @@ void Editor::paintGutter()
         double size = 3.5, x = 10, y = rect.top() + fontMetrics().lineSpacing() / 2.0;
         painter.save();
         painter.setRenderHint(QPainter::Antialiasing);
-        painter.setPen(QPen(folded ? themeColor("#D2D7DE") : themeColor("#68727F"), 1.3));
+        painter.setPen(QPen(folded ? themeColor("#D2D7DE") : themeColor("#7C8794"), 1.3));
         if (folded) painter.drawPolyline(QPolygonF({QPointF(x - size / 2, y - size), QPointF(x + size / 2, y), QPointF(x - size / 2, y + size)}));
         else painter.drawPolyline(QPolygonF({QPointF(x - size, y - size / 2), QPointF(x, y + size / 2), QPointF(x + size, y - size / 2)}));
         painter.restore();

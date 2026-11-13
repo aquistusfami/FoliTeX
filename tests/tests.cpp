@@ -853,23 +853,23 @@ void Tests::syntaxColors()
             if (column >= range.start && column < range.start + range.length) return range.format.fontWeight() == QFont::Bold;
         return false;
     };
-    QCOMPARE(color(1, 1), "#C586C0");   // \begin
-    QCOMPARE(color(1, 8), "#4EC9B0");   // align
+    QCOMPARE(color(1, 1), "#B294BB");   // \begin
+    QCOMPARE(color(1, 8), "#7DC4B4");   // align
     QCOMPARE(color(1, 6), "#C8B466");   // { at depth 0
-    QCOMPARE(color(2, 2), "#A9DC76");   // math continues on the next line
-    QCOMPARE(color(2, 4), "#D7BA7D");   // &
+    QCOMPARE(color(2, 2), "#A8C98A");   // math continues on the next line
+    QCOMPARE(color(2, 4), "#CDB483");   // &
     QCOMPARE(color(2, 13), "plain");    // \text{if} is text inside math
-    QCOMPARE(color(2, 19), "#6A9955");  // comment
-    QCOMPARE(color(3, 6), "#4EC9B0");   // \end{align} ends math
+    QCOMPARE(color(2, 19), "#6F9080");  // comment
+    QCOMPARE(color(3, 6), "#7DC4B4");   // \end{align} ends math
     QCOMPARE(color(4, 2), "#DCDCAA");   // \section: bold, heading colour
     QVERIFY(bold(4, 2) && !bold(4, 10));
     QCOMPARE(color(4, 10), "plain");    // heading text stays plain
     QCOMPARE(color(4, 22), "plain");    // label key stays plain
-    QCOMPARE(color(4, 28), "#A9DC76");  // $x$
-    QCOMPARE(color(4, 31), "#569CD6");  // \$ is an escape, not math
+    QCOMPARE(color(4, 28), "#A8C98A");  // $x$
+    QCOMPARE(color(4, 31), "#7FA8C9");  // \$ is an escape, not math
     QCOMPARE(color(6, 1), "plain");     // verbatim stays raw: no command, math or comment
     QCOMPARE(color(6, 9), "plain");
-    QCOMPARE(color(7, 6), "#4EC9B0");   // \end{verbatim} itself
+    QCOMPARE(color(7, 6), "#7DC4B4");   // \end{verbatim} itself
     QCOMPARE(color(7, 43), "plain");    // the file after [width=1cm]
     editor.setPlainText("text \\"); // a backslash being typed at the end of a line once hung the scan
     QCOMPARE(color(1, 5), "plain");    // A stray { colours only its paragraph: the blank line resets the depth.
@@ -1060,6 +1060,25 @@ void Tests::fontThemeAndTemplates()
     auto reset = qScopeGuard([] { setLightTheme(false); });
     QCOMPARE(themeColor("#16181b"), QColor("#FFFFFF"));
     QCOMPARE(themed("a { background:#16181B; color:#d2d7de; }"), "a { background:#FFFFFF; color:#1F1F1F; }");
+    // Every colour in the sources is a key (or a light value) of the light map: an unmapped
+    // background stays dark under text that turned dark, as the command palette once did.
+    QSet<QString> known;
+    QFile map(SOURCE_DIR "/src/editor.cpp");
+    QVERIFY(map.open(QIODevice::ReadOnly));
+    auto pairs = QRegularExpression(R"rx(\{"(#[0-9A-F]{6})", "(#[0-9A-F]{6})"\})rx").globalMatch(QString::fromUtf8(map.readAll()));
+    while (pairs.hasNext()) { auto pair = pairs.next(); known << pair.captured(1) << pair.captured(2); }
+    QVERIFY(known.size() > 40);
+    for (const QString &name : QDir(SOURCE_DIR "/src").entryList({"*.cpp"})) // SVG resources carry fixed colours and bypass the map
+    {
+        QFile source(QString(SOURCE_DIR "/src/") + name);
+        QVERIFY(source.open(QIODevice::ReadOnly));
+        auto colours = QRegularExpression("#[0-9A-Fa-f]{6}\\b").globalMatch(QString::fromUtf8(source.readAll()));
+        while (colours.hasNext())
+        {
+            const QString colour = colours.next().captured().toUpper();
+            QVERIFY2(known.contains(colour), qPrintable(name + " uses " + colour + ", which the light theme does not map"));
+        }
+    }
 }
 
 void Tests::continueList()
@@ -1528,8 +1547,8 @@ void Tests::selectionBarAndFocusMode()
     QVERIFY(window.statusBar()->isVisible());
     auto toggle = [&]
     {
-        for (QAction *action : window.actions()) if (action->text() == "Distraction free") { action->trigger(); return; }
-        QFAIL("no Distraction free action");
+        for (QAction *action : window.actions()) if (action->text() == "Focus") { action->trigger(); return; }
+        QFAIL("no Focus action");
     };
     toggle();
     QVERIFY(!window.statusBar()->isVisible());

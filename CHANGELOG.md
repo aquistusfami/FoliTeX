@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Help menu: Keyboard shortcuts (opens the command palette) and About FoliTeX.
+- A tab whose file changed on disk while it holds unsaved edits is marked "· changed on disk"
+  until a save or reload settles it.
+
+### Changed
+- The build result and the disk-conflict message stay in the status bar instead of vanishing
+  on the next cursor move.
+- "Unsaved changes" names the file and shows its tab; closing during a build asks to stop it
+  instead of refusing.
+- One name and one case per command: sentence case everywhere, "Open file…" (was "Open TeX or
+  PDF…"), "Focus" (was "Distraction free").
+- Syntax colours are muted to sit with the teal interface, in both themes. Hint text
+  (placeholders, palette shortcuts, tab hints) meets 4.5:1; palette match highlights follow
+  the light theme.
+- Dialogs match the window: bordered buttons with a filled default, visible checkboxes, roomier
+  Settings. The engine box no longer shifts when Build becomes Stop.
+
+### Fixed
+- Light theme: the command palette and the selection bar kept their dark backgrounds under
+  dark text; disabled explorer icons looked enabled. A test now fails on any source colour the
+  light theme does not map.
+
+- An "Unsaved changes" dialog dismissed without choosing a button saved the file; only Save
+  saves now.
+- A window narrower than about 800 px hid the Output tab behind the problems filter and clipped
+  the PDF placeholder text.
+
+### Changed (continued)
+- Opening a source shows the PDF of its last build when one exists; a failed build shows it too
+  when the pane is empty.
+- Find bar: drawn icons instead of text glyphs, "2 results" before a match is current,
+  "Replace all" spelled out.
+- The palette says "No matching results"; a failed save names the path; zoom and find buttons
+  have accessible names.
+
 ## 0.8.0 — 2026-11-10
 
 ### Added

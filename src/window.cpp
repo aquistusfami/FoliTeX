@@ -263,6 +263,17 @@ void BuildRunner::stop()
 }
 
 // Renders an SVG icon whose strokes use currentColor; 3x density stays sharp at fractional scales.
+static QPixmap svgPixmap(const char *svg, const char *color, int size);
+
+// A stroked 16-unit path as a button's face, replacing its text: the same drawn icons as the panel header.
+static void setGlyph(QAbstractButton *button, const char *path)
+{
+    const QByteArray svg = QByteArray(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d=")") + path + R"("/></svg>)";
+    button->setText({});
+    button->setIcon(QIcon(svgPixmap(svg.constData(), "#ADB7C4", 14)));
+    button->setIconSize(QSize(14, 14));
+}
+
 static QPixmap svgPixmap(const char *svg, const char *color, int size)
 {
     QByteArray data = themed(QString::fromUtf8(svg).replace("currentColor", color)).toUtf8();
@@ -290,7 +301,7 @@ static QIcon fileIcon(const QString &fileName)
         {"tex", {tex, "#8DC149"}}, {"ltx", {tex, "#8DC149"}}, {"bib", {bib, "#CBCB41"}},
         {"sty", {style, "#A074C4"}}, {"cls", {style, "#A074C4"}}, {"pdf", {pdf, "#CC3E44"}},
         {"png", {image, "#A074C4"}}, {"jpg", {image, "#A074C4"}}, {"jpeg", {image, "#A074C4"}}, {"svg", {image, "#A074C4"}}};
-    auto [svg, color] = kinds.value(suffix, {other, "#68727F"});
+    auto [svg, color] = kinds.value(suffix, {other, "#7C8794"});
     QIcon icon(svgPixmap(svg, color, 16));
     icons.insert(suffix, icon);
     return icon;
@@ -426,7 +437,7 @@ Window::Window() : m_runner(this)
         });
     });
     templates->addAction("Article")->setVisible(false); // a submenu with no actions never opens
-    add("Open TeX or PDF…", QKeySequence::Open, [this]
+    add("Open file…", QKeySequence::Open, [this]
     {
         QString path = QFileDialog::getOpenFileName(this, "Open document", m_workspace, "TeX / PDF (*.tex *.bib *.sty *.cls *.pdf);;All files (*)");
         if (path.isEmpty()) return;
@@ -543,7 +554,7 @@ Window::Window() : m_runner(this)
     add("Quick open…", QKeySequence("Ctrl+P"), [this] { showPalette(true); });
     add("Go back", QKeySequence("Alt+Left"), [this] { navigate(false); });
     add("Go forward", QKeySequence("Alt+Right"), [this] { navigate(true); });
-    add("Distraction free", QKeySequence("Ctrl+Alt+Z"), [this] { toggleZen(); });
+    add("Focus", QKeySequence("Ctrl+Alt+Z"), [this] { toggleZen(); });
     menu->addSeparator();
     add("Toggle side bar", QKeySequence("Ctrl+Shift+O"), [this] { showSide(m_outlineButton->isChecked() ? m_outline : m_files); });
     add("Toggle PDF", QKeySequence("Ctrl+\\"), [this] { m_pdfPane->setVisible(!m_pdfPane->isVisible()); });
@@ -569,6 +580,12 @@ Window::Window() : m_runner(this)
     menu->addSeparator();
     add("Next tab", QKeySequence("Ctrl+PgDown"), [this] { m_tabs->setCurrentIndex((m_tabs->currentIndex() + 1) % m_tabs->count()); });
     add("Previous tab", QKeySequence("Ctrl+PgUp"), [this] { m_tabs->setCurrentIndex((m_tabs->currentIndex() + m_tabs->count() - 1) % m_tabs->count()); });
+    menu = menuBar->addMenu("&Help");
+    add("Keyboard shortcuts", QKeySequence(), [this] { showPalette(false); }); // the palette lists every command with its key
+    add("About FoliTeX", QKeySequence(), [this]
+    {
+        QMessageBox::about(this, "About FoliTeX", QString("FoliTeX %1\n\nA lean LaTeX editor with a built-in PDF viewer.\nBuilds run latexmk from the installed TeX distribution.").arg(QApplication::applicationVersion()));
+    });
     bar->addWidget(menuBar);
     bar->addStretch();
     auto *focusButton = new QToolButton;
@@ -577,7 +594,7 @@ Window::Window() : m_runner(this)
     focusButton->setIcon(QIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg>)", "#ADB7C4", 14)));
     focusButton->setIconSize(QSize(14, 14));
     focusButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    focusButton->setToolTip("Distraction free · Ctrl+Alt+Z");
+    focusButton->setToolTip("Focus · Ctrl+Alt+Z");
     connect(focusButton, &QToolButton::clicked, this, [this] { toggleZen(); });
     bar->addWidget(focusButton);
     // Each control sits with what it acts on: Build with the editor tabs, zoom and pages with the PDF.
@@ -590,6 +607,7 @@ Window::Window() : m_runner(this)
     m_build->setIconSize(QSize(16, 16));
     m_build->setText("Build");
     m_build->setToolTip("Build · F5");
+    m_build->setMinimumWidth(m_build->sizeHint().width()); // "Stop" is narrower; the engine box beside it must not shift
     connect(m_build, &QPushButton::clicked, this, &Window::build);
     m_pdf = new PdfView;
     m_status = new QLabel;
@@ -640,6 +658,7 @@ Window::Window() : m_runner(this)
     {
         auto *button = new QToolButton;
         button->setText(text);
+        button->setAccessibleName(tip.section(" · ", 0, 0));
         button->setToolTip(tip);
         connect(button, &QToolButton::clicked, this, handler);
         pdfBarLayout->addWidget(button);
@@ -684,17 +703,20 @@ Window::Window() : m_runner(this)
     pdfFindLayout->setContentsMargins(8, 4, 8, 4);
     pdfFindLayout->setSpacing(4);
     auto *pdfFindClose = new QToolButton;
-    pdfFindClose->setText("×");
+    setGlyph(pdfFindClose, "M4.5 4.5l7 7m0-7l-7 7");
     pdfFindClose->setToolTip("Close · Escape");
+    pdfFindClose->setAccessibleName("Close");
     m_pdfFind = new QLineEdit;
     m_pdfFind->setPlaceholderText("Find in PDF");
     m_pdfFind->setToolTip("Enter: next match · Shift+Enter: previous");
     auto *pdfPrevious = new QToolButton;
-    pdfPrevious->setText("↑");
+    setGlyph(pdfPrevious, "M8 12.5v-9M4.5 7L8 3.5 11.5 7");
     pdfPrevious->setToolTip("Previous match · Shift+Enter");
+    pdfPrevious->setAccessibleName("Previous match");
     auto *pdfNext = new QToolButton;
-    pdfNext->setText("↓");
+    setGlyph(pdfNext, "M8 3.5v9M4.5 9L8 12.5 11.5 9");
     pdfNext->setToolTip("Next match · Enter");
+    pdfNext->setAccessibleName("Next match");
     m_pdfCase = new QCheckBox("Case sensitive");
     m_pdfWord = new QCheckBox("Whole words");
     m_pdfMatches = new QLabel;
@@ -765,26 +787,32 @@ Window::Window() : m_runner(this)
     {
         auto *button = new QToolButton;
         button->setText(text);
+        button->setAccessibleName(tip.section(" · ", 0, 0));
         button->setToolTip(tip);
         button->setCheckable(checkable);
         return button;
     };
-    m_replaceToggle = toolButton("›", "Toggle Replace · Ctrl+H", true);
+    m_replaceToggle = toolButton("", "Toggle replace · Ctrl+H", true);
+    setGlyph(m_replaceToggle, "M6 4l4 4-4 4");
     m_replaceToggle->setObjectName("replaceToggle");
     m_find = new QLineEdit;
     m_find->setPlaceholderText("Find");
     m_find->setMinimumWidth(120);
-    m_findCase = toolButton("Aa", "Match Case", true);
-    m_findWord = toolButton("ab", "Match Whole Word", true);
+    m_findCase = toolButton("Aa", "Match case", true);
+    m_findWord = toolButton("ab", "Match whole word", true);
+    { QFont underlined = m_findWord->font(); underlined.setUnderline(true); m_findWord->setFont(underlined); } // VS Code's whole-word mark
     m_findCount = new QLabel;
     m_findCount->setMinimumWidth(70);
-    auto *previous = toolButton("↑", "Previous Match · Shift+F3");
-    auto *next = toolButton("↓", "Next Match · F3 or Enter");
-    auto *close = toolButton("×", "Close · Escape");
+    auto *previous = toolButton("", "Previous match · Shift+F3");
+    setGlyph(previous, "M8 12.5v-9M4.5 7L8 3.5 11.5 7");
+    auto *next = toolButton("", "Next match · F3 or Enter");
+    setGlyph(next, "M8 3.5v9M4.5 9L8 12.5 11.5 9");
+    auto *close = toolButton("", "Close · Escape");
+    setGlyph(close, "M4.5 4.5l7 7m0-7l-7 7");
     m_replace = new QLineEdit;
     m_replace->setPlaceholderText("Replace");
     auto *replaceOne = toolButton("Replace", "Replace · Enter");
-    auto *replaceAll = toolButton("All", "Replace All");
+    auto *replaceAll = toolButton("Replace all", "Replace all");
     auto *findRow = new QHBoxLayout;
     findRow->setSpacing(2);
     for (QWidget *widget : std::initializer_list<QWidget *>{m_findCase, m_findWord, m_findCount, previous, next, close}) findRow->addWidget(widget);
@@ -820,7 +848,7 @@ Window::Window() : m_runner(this)
     connect(next, &QToolButton::clicked, this, [this] { findInEditor(false); });
     connect(m_replaceToggle, &QToolButton::toggled, this, [this](bool on)
     {
-        m_replaceToggle->setText(on ? "⌄" : "›");
+        setGlyph(m_replaceToggle, on ? "M4 6l4 4 4-4" : "M6 4l4 4-4 4");
         m_replace->setVisible(on);
         m_replaceRow->setVisible(on);
         placeFind();
@@ -961,7 +989,7 @@ Window::Window() : m_runner(this)
     noFolderLayout->setContentsMargins(20, 12, 20, 12);
     auto *noFolderText = new QLabel("No folder opened.");
     noFolderText->setWordWrap(true);
-    auto *openFolderButton = new QPushButton("Open Folder");
+    auto *openFolderButton = new QPushButton("Open folder");
     openFolderButton->setObjectName("primary");
     connect(openFolderButton, &QPushButton::clicked, openFolder, &QAction::trigger);
     noFolderLayout->addWidget(noFolderText);
@@ -1010,9 +1038,9 @@ Window::Window() : m_runner(this)
         return button;
     };
     rootAction(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"><path d="M9.5 1.5h-6v13h5"/><path d="M9.5 1.5l3 3v4"/><path d="M9.5 1.5v3h3"/><path d="M12.5 10.5v5M10 13h5"/></svg>)",
-        "New File…", [this, target] { newEntry(target(), false); });
+        "New file…", [this, target] { newEntry(target(), false); });
     rootAction(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"><path d="M8.5 13.5h-7v-11h4.5l1.5 1.5h7v4"/><path d="M12.5 9.5v5M10 12h5"/></svg>)",
-        "New Folder…", [this, target] { newEntry(target(), true); });
+        "New folder…", [this, target] { newEntry(target(), true); });
     m_collapseButton = rootAction(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"><rect x="3.5" y="3.5" width="9" height="9" rx="1"/><path d="M6 8h4"/><path d="M5.5 1.5h9v9"/></svg>)",
         "Collapse Folders", [this]
         {
@@ -1136,7 +1164,7 @@ Window::Window() : m_runner(this)
     panelLayout->setSpacing(2);
     auto *filter = new QLineEdit;
     filter->setObjectName("problemFilter");
-    filter->setPlaceholderText("Filter (e.g. text, main.tex)");
+    filter->setPlaceholderText("Filter problems");
     filter->setFixedWidth(150);
     filter->setClearButtonEnabled(true);
     connect(filter, &QLineEdit::textChanged, this, [this](const QString &text)
@@ -1165,15 +1193,15 @@ Window::Window() : m_runner(this)
         return button;
     };
     panelLayout->addWidget(filter);
-    auto *collapse = panelButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.5 8h5"/></svg>)", "Collapse All");
+    auto *collapse = panelButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.5 8h5"/></svg>)", "Collapse all");
     connect(collapse, &QToolButton::clicked, m_problemsView, &QTreeWidget::collapseAll);
-    auto *maximize = panelButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><path d="M4 10l4-4 4 4"/></svg>)", "Maximize Panel Size");
+    auto *maximize = panelButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><path d="M4 10l4-4 4 4"/></svg>)", "Maximize panel");
     connect(maximize, &QToolButton::clicked, this, [this, maximize]
     {
         m_tabs->setVisible(!m_tabs->isVisible());
-        maximize->setToolTip(m_tabs->isVisible() ? "Maximize Panel Size" : "Restore Panel Size");
+        maximize->setToolTip(m_tabs->isVisible() ? "Maximize panel" : "Restore panel");
     });
-    auto *closePanel = panelButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M4.5 4.5l7 7m0-7l-7 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg>)", "Close Panel · Ctrl+J");
+    auto *closePanel = panelButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M4.5 4.5l7 7m0-7l-7 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg>)", "Close panel · Ctrl+J");
     connect(closePanel, &QToolButton::clicked, this, [this] { m_panel->hide(); m_tabs->show(); });
     m_panel->setCornerWidget(panelActions, Qt::TopRightCorner);
     panelActions->hide(); // shown with the first problems
@@ -1216,7 +1244,7 @@ Window::Window() : m_runner(this)
         m_build->setIcon(m_runIcon);
         m_build->setText("Build");
         m_build->setToolTip("Build · F5");
-        if (m_runner.cancelled()) { m_status->setText("Build stopped"); return; }
+        if (m_runner.cancelled()) { keepStatus("Build stopped"); return; }
         // Always the latest log: when nothing changed, latexmk does not rerun and keeps the old
         // one, which still describes the document.
         QList<Problem> problems;
@@ -1229,14 +1257,14 @@ Window::Window() : m_runner(this)
         m_warningCount->show();
         int errors = int(std::count_if(problems.cbegin(), problems.cend(), [](const Problem &p) { return p.error; }));
         int warnings = int(problems.size()) - errors;
-        m_status->setStyleSheet(success ? QString() : "color:#F48771;");
+        m_status->setStyleSheet(success ? QString() : themed("color:#F48771;"));
         if (success)
-            m_status->setText(warnings ? QString("Build succeeded · %1 warning%2").arg(warnings).arg(warnings == 1 ? "" : "s") : "Build succeeded");
+            keepStatus(warnings ? QString("Build succeeded · %1 warning%2").arg(warnings).arg(warnings == 1 ? "" : "s") : "Build succeeded");
         else
-            m_status->setText(errors ? QString("Build failed: %1 error%2 · F8 to go to the first").arg(errors).arg(errors == 1 ? "" : "s")
-                                     : "Build failed — see Output");
+            keepStatus(errors ? QString("Build failed: %1 error%2 · F8 to go to the first").arg(errors).arg(errors == 1 ? "" : "s")
+                                     : "Build failed: see Output");
         // nonstopmode still writes a PDF after most errors; show it so the edits are visible.
-        if (success || (QFileInfo::exists(pdf) && QFileInfo(pdf).lastModified() >= m_buildStarted.addSecs(-1))) openPdf(pdf);
+        if (success || (QFileInfo::exists(pdf) && (m_pdf->path().isEmpty() || QFileInfo(pdf).lastModified() >= m_buildStarted.addSecs(-1)))) openPdf(pdf);
         if (!success)
         {
             m_panel->setCurrentWidget(errors ? static_cast<QWidget *>(m_problemsView) : m_log);
@@ -1336,7 +1364,9 @@ void Window::reloadSource(Editor *editor)
     if (editor->document()->isModified())
     {
         // Never discard unsaved edits; saving still asks before overwriting the newer file.
-        m_status->setText(name + " changed on disk, but has unsaved edits here; not reloaded.");
+        editor->setProperty("conflict", true);
+        setTabTitle(editor);
+        keepStatus(name + " changed on disk, but has unsaved edits here; not reloaded.");
         return;
     }
     // Replace only the changed middle so the cursor, scroll position and undo history stay useful.
@@ -1352,8 +1382,11 @@ void Window::reloadSource(Editor *editor)
     editor->setProperty("lineEnding", lineEndingOf(bytes));
     editor->setProperty("mtime", QFileInfo(path).lastModified());
     editor->document()->setModified(false);
+    editor->setProperty("conflict", false);
     setTabTitle(editor);
-    m_status->setText("Reloaded " + name + " (changed on disk) · Ctrl+Z to undo");
+    const QString reloaded = "Reloaded " + name + " (changed on disk) · Ctrl+Z to undo";
+    keepStatus(reloaded);
+    QTimer::singleShot(8000, this, [this, reloaded] { if (m_status->text() == reloaded) m_status->clear(); });
 }
 
 // shortcut: the outline covers the current tab only, upgrade by following \input/\include from the root file.
@@ -1369,7 +1402,7 @@ void Window::refreshOutline()
             while (!parents.isEmpty() && parents.last().first >= entry.level) parents.removeLast();
         auto *item = parents.isEmpty() ? new QTreeWidgetItem(m_outline) : new QTreeWidgetItem(parents.last().second);
         static const QStringList prefixes = {"", "label  ", "file  ", "TODO  "};
-        static const QStringList colors = {"#ADB7C4", "#4FC1FF", "#C586C0", "#CCA700"};
+        static const QStringList colors = {"#ADB7C4", "#79BFD6", "#B294BB", "#CCA700"};
         item->setText(0, prefixes[entry.kind] + (entry.title.isEmpty() ? "…" : entry.title));
         item->setForeground(0, themeColor(colors[entry.kind]));
         item->setData(0, Qt::UserRole, entry.line);
@@ -1419,7 +1452,7 @@ void Window::toggleZen()
     }
     if (!m_zenHint)
     {
-        m_zenHint = new QLabel("Esc to leave focus mode", this);
+        m_zenHint = new QLabel("Esc to leave Focus", this);
         m_zenHint->setStyleSheet(themed("color:#8793A2; font-size:11px;"));
         m_zenHint->adjustSize();
     }
@@ -1504,11 +1537,11 @@ void Window::updateWelcome()
             return button;
         };
         auto trigger = [this](const QString &name) { for (QAction *action : actions()) if (action->text() == name) { action->trigger(); return; } };
-        row("Open Folder…", "Ctrl+Alt+O", [trigger] { trigger("Open folder…"); });
-        row("Open File…", "Ctrl+O", [trigger] { trigger("Open TeX or PDF…"); });
-        QPushButton *fromTemplate = row("New from Template…", "", [] {}); // opens the template menu below it
+        row("Open folder…", "Ctrl+Alt+O", [trigger] { trigger("Open folder…"); });
+        row("Open file…", "Ctrl+O", [trigger] { trigger("Open file…"); });
+        QPushButton *fromTemplate = row("New from template…", "", [] {}); // opens the template menu below it
         connect(fromTemplate, &QPushButton::clicked, this, [this, fromTemplate] { m_templatesMenu->popup(fromTemplate->mapToGlobal(QPoint(0, fromTemplate->height()))); });
-        row("Command Palette", "Ctrl+K", [this] { showPalette(false); });
+        row("Command palette", "Ctrl+K", [this] { showPalette(false); });
         if (!m_recent.isEmpty())
         {
             layout->addSpacing(12);
@@ -1697,7 +1730,7 @@ Editor *Window::newDocument(const QString &text)
         if (editor != currentEditor()) return;
         updatePosition();
         noteLocation();
-        if (!m_runner.running())
+        if (!m_runner.running() && m_status->text() != m_statusKeep)
         {
             m_status->setStyleSheet({});
             m_status->clear(); // the right side already shows where the cursor is
@@ -1707,6 +1740,12 @@ Editor *Window::newDocument(const QString &text)
     return editor;
 }
 
+void Window::keepStatus(const QString &text)
+{
+    m_statusKeep = text;
+    m_status->setText(text);
+}
+
 void Window::setTabTitle(Editor *editor)
 {
     QString path = editor->property("path").toString();
@@ -1714,7 +1753,8 @@ void Window::setTabTitle(Editor *editor)
     int index = m_tabs->indexOf(editor);
     if (index >= 0)
     {
-        m_tabs->setTabText(index, name);
+        // A newer file on disk that was not loaded stays marked until a save or reload settles it.
+        m_tabs->setTabText(index, editor->property("conflict").toBool() ? name + " · changed on disk" : name);
         // addTab() reports the new tab as current before its left widget exists.
         if (QWidget *lead = m_tabs->tabBar()->tabButton(index, QTabBar::LeftSide))
             lead->findChild<QLabel *>()->setPixmap(fileIcon(path.isEmpty() ? "Untitled.tex" : name).pixmap(16, 16));
@@ -1752,6 +1792,9 @@ bool Window::openSource(const QString &path)
     applyProblems(editor);
     watchSource(absolute);
     addRecent(absolute);
+    // The last build's PDF, when there is one and nothing else is shown; it may be older than the source.
+    const QString built = BuildRunner::pdfPath(BuildRunner::rootFile(absolute));
+    if (m_pdf->path().isEmpty() && QFileInfo::exists(built)) openPdf(built);
     return true;
 }
 
@@ -1800,6 +1843,8 @@ void Window::showSettings()
     QDialog dialog(this);
     dialog.setWindowTitle("Settings");
     auto *form = new QFormLayout(&dialog);
+    form->setContentsMargins(16, 16, 16, 12);
+    form->setVerticalSpacing(10);
     auto *family = new QFontComboBox;
     family->setFontFilters(QFontComboBox::MonospacedFonts);
     family->setCurrentFont(currentEditor() ? currentEditor()->font() : font());
@@ -1825,10 +1870,10 @@ void Window::showSettings()
     form->addRow("Engine", engine);
     auto *buildOnSave = new QCheckBox("Build after each Ctrl+S");
     buildOnSave->setChecked(m_buildOnSaveAction->isChecked());
-    form->addRow("Build", buildOnSave);
+    form->addRow("On save", buildOnSave);
     auto *wrap = new QCheckBox("Wrap long lines (Alt+Z)");
     wrap->setChecked(m_wordWrap);
-    form->addRow("Word wrap", wrap);
+    form->addRow("Editor", wrap);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
@@ -1928,12 +1973,12 @@ void Window::explorerMenu(const QPoint &position)
     bool folder = QFileInfo(path).isDir();
     QString directory = folder ? path : QFileInfo(path).absolutePath();
     QMenu menu(this);
-    menu.addAction("New File…", this, [this, directory] { newEntry(directory, false); });
-    menu.addAction("New Folder…", this, [this, directory] { newEntry(directory, true); });
+    menu.addAction("New file…", this, [this, directory] { newEntry(directory, false); });
+    menu.addAction("New folder…", this, [this, directory] { newEntry(directory, true); });
     menu.addSeparator();
-    menu.addAction("Reveal in File Manager", this, [directory] { QDesktopServices::openUrl(QUrl::fromLocalFile(directory)); });
-    menu.addAction("Copy Path", this, [path] { QGuiApplication::clipboard()->setText(QDir::toNativeSeparators(path)); });
-    menu.addAction("Copy Relative Path", this, [this, path] { QGuiApplication::clipboard()->setText(QDir(m_workspace).relativeFilePath(path)); });
+    menu.addAction("Reveal in file manager", this, [directory] { QDesktopServices::openUrl(QUrl::fromLocalFile(directory)); });
+    menu.addAction("Copy path", this, [path] { QGuiApplication::clipboard()->setText(QDir::toNativeSeparators(path)); });
+    menu.addAction("Copy relative path", this, [this, path] { QGuiApplication::clipboard()->setText(QDir(m_workspace).relativeFilePath(path)); });
     if (index.isValid())
     {
         menu.addSeparator();
@@ -2045,10 +2090,11 @@ bool Window::save(Editor *editor, bool saveAs)
     if (editor->property("bom").toBool()) bytes.prepend("\xef\xbb\xbf");
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit())
-    { QMessageBox::warning(this, "Cannot save", file.errorString()); return false; }
+    { QMessageBox::warning(this, "Cannot save", QString("%1 could not be saved: %2").arg(QDir::toNativeSeparators(path), file.errorString())); return false; }
     editor->setProperty("path", QFileInfo(path).absoluteFilePath());
     editor->setProperty("mtime", QFileInfo(path).lastModified());
     editor->document()->setModified(false);
+    editor->setProperty("conflict", false);
     setTabTitle(editor);
     if (!current.isEmpty() && current != editor->property("path").toString()) m_sourceWatcher.removePath(current);
     watchSource(editor->property("path").toString());
@@ -2058,10 +2104,14 @@ bool Window::save(Editor *editor, bool saveAs)
 bool Window::mayClose(Editor *editor)
 {
     if (!editor || !editor->document()->isModified()) return true;
-    auto answer = QMessageBox::question(this, "Unsaved changes", "Save changes before closing?",
+    m_tabs->setCurrentWidget(editor); // show what is being asked about
+    const QString path = editor->property("path").toString();
+    auto answer = QMessageBox::question(this, "Unsaved changes",
+        QString("Save changes to %1 before closing?").arg(path.isEmpty() ? "Untitled" : QFileInfo(path).fileName()),
         QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
-    if (answer == QMessageBox::Cancel) return false;
-    return answer == QMessageBox::Discard || save(editor);
+    // Only an explicit Save writes: a dialog dismissed without a button reports NoButton, not Cancel.
+    if (answer == QMessageBox::Discard) return true;
+    return answer == QMessageBox::Save && save(editor);
 }
 
 void Window::closeTab(int index)
@@ -2079,9 +2129,9 @@ void Window::closeEvent(QCloseEvent *event)
 {
     if (m_runner.running())
     {
-        m_status->setText("Stop the build before closing.");
-        event->ignore();
-        return;
+        if (QMessageBox::question(this, "Build running", "A build is running. Stop it and close?",
+                QMessageBox::Yes | QMessageBox::Cancel) != QMessageBox::Yes) { event->ignore(); return; }
+        m_runner.stop(); // ~BuildRunner kills whatever is left of the process group
     }
     for (int i = 0; i < m_tabs->count(); ++i)
         if (!mayClose(qobject_cast<Editor *>(m_tabs->widget(i)))) { event->ignore(); return; }
@@ -2193,7 +2243,7 @@ void Window::updateFindCount()
     int current = -1;
     int count = editor ? editor->countMatches(m_find->text(), findFlags(), &current) : 0;
     m_findCount->setText(m_find->text().isEmpty() ? QString() : count == 0 ? "No results"
-        : QString("%1 of %2").arg(current < 0 ? QString("?") : QString::number(current + 1)).arg(count));
+        : current < 0 ? QString("%1 result%2").arg(count).arg(count == 1 ? "" : "s") : QString("%1 of %2").arg(current + 1).arg(count));
 }
 
 void Window::placeFind()
@@ -2362,6 +2412,9 @@ bool Window::eventFilter(QObject *object, QEvent *event)
     // A lone Alt (pressed and released with no other key) shows or hides a hidden menu bar.
     // The application filter may see one key event per receiver, hence the flag reset.
     // Keys bound to shortcuts (Alt+Z) arrive only as ShortcutOverride, never as KeyPress.
+    if (object == m_panel && event->type() == QEvent::Resize)
+        if (auto *filter = m_panel->findChild<QLineEdit *>("problemFilter"))
+            filter->setVisible(m_panel->width() >= 420 || !filter->text().isEmpty()); // narrower, it would cover the Output tab
     if (event->type() == QEvent::KeyPress || event->type() == QEvent::ShortcutOverride)
         m_altAlone = static_cast<QKeyEvent *>(event)->key() == Qt::Key_Alt;
     else if (event->type() == QEvent::KeyRelease && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Alt && m_altAlone)
