@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.3 — 2026-11-16
+
+First published release with the 0.8.2 changes (see 0.8.2 in CHANGELOG.md); the v0.8.2 tag
+was never released because its CI run failed on Arch Linux.
+
+### Fixed
+- Arch Linux install instructions (and CI) add `texlive-xetex` and `texlive-fontsrecommended`,
+  so XeLaTeX builds find their format and the Latin Modern OpenType fonts.
+
 ## 0.8.2 — 2026-11-15
 
 ### Added
