@@ -84,7 +84,7 @@ Arch Linux, Manjaro, EndeavourOS:
 
 ```bash
 sudo pacman -S --needed base-devel git cmake qt6-base qt6-svg poppler-qt6 \
-    texlive-bin texlive-binextra texlive-latexextra texlive-langother texlive-xetex
+    texlive-bin texlive-binextra texlive-latexextra texlive-langother texlive-xetex texlive-fontsrecommended
 ```
 
 Debian 13, Ubuntu 25.04 and newer:
