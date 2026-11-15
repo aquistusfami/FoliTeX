@@ -98,6 +98,22 @@ void Tests::rootFiles()
     QCOMPARE(BuildRunner::rootFile(dir.filePath("chapter.tex")), dir.filePath("root.tex"));
     write(dir.filePath("root.tex"), "% !TEX root = chapter.tex\n");
     QVERIFY(BuildRunner::rootFile(dir.filePath("chapter.tex")).isEmpty());
+
+    // Without a magic comment, a non-document file resolves through whoever \input's it.
+    QTemporaryDir project;
+    QVERIFY(QDir(project.path()).mkdir("chapters"));
+    write(project.filePath("main.tex"), "\\documentclass{article}\n% \\input{chapters/old}\n\\begin{document}\n\\include{chapters/intro}\n\\end{document}\n");
+    write(project.filePath("chapters/intro.tex"), "Intro \\input{chapters/part.tex}\n");
+    write(project.filePath("chapters/part.tex"), "Part\n");
+    write(project.filePath("chapters/old.tex"), "Old\n");
+    QCOMPARE(BuildRunner::rootFile(project.filePath("chapters/intro.tex")), project.filePath("main.tex"));
+    QCOMPARE(BuildRunner::rootFile(project.filePath("chapters/part.tex")), project.filePath("main.tex"));
+    QCOMPARE(BuildRunner::rootFile(project.filePath("chapters/old.tex")), project.filePath("chapters/old.tex"));
+    QCOMPARE(BuildRunner::rootFile(project.filePath("main.tex")), project.filePath("main.tex"));
+    QVERIFY(QDir(project.path()).mkpath("text/cau"));
+    write(project.filePath("text/cau/week.tex"), "Week\n");
+    write(project.filePath("main.tex"), "\\documentclass{article}\n\\begin{document}\n\\include{text/cau/week}\n\\end{document}\n");
+    QCOMPARE(BuildRunner::rootFile(project.filePath("text/cau/week.tex")), project.filePath("main.tex"));
 }
 
 void Tests::editorCommentUndo()

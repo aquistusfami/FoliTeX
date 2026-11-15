@@ -49,6 +49,7 @@ public:
     bool cancelled() const { return m_cancelRequested; }
     void stop();
     static QString rootFile(const QString &source);
+    static QString includingFile(const QString &path);
     static QString pdfPath(const QString &source);
     // Errors (file:line: from -file-line-error), LaTeX/package warnings and over/underfull boxes.
     static QList<Problem> parseLog(const QString &log, const QString &directory);

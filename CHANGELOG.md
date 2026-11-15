@@ -6,6 +6,8 @@
 - Help menu: Keyboard shortcuts (opens the command palette) and About FoliTeX.
 - A tab whose file changed on disk while it holds unsaved edits is marked "· changed on disk"
   until a save or reload settles it.
+- Building, SyncTeX and completion from an `\input`/`\include`/`\subfile`'d file without a
+  `% !TeX root` comment use the document that includes it (searched up to 4 parent folders).
 
 ### Changed
 - The build result and the disk-conflict message stay in the status bar instead of vanishing

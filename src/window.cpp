@@ -129,9 +129,50 @@ QString BuildRunner::rootFile(const QString &source)
         static const QRegularExpression magic(R"(^\s*%\s*!\s*TeX\s+root\s*=\s*(.+?)\s*$)",
             QRegularExpression::CaseInsensitiveOption | QRegularExpression::MultilineOption);
         auto match = magic.match(head);
-        if (!match.hasMatch()) return root;
-        root = QDir(QFileInfo(root).absolutePath()).absoluteFilePath(match.captured(1).trimmed());
-        root = QDir::cleanPath(root);
+        if (match.hasMatch())
+        {
+            root = QDir(QFileInfo(root).absolutePath()).absoluteFilePath(match.captured(1).trimmed());
+            root = QDir::cleanPath(root);
+            continue;
+        }
+        static const QRegularExpression documentClass(R"(^[^%\n]*\\documentclass\b)", QRegularExpression::MultilineOption);
+        if (documentClass.match(head).hasMatch()) return root;
+        // No magic comment and not a document: follow the file that \input/\include/\subfile's it, like Overleaf.
+        QString includer = includingFile(root);
+        if (includer.isEmpty()) return root;
+        root = includer;
+    }
+    return {};
+}
+
+QString BuildRunner::includingFile(const QString &path)
+{
+    // shortcut: only the file's folder and 4 ancestors are searched; \import and deeper layouts need a magic comment.
+    QFileInfo info(path);
+    QStringList folders{info.absolutePath()};
+    QDir parent = info.absoluteDir();
+    for (int up = 0; up < 4 && parent.cdUp(); ++up) folders << parent.absolutePath();
+    static const QRegularExpression comment(R"((?<!\\)%[^\n]*)");
+    static const QRegularExpression include(R"(\\(?:input|include|subfile)\s*\{([^{}]+)\})");
+    for (const QString &folder : folders)
+    {
+        QDir dir(folder);
+        for (const QString &name : dir.entryList({"*.tex"}, QDir::Files, QDir::Name))
+        {
+            QString candidate = dir.absoluteFilePath(name);
+            if (candidate == info.absoluteFilePath()) continue;
+            QFile file(candidate);
+            if (!file.open(QIODevice::ReadOnly)) continue;
+            QString text = QString::fromUtf8(file.read(1 << 20)).remove(comment);
+            for (auto it = include.globalMatch(text); it.hasNext();)
+            {
+                QString argument = it.next().captured(1).trimmed();
+                if (QFileInfo(argument).suffix().isEmpty()) argument += ".tex";
+                // Nested inputs resolve against the (still unknown) root folder, so try every searched folder.
+                for (const QString &base : QStringList{folder} + folders)
+                    if (QDir::cleanPath(QDir(base).absoluteFilePath(argument)) == info.absoluteFilePath()) return candidate;
+            }
+        }
     }
     return {};
 }
