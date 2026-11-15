@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.2 — 2026-11-15
 
 ### Added
 - Help menu: Keyboard shortcuts (opens the command palette) and About FoliTeX.
