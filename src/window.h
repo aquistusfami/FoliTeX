@@ -123,6 +123,8 @@ private:
     void updateTabButtons();
     void updateTabHints();
     void setProblems(const QList<Problem> &problems, const QString &directory, bool success = true);
+    void updatePanelActions();
+    void toggleMaximizePanel();
     void applyProblems(Editor *editor);
     void goToProblem(int index);
     Editor *newDocument(const QString &text = {});
@@ -190,6 +192,11 @@ private:
     void toggleZen();
     void placeZen();
     bool m_panelCollapsed = false;
+    bool m_panelMaximized = false;
+    QList<int> m_verticalPreMaximizedSizes;
+    QToolButton *m_panelMaximize = nullptr;
+    QLineEdit *m_problemFilter = nullptr;
+    QToolButton *m_collapseProblems = nullptr;
     void setPanelCollapsed(bool on); // only the Problems | Output strip while there is nothing to report
     QWidget *m_pdfBar;
     void setPdfLoaded(bool loaded);

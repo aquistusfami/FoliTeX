@@ -89,6 +89,7 @@ private slots:
     void selectionBarAndFocusMode();
     void honestEmptyStates();
     void buildFailureEmptyProblemsState();
+    void panelMaximizeAndRestore();
     void darkPdfPages();
     void compilation();
     void buildBoundaryCases_data();
@@ -2064,6 +2065,50 @@ void Tests::buildFailureEmptyProblemsState()
     window.setProblems({}, "/fake/dir", true);
     QCOMPARE(title->text(), QString("No problems"));
     QVERIFY(window.m_panelCollapsed);
+}
+
+void Tests::panelMaximizeAndRestore()
+{
+    Window window;
+    window.resize(1000, 700);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+    QVERIFY(window.m_tabs->isVisible());
+    QVERIFY(window.m_panel->isVisible());
+    QVERIFY(window.m_panelMaximize);
+
+    // Initial state: not maximized
+    QCOMPARE(window.m_panelMaximize->toolTip(), QString("Maximize panel"));
+
+    // Check actions on Output tab
+    window.m_panel->setCurrentIndex(1); // Output tab
+    QVERIFY(window.m_panelMaximize->isVisible());
+    if (window.m_problemFilter) QVERIFY(!window.m_problemFilter->isVisible());
+    if (window.m_collapseProblems) QVERIFY(!window.m_collapseProblems->isVisible());
+
+    // Maximize panel
+    window.toggleMaximizePanel();
+    QVERIFY(!window.m_tabs->isVisible());
+    QVERIFY(!window.m_panelCollapsed);
+    QCOMPARE(window.m_panelMaximize->toolTip(), QString("Restore panel"));
+    QVERIFY(window.m_panel->height() > 200);
+
+    // Restore panel
+    window.toggleMaximizePanel();
+    QVERIFY(window.m_tabs->isVisible());
+    QCOMPARE(window.m_panelMaximize->toolTip(), QString("Maximize panel"));
+    QVERIFY(window.m_tabs->height() > 50);
+
+    // Maximize panel, then switch back to editor via openSource
+    window.toggleMaximizePanel();
+    QVERIFY(!window.m_tabs->isVisible());
+    QTemporaryDir dir;
+    QString path = dir.filePath("test.tex");
+    write(path, "hello\n");
+    QVERIFY(window.openSource(path));
+    QVERIFY(window.m_tabs->isVisible());
+    QCOMPARE(window.m_panelMaximize->toolTip(), QString("Maximize panel"));
 }
 
 void Tests::compilation()

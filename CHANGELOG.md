@@ -32,6 +32,8 @@
 - Maintain editor cursor position and selection when an editor search has no match.
 - Distinguish build failure from success in the Problems panel empty state so a failed build never misleadingly reports "No problems".
 - Automatically resolve and save unsaved `.bib` and `.sty` auxiliary tabs when initiating a build from the root `.tex` document.
+- Fix bottom panel maximize and restore so expanding the panel uncollapses it properly and restoring brings back the editor tabs and splitter proportion.
+- Keep bottom panel maximize and close controls visible across all panel tabs (Problems and Output), while scoping problems-specific controls (filter and collapse all) to the Problems tab.
 - Watch parent directories of source files so files deleted and subsequently recreated on disk are automatically re-detected and reloaded.
 - Light theme: the command palette and the selection bar kept their dark backgrounds under
   dark text; disabled explorer icons looked enabled. A test now fails on any source colour the

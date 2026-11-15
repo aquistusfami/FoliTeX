@@ -635,7 +635,20 @@ Window::Window() : m_runner(this)
     menu->addSeparator();
     add("Toggle side bar", QKeySequence("Ctrl+Shift+O"), [this] { showSide(m_outlineButton->isChecked() ? m_outline : m_files); });
     add("Toggle PDF", QKeySequence("Ctrl+\\"), [this] { m_pdfPane->setVisible(!m_pdfPane->isVisible()); });
-    add("Toggle panel", QKeySequence("Ctrl+J"), [this] { m_panel->setVisible(!m_panel->isVisible()); });
+    add("Toggle panel", QKeySequence("Ctrl+J"), [this]
+    {
+        if (m_panel->isVisible())
+        {
+            if (m_panelMaximized) toggleMaximizePanel();
+            m_panel->hide();
+        }
+        else
+        {
+            m_panel->show();
+            if (m_panelCollapsed) setPanelCollapsed(false);
+            updatePanelActions();
+        }
+    });
     menu->addSeparator();
     m_wrapAction = add("Word wrap", QKeySequence("Alt+Z"), [this](bool on) { setWordWrap(on); });
     m_wrapAction->setCheckable(true);
@@ -1233,7 +1246,7 @@ Window::Window() : m_runner(this)
     auto *panelLayout = new QHBoxLayout(panelActions);
     panelLayout->setContentsMargins(0, 0, 6, 0);
     panelLayout->setSpacing(2);
-    auto *filter = new QLineEdit;
+    auto *filter = m_problemFilter = new QLineEdit;
     filter->setObjectName("problemFilter");
     filter->setPlaceholderText("Filter problems");
     filter->setFixedWidth(150);
@@ -1264,18 +1277,15 @@ Window::Window() : m_runner(this)
         return button;
     };
     panelLayout->addWidget(filter);
-    auto *collapse = panelButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.5 8h5"/></svg>)", "Collapse all");
+    auto *collapse = m_collapseProblems = panelButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.5 8h5"/></svg>)", "Collapse all");
     connect(collapse, &QToolButton::clicked, m_problemsView, &QTreeWidget::collapseAll);
-    auto *maximize = panelButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><path d="M4 10l4-4 4 4"/></svg>)", "Maximize panel");
-    connect(maximize, &QToolButton::clicked, this, [this, maximize]
-    {
-        m_tabs->setVisible(!m_tabs->isVisible());
-        maximize->setToolTip(m_tabs->isVisible() ? "Maximize panel" : "Restore panel");
-    });
+    auto *maximize = m_panelMaximize = panelButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><path d="M4 10l4-4 4 4"/></svg>)", "Maximize panel");
+    connect(maximize, &QToolButton::clicked, this, &Window::toggleMaximizePanel);
     auto *closePanel = panelButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M4.5 4.5l7 7m0-7l-7 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg>)", "Close panel · Ctrl+J");
-    connect(closePanel, &QToolButton::clicked, this, [this] { m_panel->hide(); m_tabs->show(); });
+    connect(closePanel, &QToolButton::clicked, this, [this] { if (m_panelMaximized) toggleMaximizePanel(); m_panel->hide(); });
     m_panel->setCornerWidget(panelActions, Qt::TopRightCorner);
-    panelActions->hide(); // shown with the first problems
+    connect(m_panel, &QTabWidget::currentChanged, this, [this](int) { updatePanelActions(); });
+    updatePanelActions();
     setProblems({}, {}); // shows the empty-state line
     // The build log opens under the editor only, like VS Code's panel inside the editor column.
     m_vertical = new QSplitter(Qt::Vertical);
@@ -1867,6 +1877,7 @@ void Window::setTabTitle(Editor *editor)
 
 bool Window::openSource(const QString &path)
 {
+    if (m_panelMaximized) toggleMaximizePanel();
     QFileInfo info(path);
     QString absolute = info.absoluteFilePath();
     const QString canonical = info.canonicalFilePath();
@@ -2476,7 +2487,7 @@ void Window::setProblems(const QList<Problem> &problems, const QString &director
             : "Build the document to check it. Warnings and errors appear here, and F8 steps through them.");
     }
     if (problems.isEmpty() && success && m_vertical) setPanelCollapsed(true);
-    if (auto *actions = m_panel->cornerWidget(Qt::TopRightCorner)) actions->setVisible(!problems.isEmpty());
+    updatePanelActions();
     m_problems = problems;
     m_problemsTime = QDateTime::currentDateTime();
     m_problemIndex = -1;
@@ -2544,14 +2555,62 @@ void Window::setMenuBarShown(bool on)
     m_menuBarAction->setChecked(on);
 }
 
+void Window::updatePanelActions()
+{
+    if (!m_panel) return;
+    const bool onProblems = m_panel->currentIndex() == 0;
+    const bool hasProblems = !m_problems.isEmpty();
+    if (m_problemFilter)
+    {
+        m_problemFilter->setVisible(onProblems && (hasProblems || !m_problemFilter->text().isEmpty()));
+        if (m_panel->width() < 420 && m_problemFilter->text().isEmpty()) m_problemFilter->hide();
+    }
+    if (m_collapseProblems) m_collapseProblems->setVisible(onProblems && hasProblems);
+    if (auto *actions = m_panel->cornerWidget(Qt::TopRightCorner)) actions->show();
+}
+
+void Window::toggleMaximizePanel()
+{
+    m_panelMaximized = !m_panelMaximized;
+    if (m_panelMaximized)
+    {
+        if (m_panelCollapsed) setPanelCollapsed(false);
+        m_verticalPreMaximizedSizes = m_vertical ? m_vertical->sizes() : QList<int>{};
+        m_tabs->hide();
+        if (m_vertical) m_vertical->setSizes({0, m_vertical->height()});
+        if (m_panelMaximize)
+        {
+            m_panelMaximize->setIcon(QIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>)", "#ADB7C4", 16)));
+            m_panelMaximize->setToolTip("Restore panel");
+        }
+    }
+    else
+    {
+        m_tabs->show();
+        if (m_vertical)
+        {
+            if (m_verticalPreMaximizedSizes.size() == 2 && m_verticalPreMaximizedSizes[0] > 50)
+                m_vertical->setSizes(m_verticalPreMaximizedSizes);
+            else
+            {
+                int total = m_vertical->height();
+                m_vertical->setSizes({std::max(100, total - 200), 200});
+            }
+        }
+        if (m_panelMaximize)
+        {
+            m_panelMaximize->setIcon(QIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><path d="M4 10l4-4 4 4"/></svg>)", "#ADB7C4", 16)));
+            m_panelMaximize->setToolTip("Maximize panel");
+        }
+    }
+}
+
 bool Window::eventFilter(QObject *object, QEvent *event)
 {
     // A lone Alt (pressed and released with no other key) shows or hides a hidden menu bar.
     // The application filter may see one key event per receiver, hence the flag reset.
     // Keys bound to shortcuts (Alt+Z) arrive only as ShortcutOverride, never as KeyPress.
-    if (object == m_panel && event->type() == QEvent::Resize)
-        if (auto *filter = m_panel->findChild<QLineEdit *>("problemFilter"))
-            filter->setVisible(m_panel->width() >= 420 || !filter->text().isEmpty()); // narrower, it would cover the Output tab
+    if (object == m_panel && event->type() == QEvent::Resize) updatePanelActions();
     if (event->type() == QEvent::KeyPress || event->type() == QEvent::ShortcutOverride)
         m_altAlone = static_cast<QKeyEvent *>(event)->key() == Qt::Key_Alt;
     else if (event->type() == QEvent::KeyRelease && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Alt && m_altAlone)
