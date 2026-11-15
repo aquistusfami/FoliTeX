@@ -30,6 +30,8 @@
 #include <QFontDatabase>
 #include <QAbstractTextDocumentLayout>
 #include <QAbstractItemView>
+#include <QFileDialog>
+#include <QMessageBox>
 #ifdef Q_OS_UNIX
 #include <signal.h>
 #endif
@@ -42,9 +44,18 @@ private slots:
     void editorCommentUndo();
     void completionAndSnippets();
     void editorAidsAndOutline();
+    void escapedBrackets();
+    void completionIgnoresComments();
+    void bibliographyRefresh();
     void workspaceTree();
     void externalEditsReload();
+    void externalFormatReload();
+    void saveAsOpenTab();
+    void pdfFindNavigation();
     void pdfInteraction();
+    void pdfBlankSelection();
+    void pdfZeroPages();
+    void pdfStaleTiles();
     void findReplace();
     void tabIndent();
     void continueList();
@@ -63,6 +74,7 @@ private slots:
     void packageCompletion();
     void menuBarToggle();
     void buildProblems();
+    void logPathsWithParentheses();
     void packageErrorProblems();
     void rebuildKeepsWarnings();
     void wordWrap();
@@ -76,9 +88,13 @@ private slots:
     void honestEmptyStates();
     void darkPdfPages();
     void compilation();
+    void buildBoundaryCases_data();
+    void buildBoundaryCases();
+    void cancellationKeepsUnrelatedProcess();
     void utf8AndInvalidInput();
     void pdfErrors();
     void sourceRoundtrip();
+    void mixedNewlinesRejected();
     void immediateCancellation();
     void largePdfViewport();
     void failedTileDoesNotSpin();
@@ -245,6 +261,82 @@ void Tests::completionAndSnippets()
     QCOMPARE(source->toPlainText(), "\\emph{a}\\frac{1}{2}\\\\\n");
 }
 
+void Tests::completionIgnoresComments()
+{
+    Editor editor;
+    const QString source = "% \\label{hidden}\n\\label{visible}\n\\% \\label{escapedPercent}\n"
+                           "\\\\% \\label{afterLineBreakComment}\n% \\newcommand{\\hiddenmacro}{}\n"
+                           "% \\newenvironment{hiddenenvironment}{}{}\n% \\usepackage{physics}\n";
+    auto offered = [&](const QString &suffix)
+    {
+        editor.setPlainText(source + suffix);
+        editor.moveCursor(QTextCursor::End);
+        QTest::keyClick(&editor, Qt::Key_Space, Qt::ControlModifier);
+        return static_cast<QStringListModel *>(editor.findChild<QCompleter *>()->model())->stringList();
+    };
+    const QStringList labels = offered("\\ref{");
+    QVERIFY(labels.contains("visible") && labels.contains("escapedPercent"));
+    QVERIFY(!labels.contains("hidden") && !labels.contains("afterLineBreakComment"));
+    const QStringList commands = offered("\\");
+    QVERIFY(!commands.contains("\\hiddenmacro"));
+    QVERIFY(!commands.contains("\\dv{\u2022}{\u2022}"));
+    QVERIFY(!offered("\\begin{").contains("hiddenenvironment"));
+}
+
+void Tests::bibliographyRefresh()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath("refs.bib");
+    write(path, "@article{oldKey, title={Old}}\n");
+    Editor editor;
+    editor.setProperty("path", dir.filePath("main.tex"));
+    auto offered = [&]
+    {
+        editor.setPlainText("\\cite{");
+        editor.moveCursor(QTextCursor::End);
+        QTest::keyClick(&editor, Qt::Key_Space, Qt::ControlModifier);
+        return static_cast<QStringListModel *>(editor.findChild<QCompleter *>()->model())->stringList();
+    };
+    QVERIFY(offered().contains("oldKey"));
+    const QDateTime changed = QFileInfo(path).lastModified().addSecs(2);
+    write(path, "@article{newKey, title={New}}\n");
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::ReadWrite));
+    QVERIFY(file.setFileTime(changed, QFileDevice::FileModificationTime));
+    file.close();
+    const QStringList keys = offered();
+    QVERIFY(keys.contains("newKey") && !keys.contains("oldKey"));
+    QVERIFY(QFile::remove(path));
+    QVERIFY(offered().isEmpty());
+}
+
+void Tests::escapedBrackets()
+{
+    Editor editor;
+    editor.setPlainText("{\\}");
+    auto cursor = editor.textCursor();
+    cursor.setPosition(2);
+    editor.setTextCursor(cursor);
+    QTest::keyClicks(&editor, "}");
+    QCOMPARE(editor.toPlainText(), "{\\}}");
+    for (int count = 0; count <= 4; ++count)
+    {
+        const QString prefix(count, '\\');
+        editor.setPlainText(prefix);
+        editor.moveCursor(QTextCursor::End);
+        QTest::keyClicks(&editor, "{");
+        const bool isEscaped = count % 2;
+        QCOMPARE(editor.toPlainText(), prefix + (isEscaped ? "{" : "{}"));
+        QCOMPARE(editor.extraSelections().size(), isEscaped ? 1 : 3);
+        QTest::keyClick(&editor, Qt::Key_Backspace);
+        QCOMPARE(editor.toPlainText(), prefix);
+        editor.undoText();
+        QCOMPARE(editor.toPlainText(), prefix + (isEscaped ? "{" : "{}"));
+        editor.redoText();
+        QCOMPARE(editor.toPlainText(), prefix);
+    }
+}
+
 void Tests::editorAidsAndOutline()
 {
     Editor editor;
@@ -389,6 +481,145 @@ void Tests::externalEditsReload()
     QVERIFY(editor->document()->isModified());
 }
 
+void Tests::externalFormatReload()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath("main.tex");
+    write(path, "same\ntext\n");
+    Window window;
+    QVERIFY(window.openSource(path));
+    auto *editor = window.currentEditor();
+    const QByteArray changed = QByteArray::fromHex("efbbbf") + "same\r\ntext\r\n";
+    write(path, changed);
+    QTest::qWait(600);
+    QVERIFY(editor->property("bom").toBool());
+    QCOMPARE(editor->property("lineEnding").toString(), "\r\n");
+    QVERIFY(!editor->document()->isModified());
+    editor->moveCursor(QTextCursor::End);
+    editor->insertPlainText("mine");
+    for (auto *action : window.actions()) if (action->text() == "Save") action->trigger();
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QCOMPARE(file.readAll(), changed + "mine");
+    file.close();
+    QCOMPARE(window.recentFiles().first(), path);
+
+    // A detected conflict must still ask even when a writer preserves the timestamp.
+    editor->insertPlainText(" local");
+    const QDateTime savedTime = editor->property("mtime").toDateTime();
+    write(path, "external\n");
+    QVERIFY(file.open(QIODevice::ReadWrite));
+    QVERIFY(file.setFileTime(savedTime, QFileDevice::FileModificationTime));
+    file.close();
+    QTRY_VERIFY(editor->property("conflict").toBool());
+    bool asked = false;
+    QTimer timer;
+    connect(&timer, &QTimer::timeout, &window, [&]
+    {
+        if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))
+        { asked = true; box->done(QMessageBox::No); }
+    });
+    timer.start(10);
+    for (auto *action : window.actions()) if (action->text() == "Save") action->trigger();
+    QVERIFY(asked);
+    QVERIFY(editor->document()->isModified());
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QCOMPARE(file.readAll(), QByteArray("external\n"));
+}
+
+void Tests::saveAsOpenTab()
+{
+    QTemporaryDir dir;
+    const QString first = dir.filePath("first.tex"), second = dir.filePath("second.tex");
+    write(first, "first\n");
+    write(second, "second\n");
+    Window window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QVERIFY(window.openSource(second));
+    auto *other = window.currentEditor();
+    other->insertPlainText("unsaved ");
+    const QString alias = dir.filePath("alias.tex");
+    QVERIFY(QFile::link(second, alias));
+    QVERIFY(window.openSource(alias));
+    QCOMPARE(window.currentEditor(), other);
+    QVERIFY(window.openSource(first));
+    auto *editor = window.currentEditor();
+    bool blocked = false;
+    QTimer timer;
+    connect(&timer, &QTimer::timeout, &window, [&]
+    {
+        auto *modal = QApplication::activeModalWidget();
+        if (auto *dialog = qobject_cast<QFileDialog *>(modal))
+        {
+            dialog->setOption(QFileDialog::DontConfirmOverwrite);
+            if (auto *name = dialog->findChild<QLineEdit *>("fileNameEdit")) name->setText(alias);
+            QMetaObject::invokeMethod(dialog, "accept", Qt::QueuedConnection);
+        }
+        else if (auto *box = qobject_cast<QMessageBox *>(modal))
+        { blocked = box->text().contains("already open"); box->done(QMessageBox::Ok); }
+    });
+    timer.start(10);
+    for (auto *action : window.actions()) if (action->text() == "Save as…") action->trigger();
+    QVERIFY(blocked);
+    QCOMPARE(editor->property("path").toString(), first);
+    QCOMPARE(other->toPlainText(), "unsaved second\n");
+    QFile file(second);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QCOMPARE(file.readAll(), QByteArray("second\n"));
+}
+
+void Tests::pdfFindNavigation()
+{
+    QTemporaryDir dir;
+    QString path = dir.filePath("matches.pdf");
+    {
+        QPdfWriter writer(path);
+        writer.setResolution(72);
+        QPainter painter(&writer);
+        for (int page = 0; page < 3; ++page)
+        {
+            if (page) writer.newPage();
+            painter.drawText(QPointF(60, 100), "needle needle");
+        }
+    }
+    Window window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    auto *viewer = window.pdfView();
+    QAction *toggle = nullptr, *previous = nullptr, *next = nullptr;
+    for (auto *action : window.actions())
+    {
+        if (action->text() == "Toggle PDF") toggle = action;
+        if (action->text() == "Find previous") previous = action;
+        if (action->text() == "Find next") next = action;
+    }
+    QVERIFY(toggle && previous && next);
+    toggle->trigger();
+    QVERIFY(!viewer->isVisible());
+    window.openPdf(path);
+    QVERIFY(viewer->isVisible());
+    QTRY_COMPARE(viewer->pageCount(), 3);
+    viewer->goToPage(2);
+    QSignalSpy matches(viewer, &PdfView::matchChanged);
+    viewer->find("needle", true, Poppler::Page::IgnoreCase);
+    QTRY_COMPARE(matches.size(), 1);
+    QCOMPARE(matches.last().at(1).toInt(), 6);
+    QCOMPARE(viewer->currentMatch(), 3); // last match on the current page
+    viewer->setFocus();
+    QTest::keyClick(viewer, Qt::Key_F, Qt::ControlModifier);
+    auto *input = window.findChild<QWidget *>("pdfFindBar")->findChild<QLineEdit *>();
+    QVERIFY(input);
+    input->setText("needle");
+    previous->trigger();
+    QCOMPARE(viewer->currentMatch(), 2);
+    next->trigger();
+    QCOMPARE(viewer->currentMatch(), 3);
+    viewer->find("");
+    QCOMPARE(viewer->currentMatch(), -1);
+    QCOMPARE(matches.last().at(1).toInt(), -1);
+}
+
 void Tests::pdfInteraction()
 {
     // Without any installed font QPdfWriter produces no extractable text (minimal containers).
@@ -446,6 +677,107 @@ void Tests::pdfInteraction()
     QCOMPARE(matches.last().at(1).toInt(), 0);
 }
 
+void Tests::pdfBlankSelection()
+{
+    QTemporaryDir dir;
+    QString path = dir.filePath("blank-selection.pdf");
+    {
+        QPdfWriter writer(path);
+        writer.setResolution(72);
+        QPainter painter(&writer);
+        painter.drawRect(QRectF(60, 60, 100, 100)); // an image-only page has no selectable words
+    }
+    PdfView viewer;
+    viewer.resize(700, 900);
+    viewer.show();
+    viewer.open(path);
+    QTRY_VERIFY_WITH_TIMEOUT(viewer.cachedTiles() > 0 && viewer.renderingIdle(), 5000);
+    auto *area = viewer.viewport();
+    QSignalSpy requested(&viewer, &PdfView::textRequested);
+    QTest::mouseMove(area, QPoint(100, 100));
+    QTRY_COMPARE(requested.size(), 1);
+    QTest::qWait(300); // extraction is queued on the renderer thread
+    QTest::mouseDClick(area, Qt::LeftButton, {}, QPoint(100, 100));
+    QVERIFY(viewer.selectedText().isEmpty());
+    QVERIFY(!area->grab().isNull()); // painting an empty selection must not index word -1
+    QTest::mousePress(area, Qt::LeftButton, {}, QPoint(100, 100));
+    QTest::mouseMove(area, QPoint(200, 100));
+    QTest::mouseRelease(area, Qt::LeftButton, {}, QPoint(200, 100));
+    QVERIFY(viewer.selectedText().isEmpty());
+    QVERIFY(!area->grab().isNull());
+}
+
+void Tests::pdfZeroPages()
+{
+    QTemporaryDir dir;
+    QString path = dir.filePath("zero-pages.pdf");
+    QByteArray data = "%PDF-1.4\n";
+    int catalog = data.size();
+    data += "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
+    int pages = data.size();
+    data += "2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n";
+    int xref = data.size();
+    data += "xref\n0 3\n0000000000 65535 f \n";
+    data += QByteArray::number(catalog).rightJustified(10, '0') + " 00000 n \n";
+    data += QByteArray::number(pages).rightJustified(10, '0') + " 00000 n \n";
+    data += "trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n" + QByteArray::number(xref) + "\n%%EOF\n";
+    write(path, data);
+    PdfView viewer;
+    QSignalSpy failed(&viewer, &PdfView::loadFailed);
+    QSignalSpy loaded(&viewer, &PdfView::documentReady);
+    viewer.open(path);
+    QTRY_VERIFY_WITH_TIMEOUT(!failed.isEmpty() || !loaded.isEmpty(), 5000);
+    QCOMPARE(failed.size(), 1);
+    QVERIFY(loaded.isEmpty());
+    QCOMPARE(viewer.pageCount(), 0);
+}
+
+void Tests::pdfStaleTiles()
+{
+    QTemporaryDir dir;
+    QString path = dir.filePath("many-pages.pdf");
+    {
+        QPdfWriter writer(path);
+        writer.setResolution(72);
+        QPainter painter(&writer);
+        for (int page = 0; page < 240; ++page)
+        {
+            if (page) QVERIFY(writer.newPage());
+            painter.drawRect(QRectF(60, 60, 100, 100));
+        }
+    }
+    PdfView viewer;
+    viewer.resize(700, 650);
+    QSignalSpy loaded(&viewer, &PdfView::documentReady);
+    QSignalSpy requested(&viewer, &PdfView::tileRequested);
+    viewer.show();
+    viewer.open(path);
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
+    QCOMPARE(viewer.pageCount(), 240);
+    QTRY_VERIFY_WITH_TIMEOUT(viewer.cachedTiles() > 0 && viewer.renderingIdle(), 5000);
+    QVERIFY(!requested.isEmpty());
+    Tile obsolete = qvariant_cast<Tile>(requested.last().first());
+    viewer.goToPage(240);
+    QCOMPARE(viewer.currentPage(), 240);
+    for (double zoom : {0.5, 4.0, 2.0, 1.0}) viewer.setZoom(zoom);
+    viewer.open(path);
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 2, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(viewer.cachedTiles() > 0 && viewer.renderingIdle(), 5000);
+    QVERIFY(viewer.cacheLimitKiB() <= 128 * 1024);
+    QVERIFY(viewer.cacheKiB() <= viewer.cacheLimitKiB());
+    QImage image(16, 16, QImage::Format_ARGB32);
+    image.fill(Qt::red);
+    const int count = viewer.cachedTiles(), cost = viewer.cacheKiB();
+    QVERIFY(QMetaObject::invokeMethod(&viewer, "tileFinished", Qt::DirectConnection, Q_ARG(Tile, obsolete), Q_ARG(QImage, image)));
+    QCOMPARE(viewer.cachedTiles(), count);
+    QCOMPARE(viewer.cacheKiB(), cost);
+    Tile wrongDpi = qvariant_cast<Tile>(requested.last().first());
+    ++wrongDpi.dpi1000;
+    QVERIFY(QMetaObject::invokeMethod(&viewer, "tileFinished", Qt::DirectConnection, Q_ARG(Tile, wrongDpi), Q_ARG(QImage, image)));
+    QCOMPARE(viewer.cachedTiles(), count);
+    QCOMPARE(viewer.cacheKiB(), cost);
+}
+
 void Tests::rebuildKeepsWarnings()
 {
     // A successful build with warnings, then F5 again without changes: latexmk does nothing and
@@ -485,6 +817,24 @@ void Tests::packageErrorProblems()
     QCOMPARE(QFileInfo(problems[0].file), QFileInfo(project.filePath("main.tex")));
     QCOMPARE(problems[0].line, 0);
     QVERIFY(problems[0].error && problems[0].message.startsWith("pkg.sty: Package keyval Error"));
+}
+
+void Tests::logPathsWithParentheses()
+{
+    QTemporaryDir project;
+    QString main = project.filePath("main (draft).tex");
+    QString chapter = project.filePath("chapter (draft).tex");
+    write(main, "\\documentclass{article}\n");
+    write(chapter, "See \\ref{missing}.\n");
+    const QString warning = "LaTeX Warning: Reference `missing' on page 1 undefined on input line 1.\n";
+    QString log = "(./main (draft).tex\n(./chapter (draft).tex\n" + warning + warning
+        + ")\nLaTeX Warning: There were undefined references.\n)\n";
+    const auto problems = BuildRunner::parseLog(log, project.path());
+    QCOMPARE(problems.size(), 2);
+    QCOMPARE(problems[0].file, chapter);
+    QCOMPARE(problems[0].line, 1);
+    QCOMPARE(problems[1].file, main);
+    QCOMPARE(problems[1].line, 0);
 }
 
 void Tests::buildProblems()
@@ -1186,6 +1536,10 @@ void Tests::findReplace()
     editor.undo();
     QCOMPARE(editor.toPlainText(), "x bar Foo baz foo");
     QVERIFY(!editor.findText("absent"));
+    editor.moveCursor(QTextCursor::End);
+    const int position = editor.textCursor().position();
+    QVERIFY(!editor.findText("absent"));
+    QCOMPARE(editor.textCursor().position(), position);
     editor.setPlainText("Foo foo food");
     int current = 0;
     QCOMPARE(editor.countMatches("foo", {}, &current), 3);
@@ -1643,6 +1997,98 @@ void Tests::compilation()
     QVERIFY(back.contains("main file.tex") && back.contains("Line:3"));
 }
 
+void Tests::buildBoundaryCases_data()
+{
+    QTest::addColumn<QString>("engine");
+    QTest::addColumn<QString>("executable");
+    QTest::newRow("pdfLaTeX") << QString("pdfLaTeX") << QString("pdflatex");
+    QTest::newRow("LuaLaTeX") << QString("LuaLaTeX") << QString("lualatex");
+    QTest::newRow("XeLaTeX") << QString("XeLaTeX") << QString("xelatex");
+}
+
+void Tests::buildBoundaryCases()
+{
+    QFETCH(QString, engine);
+    QFETCH(QString, executable);
+    if (QStandardPaths::findExecutable("latexmk").isEmpty()) QSKIP("latexmk unavailable");
+    if (QStandardPaths::findExecutable(executable).isEmpty()) QSKIP(qPrintable(executable + " unavailable"));
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QVERIFY(QDir(dir.path()).mkdir("chapters"));
+    const QString chapter = dir.filePath("chapters/intro.tex");
+    write(chapter, "% !TeX root = ../missing.tex\n");
+    QVERIFY(BuildRunner::rootFile(chapter).isEmpty());
+    BuildRunner runner;
+    QSignalSpy done(&runner, &BuildRunner::finished);
+    QVERIFY(!runner.start(chapter, engine));
+    QCOMPARE(done.size(), 1);
+    QVERIFY(!done.first().at(0).toBool());
+    QVERIFY(!runner.running());
+
+    const QByteArray valid = "\\documentclass{article}\n\\begin{document}\nHello.\n\\end{document}\n";
+    const QString unicodeRoot = dir.filePath("Bản thảo.tex");
+    write(unicodeRoot, valid);
+    write(chapter, QString("% !TeX root = ../Bản thảo.tex\n").toUtf8());
+    QCOMPARE(BuildRunner::rootFile(chapter), unicodeRoot);
+
+    const QString main = dir.filePath("main file.tex");
+    const QList<QByteArray> sources = {valid, valid,
+        "\\documentclass{article}\n\\begin{document}\n\\undefinedAuditCommand\n\\end{document}\n",
+        "\\documentclass{article}\n\\usepackage{folitex-audit-nonexistent-package}\n\\begin{document}Hello.\\end{document}\n"};
+    for (int i = 0; i < sources.size(); ++i)
+    {
+        if (i == 1) QVERIFY(QDir(dir.filePath(".folitex-build")).removeRecursively());
+        write(main, sources[i]);
+        done.clear();
+        QVERIFY(runner.start(main, engine));
+        QTRY_COMPARE_WITH_TIMEOUT(done.size(), 1, 12000);
+        QCOMPARE(done.first().at(0).toBool(), i < 2);
+        QVERIFY(!runner.running());
+        if (i < 2) QVERIFY(QFileInfo::exists(BuildRunner::pdfPath(main)));
+        else
+        {
+            QFile log(dir.filePath(".folitex-build/main file.log"));
+            QVERIFY(log.open(QIODevice::ReadOnly));
+            const QByteArray text = log.readAll();
+            QVERIFY(text.contains(i == 2 ? "Undefined control sequence" : "folitex-audit-nonexistent-package"));
+        }
+    }
+}
+
+void Tests::cancellationKeepsUnrelatedProcess()
+{
+#ifdef Q_OS_UNIX
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString command = dir.filePath("latexmk");
+    write(command, "#!/bin/sh\ntrap '' TERM\nexec sleep 30\n");
+    QVERIFY(QFile::setPermissions(command, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner));
+    const QString source = dir.filePath("hung.tex");
+    write(source, "\\documentclass{article}\n");
+    QProcess unrelated;
+    unrelated.start("sleep", {"30"});
+    QVERIFY(unrelated.waitForStarted(3000));
+    auto cleanup = qScopeGuard([&] { unrelated.kill(); unrelated.waitForFinished(3000); });
+    const QByteArray oldPath = qgetenv("PATH");
+    auto restore = qScopeGuard([&] { qputenv("PATH", oldPath); });
+    qputenv("PATH", dir.path().toUtf8() + ':' + oldPath);
+    BuildRunner runner;
+    QSignalSpy done(&runner, &BuildRunner::finished);
+    QVERIFY(runner.start(source, "pdfLaTeX"));
+    for (int i = 0; i < 5; ++i) QVERIFY(!runner.start(source, "pdfLaTeX"));
+    QTest::qWait(100);
+    QVERIFY(runner.running());
+    runner.stop();
+    runner.stop();
+    QTRY_COMPARE_WITH_TIMEOUT(done.size(), 1, 5000);
+    QVERIFY(!runner.running());
+    QVERIFY(runner.cancelled());
+    QCOMPARE(unrelated.state(), QProcess::Running);
+#else
+    QSKIP("Process-group cancellation is Unix-specific");
+#endif
+}
+
 void Tests::utf8AndInvalidInput()
 {
     QTemporaryDir dir;
@@ -1692,6 +2138,24 @@ void Tests::sourceRoundtrip()
     QVERIFY(saved);
     QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly));
     QCOMPARE(file.readAll(), original + "% saved");
+}
+
+void Tests::mixedNewlinesRejected()
+{
+    QTemporaryDir dir;
+    Window window;
+    window.currentEditor()->setPlainText("keep this buffer");
+    for (const QByteArray &bytes : {QByteArray("first\r\nsecond\n"), QByteArray("first\rsecond\n"),
+            QByteArray("first\r\nsecond\r")})
+    {
+        const QString path = dir.filePath("mixed.tex");
+        write(path, bytes);
+        QVERIFY(!window.openSource(path));
+        QCOMPARE(window.currentEditor()->toPlainText(), "keep this buffer");
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.readAll(), bytes);
+    }
 }
 
 void Tests::immediateCancellation()

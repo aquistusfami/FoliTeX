@@ -1,0 +1,13 @@
+********* Start testing of Tests *********
+Config: Using QtTest library 6.12.0, Qt 6.12.0 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 16.2.1 20260810), arch unknown
+PASS   : Tests::initTestCase()
+Received signal 11 (SIGSEGV), code SEGV_MAPERR, at instruction address 0x000055b71a53e0c3, accessing address 0xffffffffffffffd0
+         pdfBlankSelection function time: 381ms, total time: 382ms
+
+=== Stack trace ===
+warning: the /proc/sys/kernel/yama/ptrace_scope setting of 1 might prevent attaching, see 'man 2 ptrace'
+ptrace: Operation not permitted.
+   0x1a53e0c3:	Cannot access memory at address 0x1a53e0c3
+
+No current process: you must name one.
+=== End of stack trace ===

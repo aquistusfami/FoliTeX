@@ -1,0 +1,17 @@
+[  0%] Built target folitex_lib_autogen_timestamp_deps
+[  5%] Automatic MOC for target folitex_lib
+[  5%] Built target folitex_lib_autogen
+[ 16%] Building CXX object CMakeFiles/folitex_lib.dir/src/pdfview.cpp.o
+[ 16%] Building CXX object CMakeFiles/folitex_lib.dir/src/window.cpp.o
+[ 22%] Linking CXX static library libfolitex_lib.a
+[ 44%] Built target folitex_lib
+[ 44%] Built target folitex_autogen_timestamp_deps
+[ 44%] Built target folitex_tests_autogen_timestamp_deps
+[ 50%] Built target folitex_autogen
+[ 61%] Linking CXX executable folitex
+[ 83%] Built target folitex
+[ 55%] Automatic MOC for target folitex_tests
+[ 83%] Built target folitex_tests_autogen
+[ 88%] Building CXX object CMakeFiles/folitex_tests.dir/tests/tests.cpp.o
+[ 94%] Linking CXX executable folitex_tests
+[100%] Built target folitex_tests

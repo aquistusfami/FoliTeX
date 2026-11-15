@@ -116,6 +116,7 @@ protected:
 private:
     QTextDocument::FindFlags findFlags() const;
     void findInEditor(bool backwards);
+    void findInPdf(bool backwards);
     void updateFindCount();
     void placeFind();
     void updateTabButtons();

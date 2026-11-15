@@ -1,0 +1,13 @@
+********* Start testing of Tests *********
+Config: Using QtTest library 6.12.0, Qt 6.12.0 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 16.2.1 20260810), arch unknown
+PASS   : Tests::initTestCase()
+QWARN  : Tests::pdfBlankSelection() Mouse event "MouseRelease" not accepted by receiving widget
+PASS   : Tests::pdfBlankSelection()
+QDEBUG : Tests::pdfZeroPages() "Error: Invalid page count 0"
+FAIL!  : Tests::pdfZeroPages() Compared values are not the same
+   Actual   (failed.size()): 0
+   Expected (1)            : 1
+   Loc: [/home/aquistus/Projects/TeXLite/tests/tests.cpp(695)]
+PASS   : Tests::cleanupTestCase()
+Totals: 3 passed, 1 failed, 0 skipped, 0 blacklisted, 437ms
+********* Finished testing of Tests *********

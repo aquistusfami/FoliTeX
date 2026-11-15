@@ -1,0 +1,175 @@
+Test project /home/aquistus/Projects/TeXLite/build
+    Start 1: folitex_tests
+1/1 Test #1: folitex_tests ....................***Failed   17.52 sec
+********* Start testing of Tests *********
+Config: Using QtTest library 6.12.0, Qt 6.12.0 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 16.2.1 20260810), arch unknown
+PASS   : Tests::initTestCase()
+PASS   : Tests::rootFiles()
+PASS   : Tests::editorCommentUndo()
+QWARN  : Tests::completionAndSnippets() This plugin does not support raise()
+QWARN  : Tests::completionAndSnippets() This plugin does not support grabbing the keyboard
+QWARN  : Tests::completionAndSnippets() This plugin does not support raise()
+QWARN  : Tests::completionAndSnippets() This plugin does not support grabbing the keyboard
+QWARN  : Tests::completionAndSnippets() This plugin does not support raise()
+QWARN  : Tests::completionAndSnippets() This plugin does not support grabbing the keyboard
+QWARN  : Tests::completionAndSnippets() This plugin does not support raise()
+QWARN  : Tests::completionAndSnippets() This plugin does not support grabbing the keyboard
+QWARN  : Tests::completionAndSnippets() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::completionAndSnippets() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::completionAndSnippets()
+QWARN  : Tests::editorAidsAndOutline() This plugin does not support raise()
+QWARN  : Tests::editorAidsAndOutline() This plugin does not support grabbing the keyboard
+QWARN  : Tests::editorAidsAndOutline() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::editorAidsAndOutline() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::editorAidsAndOutline()
+PASS   : Tests::escapedBrackets()
+QWARN  : Tests::completionIgnoresComments() This plugin does not support raise()
+QWARN  : Tests::completionIgnoresComments() This plugin does not support grabbing the keyboard
+FAIL!  : Tests::completionIgnoresComments() '!labels.contains("hidden") && !labels.contains("afterLineBreakComment")' returned FALSE. ()
+   Loc: [/home/aquistus/Projects/TeXLite/tests/tests.cpp(279)]
+QWARN  : Tests::bibliographyRefresh() This plugin does not support raise()
+QWARN  : Tests::bibliographyRefresh() This plugin does not support grabbing the keyboard
+PASS   : Tests::bibliographyRefresh()
+QWARN  : Tests::workspaceTree() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::workspaceTree() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+QDEBUG : Tests::workspaceTree() "Error: May not be a PDF file (continuing anyway)"
+QDEBUG : Tests::workspaceTree() "Error: Couldn't find trailer dictionary"
+QDEBUG : Tests::workspaceTree() "Error: Couldn't find trailer dictionary"
+QDEBUG : Tests::workspaceTree() "Error: Couldn't read xref table"
+PASS   : Tests::workspaceTree()
+QWARN  : Tests::externalEditsReload() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::externalEditsReload() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::externalEditsReload()
+QWARN  : Tests::externalFormatReload() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::externalFormatReload() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+QWARN  : Tests::externalFormatReload() This plugin does not support propagateSizeHints()
+PASS   : Tests::externalFormatReload()
+QWARN  : Tests::saveAsOpenTab() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::saveAsOpenTab() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+QWARN  : Tests::saveAsOpenTab() This plugin does not support propagateSizeHints()
+QWARN  : Tests::saveAsOpenTab() This plugin does not support propagateSizeHints()
+PASS   : Tests::saveAsOpenTab()
+QWARN  : Tests::pdfFindNavigation() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::pdfFindNavigation() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::pdfFindNavigation()
+QWARN  : Tests::pdfInteraction() Mouse event "MouseRelease" not accepted by receiving widget
+QWARN  : Tests::pdfInteraction() Mouse event "MouseRelease" not accepted by receiving widget
+PASS   : Tests::pdfInteraction()
+QWARN  : Tests::pdfBlankSelection() Mouse event "MouseRelease" not accepted by receiving widget
+PASS   : Tests::pdfBlankSelection()
+QDEBUG : Tests::pdfZeroPages() "Error: Invalid page count 0"
+PASS   : Tests::pdfZeroPages()
+PASS   : Tests::pdfStaleTiles()
+QWARN  : Tests::findReplace() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::findReplace() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::findReplace()
+PASS   : Tests::tabIndent()
+PASS   : Tests::continueList()
+PASS   : Tests::inverseSearchWord()
+QWARN  : Tests::sessionRestore() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::sessionRestore() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+QWARN  : Tests::sessionRestore() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::sessionRestore() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::sessionRestore()
+QWARN  : Tests::projectReferences() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::projectReferences() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+QWARN  : Tests::projectReferences() This plugin does not support raise()
+QWARN  : Tests::projectReferences() This plugin does not support grabbing the keyboard
+PASS   : Tests::projectReferences()
+QWARN  : Tests::mathAndImagePreview() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::mathAndImagePreview() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::mathAndImagePreview()
+QWARN  : Tests::presentation() Mouse event "MouseRelease" not accepted by receiving widget
+PASS   : Tests::presentation()
+PASS   : Tests::folding()
+QWARN  : Tests::syntaxColors() This plugin does not support propagateSizeHints()
+QWARN  : Tests::syntaxColors() This plugin does not support raise()
+PASS   : Tests::syntaxColors()
+QWARN  : Tests::buildOnSave() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::buildOnSave() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::buildOnSave()
+QWARN  : Tests::explorerOperations() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::explorerOperations() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::explorerOperations()
+QWARN  : Tests::fontThemeAndTemplates() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::fontThemeAndTemplates() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::fontThemeAndTemplates()
+PASS   : Tests::undoWithWrapIndent()
+QWARN  : Tests::tabScrolling() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::tabScrolling() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::tabScrolling()
+QWARN  : Tests::packageCompletion() This plugin does not support raise()
+QWARN  : Tests::packageCompletion() This plugin does not support grabbing the keyboard
+QWARN  : Tests::packageCompletion() This plugin does not support raise()
+QWARN  : Tests::packageCompletion() This plugin does not support grabbing the keyboard
+PASS   : Tests::packageCompletion()
+QWARN  : Tests::menuBarToggle() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::menuBarToggle() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::menuBarToggle()
+QWARN  : Tests::buildProblems() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::buildProblems() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::buildProblems()
+PASS   : Tests::logPathsWithParentheses()
+PASS   : Tests::packageErrorProblems()
+QWARN  : Tests::rebuildKeepsWarnings() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::rebuildKeepsWarnings() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::rebuildKeepsWarnings()
+QWARN  : Tests::wordWrap() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::wordWrap() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::wordWrap()
+PASS   : Tests::kineticScroll()
+PASS   : Tests::touchpadPixels()
+PASS   : Tests::wheelAnimation()
+PASS   : Tests::tiledPdf()
+QWARN  : Tests::navigationHistory() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::navigationHistory() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::navigationHistory()
+QWARN  : Tests::quickOpenAndCommands() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::quickOpenAndCommands() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::quickOpenAndCommands()
+QWARN  : Tests::selectionBarAndFocusMode() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::selectionBarAndFocusMode() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+QWARN  : Tests::selectionBarAndFocusMode() This plugin does not support raise()
+PASS   : Tests::selectionBarAndFocusMode()
+QWARN  : Tests::honestEmptyStates() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::honestEmptyStates() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::honestEmptyStates()
+PASS   : Tests::darkPdfPages()
+PASS   : Tests::compilation()
+PASS   : Tests::buildBoundaryCases(pdfLaTeX)
+FAIL!  : Tests::buildBoundaryCases(LuaLaTeX) Compared values are not the same
+   Actual   (done.first().at(0).toBool()): 0
+   Expected (i < 2)                      : 1
+   Loc: [/home/aquistus/Projects/TeXLite/tests/tests.cpp(2045)]
+PASS   : Tests::buildBoundaryCases(XeLaTeX)
+PASS   : Tests::cancellationKeepsUnrelatedProcess()
+QWARN  : Tests::utf8AndInvalidInput() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::utf8AndInvalidInput() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::utf8AndInvalidInput()
+QDEBUG : Tests::pdfErrors() "Error: May not be a PDF file (continuing anyway)"
+QDEBUG : Tests::pdfErrors() "Error: Couldn't find trailer dictionary"
+QDEBUG : Tests::pdfErrors() "Error: Couldn't find trailer dictionary"
+QDEBUG : Tests::pdfErrors() "Error: Couldn't read xref table"
+PASS   : Tests::pdfErrors()
+QWARN  : Tests::sourceRoundtrip() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::sourceRoundtrip() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::sourceRoundtrip()
+QWARN  : Tests::mixedNewlinesRejected() qt.svg: Cannot open file ':/chevron-right.svg', because: No such file or directory
+QWARN  : Tests::mixedNewlinesRejected() qt.svg: Cannot open file ':/chevron-down.svg', because: No such file or directory
+PASS   : Tests::mixedNewlinesRejected()
+PASS   : Tests::immediateCancellation()
+PASS   : Tests::largePdfViewport()
+PASS   : Tests::failedTileDoesNotSpin()
+PASS   : Tests::cancellationCleansOrphanCompiler()
+PASS   : Tests::cleanupTestCase()
+Totals: 60 passed, 2 failed, 0 skipped, 0 blacklisted, 17481ms
+********* Finished testing of Tests *********
+
+
+0% tests passed, 1 tests failed out of 1
+
+Total Test time (real) =  17.52 sec
+
+The following tests FAILED:
+	  1 - folitex_tests (Failed)
+Errors while running CTest

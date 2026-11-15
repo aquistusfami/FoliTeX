@@ -37,7 +37,12 @@
 // U+2022 marks a placeholder in completion templates; it is never inserted into the source.
 static const QChar placeholderMark(0x2022);
 
-static bool escaped(const QTextDocument *document, int position) { return document->characterAt(position - 1) == '\\'; }
+static bool escaped(const QTextDocument *document, int position)
+{
+    int backslashes = 0;
+    while (position > 0 && document->characterAt(--position) == '\\') ++backslashes;
+    return backslashes % 2 != 0;
+}
 
 static const QStringList builtinCommands = {
     "\\documentclass{•}", "\\documentclass[•]{•}", "\\usepackage{•}", "\\usepackage[•]{•}", "\\begin{•}", "\\end{•}",
@@ -806,7 +811,10 @@ void Editor::scan()
         R"(\\(?:(?:re)?newcommand|providecommand|DeclareMathOperator)\*?\s*\{?\s*(\\[A-Za-z@]+)\s*\}?\s*(?:\[(\d)\])?)"
         R"(|\\def\s*(\\[A-Za-z@]+)|\\newenvironment\*?\s*\{([A-Za-z*]+)\}\s*(?:\[(\d)\])?|\\label\{([^{}]+)\})"
         R"(|\\(?:usepackage|RequirePackage|documentclass)(?:\[[^\]]*\])?\{([^{}]+)\})");
-    for (auto it = definition.globalMatch(toPlainText()); it.hasNext();)
+    static const QRegularExpression comment(R"((?<!\\)(?:\\\\)*\K%.*$)", QRegularExpression::MultilineOption);
+    QString text = toPlainText();
+    text.remove(comment);
+    for (auto it = definition.globalMatch(text); it.hasNext();)
     {
         auto match = it.next();
         if (match.hasCaptured(1)) m_macros << match.captured(1) + QString("{•}").repeated(match.captured(2).toInt());
@@ -961,13 +969,13 @@ void Editor::keyPressEvent(QKeyEvent *event)
     if (typed.size() == 1 && !(event->modifiers() & (Qt::ControlModifier | Qt::AltModifier)))
     {
         int open = opening.indexOf(typed[0]);
-        if (closing.contains(typed[0]) && next == typed[0] && !cursor.hasSelection())
+        if (closing.contains(typed[0]) && next == typed[0] && !cursor.hasSelection() && !escaped(document(), cursor.position()))
         {
             moveCursor(QTextCursor::NextCharacter);
             return;
         }
         // Brackets auto-close unless escaped (\{) or typed directly before a word.
-        if (open >= 0 && previous != '\\' && (cursor.hasSelection() || !next.isLetterOrNumber()))
+        if (open >= 0 && !escaped(document(), cursor.position()) && (cursor.hasSelection() || !next.isLetterOrNumber()))
         {
             QString selected = cursor.selectedText().replace(QChar::ParagraphSeparator, '\n');
             cursor.insertText(typed + selected + closing[open]);
@@ -1884,11 +1892,13 @@ void Editor::shiftLines(bool outdent)
 bool Editor::findText(const QString &text, QTextDocument::FindFlags flags)
 {
     if (text.isEmpty()) return false;
-    if (find(text, flags)) return true;
-    auto cursor = textCursor();
-    cursor.movePosition(flags & QTextDocument::FindBackward ? QTextCursor::End : QTextCursor::Start);
-    setTextCursor(cursor);
-    return find(text, flags);
+    auto match = document()->find(text, textCursor(), flags);
+    if (match.isNull())
+        match = document()->find(text, flags & QTextDocument::FindBackward ? document()->characterCount() - 1 : 0, flags);
+    if (match.isNull()) return false;
+    setTextCursor(match);
+    ensureCursorVisible();
+    return true;
 }
 
 // Replaces the selected match, if any, then selects the next one.

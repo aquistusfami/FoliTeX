@@ -190,6 +190,7 @@ QList<Problem> BuildRunner::parseLog(const QString &log, const QString &director
     static const QRegularExpression warning(R"(^(?:LaTeX|Package (\S+)|Class (\S+)) Warning: (.*)$)");
     static const QRegularExpression inputLine(R"(on input line (\d+))");
     static const QRegularExpression box(R"(^((?:Over|Under)full \\[hv]box \([^)]*\))(?:.*? lines? (\d+))?)");
+    static const QRegularExpression fileEnd(R"(\.[A-Za-z0-9]+(?=[\s()]|$))");
     QString base = QDir(directory).absolutePath() + '/';
     // "(" + path in the log opens a file and ")" closes it; other parentheses are pushed as "".
     QStringList files;
@@ -249,8 +250,21 @@ QList<Problem> BuildRunner::parseLog(const QString &log, const QString &director
             QString name = text.mid(at + 1, end - at - 1);
             QString path = name.isEmpty() ? QString() : QDir::cleanPath(QDir(directory).absoluteFilePath(name));
             bool file = !path.isEmpty() && QFileInfo(path).isFile();
+            // TeX leaves spaces and parentheses in file markers unquoted.
+            if (!file)
+                for (auto ends = fileEnd.globalMatch(text, end); ends.hasNext();)
+                {
+                    int candidateEnd = int(ends.next().capturedEnd());
+                    QString candidate = QDir::cleanPath(QDir(directory).absoluteFilePath(text.mid(at + 1, candidateEnd - at - 1)));
+                    if (!QFileInfo(candidate).isFile()) continue;
+                    path = candidate;
+                    end = candidateEnd;
+                    file = true;
+                    break;
+                }
             files << (file ? path : QString());
             if (file && root.isEmpty() && path.startsWith(base)) root = path;
+            if (file) at = end - 1;
         }
     }
     return problems;
@@ -442,7 +456,7 @@ Window::Window() : m_runner(this)
     auto insert = [this](const QString &text) { return [this, text] { if (auto *editor = currentEditor()) editor->insertTemplate(text); }; };
     auto find = [this](bool backwards)
     {
-        if (m_pdfFindBar->isVisible() && m_pdfPane->isAncestorOf(QApplication::focusWidget())) emit m_pdfFind->returnPressed();
+        if (m_pdfFindBar->isVisible() && m_pdfPane->isAncestorOf(QApplication::focusWidget())) findInPdf(backwards);
         else findInEditor(backwards);
     };
     auto showFind = [this](bool replace)
@@ -772,13 +786,7 @@ Window::Window() : m_runner(this)
     m_pdfCase = new QCheckBox("Case sensitive");
     m_pdfWord = new QCheckBox("Whole words");
     m_pdfMatches = new QLabel;
-    auto pdfFind = [this](bool backwards)
-    {
-        Poppler::Page::SearchFlags flags;
-        if (!m_pdfCase->isChecked()) flags |= Poppler::Page::IgnoreCase;
-        if (m_pdfWord->isChecked()) flags |= Poppler::Page::WholeWords;
-        m_pdf->find(m_pdfFind->text(), backwards, flags);
-    };
+    auto pdfFind = [this](bool backwards) { findInPdf(backwards); };
     connect(m_pdfFind, &QLineEdit::returnPressed, this, [pdfFind] { pdfFind(QGuiApplication::keyboardModifiers() & Qt::ShiftModifier); });
     connect(pdfPrevious, &QToolButton::clicked, this, [pdfFind] { pdfFind(true); });
     connect(pdfNext, &QToolButton::clicked, this, [pdfFind] { pdfFind(false); });
@@ -1373,6 +1381,11 @@ static QString decodeSource(const QByteArray &bytes, QString &text)
     QStringDecoder decoder(QStringDecoder::Utf8, QStringConverter::Flag::Stateless);
     text = decoder(bytes);
     if (decoder.hasError()) return "Only UTF-8 sources are supported; convert the encoding first.";
+    QByteArray endings = bytes;
+    const bool crlf = endings.contains("\r\n");
+    endings.replace("\r\n", "");
+    if (int(crlf) + int(endings.contains('\r')) + int(endings.contains('\n')) > 1)
+        return "Source contains mixed line endings; convert them to LF or CRLF first to avoid changing bytes on save.";
     if (text.contains(QChar::LineSeparator) || text.contains(QChar::ParagraphSeparator))
         return "Source contains Unicode line separators U+2028/U+2029; convert them to LF or CRLF first.";
     return {};
@@ -1411,7 +1424,12 @@ void Window::reloadSource(Editor *editor)
     current.replace(QChar::ParagraphSeparator, QChar::LineFeed);
     if (text == current)
     {
+        editor->setProperty("bom", bytes.startsWith("\xef\xbb\xbf"));
+        editor->setProperty("lineEnding", lineEndingOf(bytes));
         editor->setProperty("mtime", QFileInfo(path).lastModified());
+        editor->setProperty("conflict", false);
+        setTabTitle(editor);
+        if (editor == currentEditor()) updatePosition();
         return;
     }
     if (editor->document()->isModified())
@@ -1824,8 +1842,10 @@ bool Window::openSource(const QString &path)
 {
     QFileInfo info(path);
     QString absolute = info.absoluteFilePath();
+    const QString canonical = info.canonicalFilePath();
     for (int i = 0; i < m_tabs->count(); ++i)
-        if (m_tabs->widget(i)->property("path").toString() == absolute)
+        if (QString open = m_tabs->widget(i)->property("path").toString(); open == absolute
+            || (!canonical.isEmpty() && QFileInfo(open).canonicalFilePath() == canonical))
         { m_tabs->setCurrentIndex(i); addRecent(absolute); return true; }
     QFile file(absolute);
     if (!file.open(QIODevice::ReadOnly)) { m_status->setText("Cannot open file: " + file.errorString()); return false; }
@@ -2132,7 +2152,17 @@ bool Window::save(Editor *editor, bool saveAs)
     if (saveAs || path.isEmpty())
         path = QFileDialog::getSaveFileName(this, "Save TeX", current.isEmpty() ? m_workspace : current, "TeX (*.tex);;All files (*)");
     if (path.isEmpty()) return false;
-    if (path == current && QFileInfo::exists(path) && QFileInfo(path).lastModified() != editor->property("mtime").toDateTime())
+    const QString absolute = QFileInfo(path).absoluteFilePath();
+    const QString canonical = QFileInfo(path).canonicalFilePath();
+    for (int i = 0; i < m_tabs->count(); ++i)
+        if (QString open = m_tabs->widget(i)->property("path").toString(); m_tabs->widget(i) != editor
+            && (open == absolute || (!canonical.isEmpty() && QFileInfo(open).canonicalFilePath() == canonical)))
+        {
+            QMessageBox::warning(this, "Cannot save", "This file is already open in another tab. Choose another name or close that tab first.");
+            return false;
+        }
+    if (absolute == current && QFileInfo::exists(path) && (editor->property("conflict").toBool()
+            || QFileInfo(path).lastModified() != editor->property("mtime").toDateTime()))
         if (QMessageBox::question(this, "File changed", "The file was modified on disk. Overwrite it with the open contents?") != QMessageBox::Yes) return false;
     QString text = editor->document()->toRawText();
     text.replace(QChar::ParagraphSeparator, QChar::LineFeed);
@@ -2151,6 +2181,7 @@ bool Window::save(Editor *editor, bool saveAs)
     setTabTitle(editor);
     if (!current.isEmpty() && current != editor->property("path").toString()) m_sourceWatcher.removePath(current);
     watchSource(editor->property("path").toString());
+    addRecent(editor->property("path").toString());
     return true;
 }
 
@@ -2225,6 +2256,7 @@ void Window::openPdf(const QString &path)
 {
     if (!m_watcher.files().isEmpty()) m_watcher.removePaths(m_watcher.files());
     m_watcher.addPath(path);
+    if (m_zenHidden.isEmpty()) m_pdfPane->show();
     m_pdf->show(); m_pdf->open(path);
 }
 
@@ -2280,6 +2312,14 @@ QTextDocument::FindFlags Window::findFlags() const
     if (m_findCase->isChecked()) flags |= QTextDocument::FindCaseSensitively;
     if (m_findWord->isChecked()) flags |= QTextDocument::FindWholeWords;
     return flags;
+}
+
+void Window::findInPdf(bool backwards)
+{
+    Poppler::Page::SearchFlags flags;
+    if (!m_pdfCase->isChecked()) flags |= Poppler::Page::IgnoreCase;
+    if (m_pdfWord->isChecked()) flags |= Poppler::Page::WholeWords;
+    m_pdf->find(m_pdfFind->text(), backwards, flags);
 }
 
 void Window::findInEditor(bool backwards)

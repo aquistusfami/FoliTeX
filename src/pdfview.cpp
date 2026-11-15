@@ -47,6 +47,11 @@ void PdfRenderer::open(const QString &path, int generation)
         emit loaded(generation, {}, "Invalid or password-protected PDF.");
         return;
     }
+    if (m_document->numPages() == 0)
+    {
+        emit loaded(generation, {}, "The PDF contains no pages.");
+        return;
+    }
     m_document->setRenderHint(Poppler::Document::Antialiasing, true);
     m_document->setRenderHint(Poppler::Document::TextAntialiasing, true);
     QList<QSizeF> sizes;
@@ -166,7 +171,7 @@ PdfView::PdfView(QWidget *parent) : QAbstractScrollArea(parent), m_renderer(new 
         m_matches = matches;
         // Start at the page in view, as other viewers do.
         int page = currentPage() - 1;
-        int first = int(std::lower_bound(m_matches.cbegin(), m_matches.cend(), page,
+        int first = int(std::lower_bound(m_matches.cbegin(), m_matches.cend(), page + (m_searchBackwards ? 1 : 0),
             [](const PdfMatch &match, int number) { return match.page < number; }) - m_matches.cbegin());
         m_match = m_matches.isEmpty() ? -1 : (m_searchBackwards ? first - 1 + m_matches.size() : first) % m_matches.size();
         showMatch();
@@ -416,7 +421,7 @@ void PdfView::paintEvent(QPaintEvent *)
             painter.fillRect(onScreen, QColor(226, 226, 226));
             painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
         }
-        if (number == m_selectionPage)
+        if (number == m_selectionPage && m_selectionFrom >= 0 && m_selectionTo >= 0)
             if (auto *text = m_text.object(number))
                 for (int i = std::min(m_selectionFrom, m_selectionTo); i <= std::max(m_selectionFrom, m_selectionTo) && i < text->words.size(); ++i)
                 {
@@ -514,7 +519,8 @@ void PdfView::goToPage(int page, double yPoints)
 
 void PdfView::find(const QString &query, bool backwards, Poppler::Page::SearchFlags flags)
 {
-    if (query.isEmpty() || m_pages.isEmpty()) return;
+    if (query.isEmpty()) { clearSearch(); return; }
+    if (m_pages.isEmpty()) return;
     if (query != m_query || int(flags) != m_searchFlags)
     {
         m_query = query;
