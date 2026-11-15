@@ -49,6 +49,7 @@ private slots:
     void bibliographyRefresh();
     void workspaceTree();
     void externalEditsReload();
+    void recreatedFileReloads();
     void externalFormatReload();
     void saveAsOpenTab();
     void pdfFindNavigation();
@@ -67,6 +68,7 @@ private slots:
     void folding();
     void syntaxColors();
     void buildOnSave();
+    void buildSavesAuxiliaryTabs();
     void explorerOperations();
     void fontThemeAndTemplates();
     void undoWithWrapIndent();
@@ -86,6 +88,7 @@ private slots:
     void quickOpenAndCommands();
     void selectionBarAndFocusMode();
     void honestEmptyStates();
+    void buildFailureEmptyProblemsState();
     void darkPdfPages();
     void compilation();
     void buildBoundaryCases_data();
@@ -479,6 +482,23 @@ void Tests::externalEditsReload()
     QVERIFY(editor->toPlainText().contains("mine "));
     QVERIFY(!editor->toPlainText().contains("section{B}"));
     QVERIFY(editor->document()->isModified());
+}
+
+void Tests::recreatedFileReloads()
+{
+    QTemporaryDir dir;
+    QString path = dir.filePath("main.tex");
+    write(path, "\\section{Original}\n");
+    Window window;
+    QVERIFY(window.openSource(path));
+    auto *editor = window.currentEditor();
+    QCOMPARE(editor->toPlainText(), QString("\\section{Original}\n"));
+
+    QVERIFY(QFile::remove(path));
+    QTest::qWait(300);
+
+    write(path, "\\section{Recreated}\n");
+    QTRY_VERIFY_WITH_TIMEOUT(editor->toPlainText().contains("Recreated"), 3000);
 }
 
 void Tests::externalFormatReload()
@@ -1344,6 +1364,54 @@ void Tests::buildOnSave()
     QTRY_VERIFY_WITH_TIMEOUT(!status("Building…"), 60000);
 }
 
+void Tests::buildSavesAuxiliaryTabs()
+{
+    QTemporaryDir dir;
+    const QString mainPath = dir.filePath("main.tex");
+    const QString styPath = dir.filePath("custom.sty");
+    const QString bibPath = dir.filePath("refs.bib");
+
+    write(mainPath, "\\documentclass{article}\n\\usepackage{custom}\n\\bibliography{refs}\n\\begin{document}\nHi\n\\end{document}\n");
+    write(styPath, "% original sty\n");
+    write(bibPath, "% original bib\n");
+
+    QCOMPARE(BuildRunner::rootFile(styPath), mainPath);
+    QCOMPARE(BuildRunner::rootFile(bibPath), mainPath);
+
+    Window window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+    QVERIFY(window.openSource(mainPath));
+    QVERIFY(window.openSource(styPath));
+    auto *styEditor = window.currentEditor();
+    styEditor->insertPlainText("% edit in sty\n");
+    QVERIFY(styEditor->document()->isModified());
+
+    QVERIFY(window.openSource(bibPath));
+    auto *bibEditor = window.currentEditor();
+    bibEditor->insertPlainText("% edit in bib\n");
+    QVERIFY(bibEditor->document()->isModified());
+
+    // Switch back to main.tex
+    QVERIFY(window.openSource(mainPath));
+
+    window.build();
+    if (window.m_runner.running()) window.m_runner.stop();
+
+    // Verify both auxiliary tabs were saved
+    QVERIFY(!styEditor->document()->isModified());
+    QVERIFY(!bibEditor->document()->isModified());
+
+    QFile styFile(styPath);
+    QVERIFY(styFile.open(QIODevice::ReadOnly));
+    QVERIFY(QString::fromUtf8(styFile.readAll()).contains("edit in sty"));
+
+    QFile bibFile(bibPath);
+    QVERIFY(bibFile.open(QIODevice::ReadOnly));
+    QVERIFY(QString::fromUtf8(bibFile.readAll()).contains("edit in bib"));
+}
+
 void Tests::folding()
 {
     Editor editor;
@@ -1966,6 +2034,36 @@ void Tests::honestEmptyStates()
     QVERIFY(welcome && welcome->isVisible());
     QTest::keyClicks(window.currentEditor(), "x");
     QVERIFY(!welcome->isVisible());
+}
+
+void Tests::buildFailureEmptyProblemsState()
+{
+    Window window;
+    window.resize(1200, 800);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+    auto *title = window.findChild<QLabel *>("emptyTitle");
+    auto *text = window.findChild<QLabel *>("emptyText");
+    QVERIFY(title && text);
+
+    QCOMPARE(title->text(), QString("No problems yet"));
+    QVERIFY(window.m_panelCollapsed);
+
+    // Uncollapse the panel
+    window.setPanelCollapsed(false);
+    QVERIFY(!window.m_panelCollapsed);
+
+    // Build failure with empty problems
+    window.setProblems({}, "/fake/dir", false);
+    QCOMPARE(title->text(), QString("Build failed"));
+    QCOMPARE(text->text(), QString("The build failed without reporting specific file errors. Check the Output tab for details."));
+    QVERIFY(!window.m_panelCollapsed);
+
+    // Build success with empty problems
+    window.setProblems({}, "/fake/dir", true);
+    QCOMPARE(title->text(), QString("No problems"));
+    QVERIFY(window.m_panelCollapsed);
 }
 
 void Tests::compilation()

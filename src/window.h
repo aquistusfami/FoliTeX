@@ -67,6 +67,7 @@ private:
 class Window : public QMainWindow
 {
     Q_OBJECT
+    friend class Tests;
 public:
     explicit Window();
     ~Window() override;
@@ -121,7 +122,7 @@ private:
     void placeFind();
     void updateTabButtons();
     void updateTabHints();
-    void setProblems(const QList<Problem> &problems, const QString &directory);
+    void setProblems(const QList<Problem> &problems, const QString &directory, bool success = true);
     void applyProblems(Editor *editor);
     void goToProblem(int index);
     Editor *newDocument(const QString &text = {});

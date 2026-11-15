@@ -149,11 +149,13 @@ QString BuildRunner::includingFile(const QString &path)
 {
     // shortcut: only the file's folder and 4 ancestors are searched; \import and deeper layouts need a magic comment.
     QFileInfo info(path);
+    const QString suffix = info.suffix().toLower();
     QStringList folders{info.absolutePath()};
     QDir parent = info.absoluteDir();
     for (int up = 0; up < 4 && parent.cdUp(); ++up) folders << parent.absolutePath();
     static const QRegularExpression comment(R"((?<!\\)%[^\n]*)");
-    static const QRegularExpression include(R"(\\(?:input|include|subfile)\s*\{([^{}]+)\})");
+    static const QRegularExpression include(
+        R"(\\(?:input|include|subfile|bibliography|addbibresource|usepackage)\s*(?:\[[^\]]*\])?\{([^{}]+)\})");
     for (const QString &folder : folders)
     {
         QDir dir(folder);
@@ -166,11 +168,20 @@ QString BuildRunner::includingFile(const QString &path)
             QString text = QString::fromUtf8(file.read(1 << 20)).remove(comment);
             for (auto it = include.globalMatch(text); it.hasNext();)
             {
-                QString argument = it.next().captured(1).trimmed();
-                if (QFileInfo(argument).suffix().isEmpty()) argument += ".tex";
-                // Nested inputs resolve against the (still unknown) root folder, so try every searched folder.
-                for (const QString &base : QStringList{folder} + folders)
-                    if (QDir::cleanPath(QDir(base).absoluteFilePath(argument)) == info.absoluteFilePath()) return candidate;
+                for (QString argument : it.next().captured(1).split(',', Qt::SkipEmptyParts))
+                {
+                    argument = argument.trimmed();
+                    if (argument.isEmpty()) continue;
+                    if (QFileInfo(argument).suffix().isEmpty())
+                    {
+                        if (suffix == "bib") argument += ".bib";
+                        else if (suffix == "sty") argument += ".sty";
+                        else argument += ".tex";
+                    }
+                    // Nested inputs resolve against the (still unknown) root folder, so try every searched folder.
+                    for (const QString &base : QStringList{folder} + folders)
+                        if (QDir::cleanPath(QDir(base).absoluteFilePath(argument)) == info.absoluteFilePath()) return candidate;
+                }
             }
         }
     }
@@ -1312,7 +1323,7 @@ Window::Window() : m_runner(this)
         QFile log(QFileInfo(pdf).absolutePath() + '/' + QFileInfo(pdf).completeBaseName() + ".log");
         if (!pdf.isEmpty() && log.open(QIODevice::ReadOnly))
             problems = BuildRunner::parseLog(QString::fromUtf8(log.readAll()), directory);
-        setProblems(problems, directory);
+        setProblems(problems, directory, success);
         m_errorCount->show();
         m_warningCount->show();
         int errors = int(std::count_if(problems.cbegin(), problems.cend(), [](const Problem &p) { return p.error; }));
@@ -1362,6 +1373,20 @@ Window::Window() : m_runner(this)
             if (auto *editor = qobject_cast<Editor *>(m_tabs->widget(i)); editor && paths.contains(editor->property("path").toString()))
                 reloadSource(editor);
     });
+    connect(&m_sourceWatcher, &QFileSystemWatcher::directoryChanged, this, [this](const QString &)
+    {
+        for (int i = 0; i < m_tabs->count(); ++i)
+        {
+            auto *editor = qobject_cast<Editor *>(m_tabs->widget(i));
+            if (!editor) continue;
+            QString path = editor->property("path").toString();
+            if (!path.isEmpty() && QFileInfo::exists(path) && !m_sourceWatcher.files().contains(path))
+            {
+                watchSource(path);
+                reloadSource(editor);
+            }
+        }
+    });
     m_reload.setSingleShot(true); m_reload.setInterval(250);
     connect(&m_watcher, &QFileSystemWatcher::fileChanged, &m_reload, qOverload<>(&QTimer::start));
     connect(&m_reload, &QTimer::timeout, this, [this]
@@ -1408,6 +1433,8 @@ void Window::watchSource(const QString &path)
 {
     // Atomic writers replace the inode, which drops the watch, so it is re-added after every change.
     if (QFileInfo::exists(path) && !m_sourceWatcher.files().contains(path)) m_sourceWatcher.addPath(path);
+    QString dir = QFileInfo(path).absolutePath();
+    if (QDir(dir).exists() && !m_sourceWatcher.directories().contains(dir)) m_sourceWatcher.addPath(dir);
 }
 
 void Window::reloadSource(Editor *editor)
@@ -2204,7 +2231,16 @@ void Window::closeTab(int index)
     if (!editor || !mayClose(editor)) return;
     m_tabs->removeTab(index); editor->deleteLater();
     QString path = editor->property("path").toString();
-    if (!path.isEmpty()) m_sourceWatcher.removePath(path);
+    if (!path.isEmpty())
+    {
+        m_sourceWatcher.removePath(path);
+        QString dir = QFileInfo(path).absolutePath();
+        bool dirUsed = false;
+        for (int i = 0; i < m_tabs->count(); ++i)
+            if (auto *tab = qobject_cast<Editor *>(m_tabs->widget(i)))
+                if (QFileInfo(tab->property("path").toString()).absolutePath() == dir) { dirUsed = true; break; }
+        if (!dirUsed) m_sourceWatcher.removePath(dir);
+    }
     if (!m_tabs->count()) newDocument();
     updateTabHints();
 }
@@ -2419,7 +2455,7 @@ Window::~Window()
 }
 
 // Problems panel, grouped by file like VS Code's; editors get squiggles for their file.
-void Window::setProblems(const QList<Problem> &problems, const QString &directory)
+void Window::setProblems(const QList<Problem> &problems, const QString &directory, bool success)
 {
     static const QIcon errorIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M5.8 5.8l4.4 4.4m0-4.4l-4.4 4.4"/></svg>)", "#F14C4C", 16));
     static const QIcon warningIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3.2m0 1.6v.1"/></svg>)", "#CCA700", 16));
@@ -2427,11 +2463,19 @@ void Window::setProblems(const QList<Problem> &problems, const QString &director
     m_problemsEmpty->setVisible(problems.isEmpty());
     // Before any build there is nothing to vouch for: say so instead of reporting a clean result.
     const bool built = !directory.isEmpty();
-    m_problemsEmpty->findChild<QLabel *>("emptyTitle")->setText(built ? "No problems" : "No problems yet");
-    m_problemsEmpty->findChild<QLabel *>("emptyText")->setText(built
-        ? QString("The build at %1 reported no errors or warnings.").arg(QTime::currentTime().toString("HH:mm"))
-        : "Build the document to check it. Warnings and errors appear here, and F8 steps through them.");
-    if (problems.isEmpty() && m_vertical) setPanelCollapsed(true);
+    if (!success && problems.isEmpty())
+    {
+        m_problemsEmpty->findChild<QLabel *>("emptyTitle")->setText("Build failed");
+        m_problemsEmpty->findChild<QLabel *>("emptyText")->setText("The build failed without reporting specific file errors. Check the Output tab for details.");
+    }
+    else
+    {
+        m_problemsEmpty->findChild<QLabel *>("emptyTitle")->setText(built ? "No problems" : "No problems yet");
+        m_problemsEmpty->findChild<QLabel *>("emptyText")->setText(built
+            ? QString("The build at %1 reported no errors or warnings.").arg(QTime::currentTime().toString("HH:mm"))
+            : "Build the document to check it. Warnings and errors appear here, and F8 steps through them.");
+    }
+    if (problems.isEmpty() && success && m_vertical) setPanelCollapsed(true);
     if (auto *actions = m_panel->cornerWidget(Qt::TopRightCorner)) actions->setVisible(!problems.isEmpty());
     m_problems = problems;
     m_problemsTime = QDateTime::currentDateTime();
