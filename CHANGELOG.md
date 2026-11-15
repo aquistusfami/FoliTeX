@@ -23,6 +23,16 @@
   Settings. The engine box no longer shifts when Build becomes Stop.
 
 ### Fixed
+- Completion in editor now ignores LaTeX comments when scanning macros, environments, labels, and packages.
+- Brackets no longer auto-close after an odd number of escaping backslashes.
+- Reject mixed line endings on open to preserve byte integrity and avoid mass newline churn on save.
+- Prevent Save As to a path currently open in another tab, and track canonical file paths to avoid duplicate tabs for symlinks.
+- Guard against zero-page PDFs in the renderer.
+- Fix PDF backward search starting position and clear search highlights on empty query.
+- Maintain editor cursor position and selection when an editor search has no match.
+- Distinguish build failure from success in the Problems panel empty state so a failed build never misleadingly reports "No problems".
+- Automatically resolve and save unsaved `.bib` and `.sty` auxiliary tabs when initiating a build from the root `.tex` document.
+- Watch parent directories of source files so files deleted and subsequently recreated on disk are automatically re-detected and reloaded.
 - Light theme: the command palette and the selection bar kept their dark backgrounds under
   dark text; disabled explorer icons looked enabled. A test now fails on any source colour the
   light theme does not map.
