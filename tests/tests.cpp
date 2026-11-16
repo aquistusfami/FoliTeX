@@ -1,5 +1,10 @@
 #include "window.h"
 #include "palette.h"
+#include "agent.h"
+#ifdef FOLITEX_TERMINAL
+#include <qtermwidget.h>
+#endif
+#include <QComboBox>
 #include <QListWidget>
 #include <QToolButton>
 #include <QStackedWidget>
@@ -90,6 +95,8 @@ private slots:
     void honestEmptyStates();
     void buildFailureEmptyProblemsState();
     void panelMaximizeAndRestore();
+    void agentPanel();
+    void agentTerminal();
     void darkPdfPages();
     void compilation();
     void buildBoundaryCases_data();
@@ -2401,3 +2408,146 @@ void Tests::cancellationCleansOrphanCompiler()
 
 QTEST_MAIN(Tests)
 #include "tests.moc"
+
+void Tests::agentPanel()
+{
+#ifdef Q_OS_WIN
+    const QString executableSuffix = ".cmd";
+#else
+    const QString executableSuffix;
+#endif
+    QTemporaryDir bin;
+    QFile fake(bin.filePath("codex" + executableSuffix));
+    QVERIFY(fake.open(QIODevice::WriteOnly));
+    fake.write("#!/bin/sh\n");
+    fake.close();
+    fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner);
+    const QByteArray path = qgetenv("PATH");
+    qputenv("PATH", bin.path().toUtf8());
+    const auto agents = AgentPanel::installedAgents();
+    qputenv("PATH", path);
+    bool found = false;
+    for (const auto &agent : agents) found |= agent.name == "Codex" && agent.program == fake.fileName();
+    QVERIFY(found);
+
+    Window window;
+    QTemporaryDir project;
+    window.openWorkspace(project.path());
+    QCOMPARE(window.m_panel->tabText(2), QString("Agent"));
+    window.m_panel->setCurrentIndex(2); // refreshes; the hint names the folder the agent runs in
+    QVERIFY(!window.m_agent->running());
+    QCOMPARE(window.m_agent->directory(), project.path());
+
+    // A first prompt goes where each CLI takes it.
+    QFile gemini(bin.filePath("gemini" + executableSuffix));
+    QVERIFY(gemini.open(QIODevice::WriteOnly));
+    gemini.close();
+    gemini.setPermissions(gemini.permissions() | QFileDevice::ExeOwner);
+    qputenv("PATH", bin.path().toUtf8());
+    window.m_agent->refresh();
+    qputenv("PATH", path);
+    auto *combo = window.m_agent->m_agents;
+    combo->setCurrentIndex(combo->findText("Gemini CLI"));
+    QCOMPARE(window.m_agent->command("fix it"), QStringList({"-i", "fix it"}));
+    combo->setCurrentIndex(combo->findText("Codex"));
+    QCOMPARE(window.m_agent->command("fix it"), QStringList({"fix it"}));
+    QVERIFY(window.m_agent->command({}).isEmpty());
+
+    // Text an agent changes on disk is tinted until the next key press.
+    const QString source = project.filePath("main.tex");
+    write(source, "a\nb\nc\n");
+    QVERIFY(window.openSource(source));
+    auto *editor = window.currentEditor();
+    auto tinted = [editor]
+    {
+        for (const auto &selection : editor->extraSelections())
+            if (selection.cursor.selectedText().contains("agent")) return true;
+        return false;
+    };
+    write(source, "a\nb by agent\nc\n");
+    QTRY_VERIFY_WITH_TIMEOUT(editor->toPlainText().contains("by agent"), 3000);
+    QVERIFY(tinted());
+    QTest::keyClick(editor, Qt::Key_Right);
+    QVERIFY(!tinted());
+}
+
+void Tests::agentTerminal()
+{
+#ifndef FOLITEX_TERMINAL
+    QSKIP("built without qtermwidget; Start would open an external terminal");
+#else
+    // A stand-in agent: records its arguments, folder and every submitted line; "quit" exits.
+    QTemporaryDir bin, project;
+    const QString log = bin.filePath("log");
+    QFile fake(bin.filePath("claude"));
+    QVERIFY(fake.open(QIODevice::WriteOnly));
+    fake.write("#!/bin/sh\n"
+               "printf '%s\\n' \"$@\" > \"$FOLITEX_FAKE_LOG.args\"\n"
+               "pwd > \"$FOLITEX_FAKE_LOG.cwd\"\n"
+               "echo \"$TERM\" > \"$FOLITEX_FAKE_LOG.term\"\n"
+               "while IFS= read -r line; do\n"
+               "  [ \"$line\" = quit ] && exit 0\n"
+               "  printf '%s\\n' \"$line\" >> \"$FOLITEX_FAKE_LOG.input\"\n"
+               "done\n");
+    fake.close();
+    fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner);
+    qputenv("FOLITEX_FAKE_LOG", log.toUtf8());
+    auto read = [](const QString &path) { QFile file(path); return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : QString(); };
+
+    Window window;
+    window.resize(1000, 700);
+    window.show();
+    window.openWorkspace(project.path());
+    const QByteArray path = qgetenv("PATH");
+    // Kept for the whole test: showing the Agent tab re-scans PATH, and must find the stand-in again.
+    qputenv("PATH", bin.path().toUtf8() + ":" + path);
+    window.m_agent->refresh();
+    auto *combo = window.m_agent->m_agents;
+    combo->setCurrentIndex(combo->findText("Claude Code"));
+    QCOMPARE(window.m_agent->program(), fake.fileName());
+
+    // Fix with agent: unsaved edits are saved first, then the agent starts with the prompt.
+    const QString source = project.filePath("main.tex");
+    write(source, "\\documentclass{article}\n\\begin{document}\n\\foo\n\\end{document}\n");
+    QVERIFY(window.openSource(source));
+    auto *editor = window.currentEditor();
+    editor->moveCursor(QTextCursor::End);
+    editor->insertPlainText("% unsaved\n");
+    window.m_problems = {Problem{source, 3, true, "Undefined control sequence.\n\\foo"}};
+    window.fixWithAgent(0);
+    QVERIFY(!editor->document()->isModified());
+    QVERIFY(read(source).contains("% unsaved"));
+    // The panel grows so the agent's TUI gets usable room, and the terminal follows its size.
+    QVERIFY(window.m_vertical->sizes().value(1) * 100 >= (window.m_vertical->sizes().value(0) + window.m_vertical->sizes().value(1)) * 44);
+    auto *terminal = qobject_cast<QTermWidget *>(window.m_agent->m_terminal.data());
+    QVERIFY(terminal);
+    QTRY_VERIFY_WITH_TIMEOUT(terminal->screenLinesCount() >= 12, 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(!read(log + ".args").isEmpty(), 5000);
+    QVERIFY(window.m_agent->running());
+    QCOMPARE(window.m_panel->currentWidget(), window.m_agent);
+    const QString args = read(log + ".args");
+    QCOMPARE(args.count('\n'), 1); // one argument, on one line
+    QVERIFY(args.contains("error at main.tex:3: 'Undefined control sequence. \\foo'"));
+    QVERIFY(args.contains("latexmk -cd -pdf -synctex=1 -interaction=nonstopmode -outdir=.folitex-build main.tex"));
+    QCOMPARE(read(log + ".cwd").trimmed(), QFileInfo(project.path()).canonicalFilePath());
+    QCOMPARE(read(log + ".term").trimmed(), QString("xterm-256color"));
+
+    // Later prompts are typed into the running agent and submitted, on one line.
+    window.askAgent("first part\n  second part");
+    QTRY_COMPARE_WITH_TIMEOUT(read(log + ".input"), QString("first part second part\n"), 5000);
+    window.askAgent("next question");
+    QTRY_COMPARE_WITH_TIMEOUT(read(log + ".input"), QString("first part second part\nnext question\n"), 5000);
+
+    // When the agent exits the panel shows Start again; a new start replaces the old args.
+    window.m_agent->send("quit");
+    QTRY_VERIFY_WITH_TIMEOUT(!window.m_agent->running(), 5000);
+    QCOMPARE(window.m_agent->m_start->text(), QString("Start"));
+    window.m_agent->start();
+    QTRY_VERIFY_WITH_TIMEOUT(read(log + ".args").isEmpty() || read(log + ".args") == "\n", 5000); // no prompt this time
+    QVERIFY(window.m_agent->running());
+    window.m_agent->stop();
+    QVERIFY(!window.m_agent->running());
+    qputenv("PATH", path);
+    qunsetenv("FOLITEX_FAKE_LOG");
+#endif
+}

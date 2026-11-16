@@ -84,6 +84,17 @@ FoliTeX is a single Qt Widgets application. All logic lives in a static library,
   `QTextCursor`s, so squiggles follow edits.
 - The side bar (Files, Outline), activity bar, menus and the PDF toolbar are plain
   widgets; colours and metrics come from the application style sheet in `main.cpp`.
+- `AgentPanel` (`src/agent.*`, the Agent tab of the bottom panel) finds known agent CLIs on
+  `PATH` (plus `~/.local/bin` and similar, which a desktop launcher may lack) and runs the
+  chosen one in the workspace, or the root file's folder. With `qtermwidget6` found at
+  configure time (`FOLITEX_TERMINAL`) it runs in an embedded terminal (dark theme:
+  `src/folitex-dark.colorscheme`, DarkPastels on the panel colour); otherwise it is started
+  detached in `$TERMINAL` or the first known terminal emulator. FoliTeX speaks no agent
+  protocol: prompts are typed into its terminal (`send`), or passed as its first
+  argument when it is not running. `Window::askAgent` saves modified files first; Ask agent
+  and Fix with agent build one-line prompts (a newline would submit early). Edits arrive
+  through the source watcher, which reloads open files undoably and tints the changed range
+  (`Editor::markChanged`) until the next key press.
 
 ## Settings
 

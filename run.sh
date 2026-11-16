@@ -6,7 +6,7 @@ FOLITEX_REBUILD=0
 if [[ ! -x "$FOLITEX_EXE" ]]; then
     FOLITEX_REBUILD=1
 else
-    for FOLITEX_SOURCE in "$FOLITEX_ROOT"/src/*.cpp "$FOLITEX_ROOT"/src/*.h "$FOLITEX_ROOT/CMakeLists.txt"; do
+    for FOLITEX_SOURCE in "$FOLITEX_ROOT"/src/*.cpp "$FOLITEX_ROOT"/src/*.h "$FOLITEX_ROOT/CMakeLists.txt" "$FOLITEX_ROOT/build/CMakeCache.txt"; do
         if [[ "$FOLITEX_SOURCE" -nt "$FOLITEX_EXE" ]]; then FOLITEX_REBUILD=1; break; fi
     done
 fi

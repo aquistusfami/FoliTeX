@@ -28,7 +28,7 @@ jobs:
           - name: Arch Linux
             image: archlinux:latest
             install: |
-              pacman -Syu --noconfirm --needed base-devel git cmake qt6-base qt6-svg poppler-qt6 \
+              pacman -Syu --noconfirm --needed base-devel git cmake qt6-base qt6-svg poppler-qt6 qtermwidget \
                 texlive-bin texlive-binextra texlive-latexextra texlive-langother texlive-xetex texlive-fontsrecommended ttf-dejavu
     steps:
       # The same packages as the README, so CI also checks the install instructions.

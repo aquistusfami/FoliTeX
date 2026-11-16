@@ -1,4 +1,5 @@
 #include "window.h"
+#include "agent.h"
 #include "palette.h"
 #include <QApplication>
 #include <QFileDialog>
@@ -622,6 +623,11 @@ Window::Window() : m_runner(this)
     {
         if (!m_problems.isEmpty()) goToProblem((m_problemIndex - 1 + m_problems.size()) % m_problems.size());
     });
+    add("Fix problem with agent", QKeySequence(), [this]
+    {
+        if (!m_problems.isEmpty()) fixWithAgent(std::max(m_problemIndex, 0));
+    });
+    add("Ask agent about selection…", QKeySequence("Ctrl+L"), [this] { askAboutSelection(); });
     menu->addSeparator();
     m_buildOnSaveAction = add("Build on save", QKeySequence(), [] {});
     m_buildOnSaveAction->setCheckable(true);
@@ -1229,6 +1235,15 @@ Window::Window() : m_runner(this)
     auto *viewportLayout = new QVBoxLayout(m_problemsView->viewport());
     viewportLayout->setContentsMargins(0, 0, 0, 0);
     viewportLayout->addWidget(m_problemsEmpty);
+    m_problemsView->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_problemsView, &QWidget::customContextMenuRequested, this, [this](const QPoint &at)
+    {
+        auto *item = m_problemsView->itemAt(at);
+        if (!item || !item->data(0, Qt::UserRole).isValid()) return;
+        QMenu menu;
+        menu.addAction("Fix with agent", this, [this, index = item->data(0, Qt::UserRole).toInt()] { fixWithAgent(index); });
+        menu.exec(m_problemsView->viewport()->mapToGlobal(at));
+    });
     connect(m_problemsView, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item)
     {
         if (item->data(0, Qt::UserRole).isValid()) goToProblem(item->data(0, Qt::UserRole).toInt());
@@ -1241,6 +1256,13 @@ Window::Window() : m_runner(this)
     m_panel->tabBar()->setDrawBase(false);
     m_panel->addTab(m_problemsView, "Problems");
     m_panel->addTab(m_log, "Output");
+    m_agent = new AgentPanel([this]
+    {
+        if (!m_workspace.isEmpty()) return m_workspace;
+        const QString path = currentEditor() ? currentEditor()->property("path").toString() : QString();
+        return path.isEmpty() ? QDir::homePath() : QFileInfo(BuildRunner::rootFile(path)).absolutePath();
+    });
+    m_panel->addTab(m_agent, "Agent");
     // VS Code's panel header: filter, collapse all, maximize and close on the right of the tabs.
     auto *panelActions = new QWidget;
     auto *panelLayout = new QHBoxLayout(panelActions);
@@ -1284,7 +1306,19 @@ Window::Window() : m_runner(this)
     auto *closePanel = panelButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M4.5 4.5l7 7m0-7l-7 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg>)", "Close panel · Ctrl+J");
     connect(closePanel, &QToolButton::clicked, this, [this] { if (m_panelMaximized) toggleMaximizePanel(); m_panel->hide(); });
     m_panel->setCornerWidget(panelActions, Qt::TopRightCorner);
-    connect(m_panel, &QTabWidget::currentChanged, this, [this](int) { updatePanelActions(); });
+    connect(m_panel, &QTabWidget::currentChanged, this, [this](int)
+    {
+        updatePanelActions();
+        if (m_panel->currentWidget() != m_agent || !m_vertical) return;
+        m_agent->refresh(); // picks up a CLI installed meanwhile
+        // Agent TUIs need room: a few terminal lines are not usable.
+        if (m_panelCollapsed) setPanelCollapsed(false);
+        if (const QList<int> sizes = m_vertical->sizes(); !m_panelMaximized && sizes.size() == 2)
+        {
+            const int total = sizes[0] + sizes[1], wanted = total * 45 / 100;
+            if (sizes[1] < wanted) m_vertical->setSizes({total - wanted, wanted});
+        }
+    });
     updatePanelActions();
     setProblems({}, {}); // shows the empty-state line
     // The build log opens under the editor only, like VS Code's panel inside the editor column.
@@ -1486,6 +1520,7 @@ void Window::reloadSource(Editor *editor)
     cursor.setPosition(prefix);
     cursor.setPosition(current.size() - suffix, QTextCursor::KeepAnchor);
     cursor.insertText(text.mid(prefix, text.size() - prefix - suffix));
+    editor->markChanged(prefix, text.size() - suffix);
     editor->setProperty("bom", bytes.startsWith("\xef\xbb\xbf"));
     editor->setProperty("lineEnding", lineEndingOf(bytes));
     editor->setProperty("mtime", QFileInfo(path).lastModified());
@@ -1825,6 +1860,7 @@ Editor *Window::newDocument(const QString &text)
     editor->setWordWrap(m_wordWrap);
     if (m_editorFont != QFont()) editor->setEditorFont(m_editorFont);
     connect(editor, &Editor::wordWrapToggled, this, &Window::setWordWrap);
+    connect(editor, &Editor::agentRequested, this, &Window::askAboutSelection);
     connect(editor, &Editor::fontZoomRequested, this, [this, editor](int steps)
     {
         QFont font = editor->font();
@@ -2532,6 +2568,52 @@ void Window::applyProblems(Editor *editor)
         if (current && problem.line > 0 && QFileInfo(problem.file) == QFileInfo(path))
             marks.append({problem.line, problem.error, problem.message});
     editor->setProblems(marks);
+}
+
+void Window::askAgent(const QString &prompt)
+{
+    // The agent reads files from disk, and a file with unsaved edits would not reload its changes.
+    for (int i = 0; i < m_tabs->count(); ++i)
+        if (auto *editor = qobject_cast<Editor *>(m_tabs->widget(i)); editor && editor->document()->isModified()
+            && !editor->property("path").toString().isEmpty() && !save(editor))
+            return;
+    if (m_panelMaximized) toggleMaximizePanel();
+    m_panel->show();
+    if (m_panelCollapsed) setPanelCollapsed(false);
+    m_panel->setCurrentWidget(m_agent);
+    m_agent->send(QString(prompt).replace(QRegularExpression("\\s*\\n\\s*"), " ")); // Enter would submit early
+}
+
+void Window::askAboutSelection()
+{
+    auto *editor = currentEditor();
+    if (!editor) return;
+    const QString path = editor->property("path").toString();
+    if (path.isEmpty() && !save(editor)) return;
+    QTextCursor cursor = editor->textCursor();
+    const QTextDocument *document = editor->document();
+    const int first = document->findBlock(cursor.selectionStart()).blockNumber() + 1;
+    int last = document->findBlock(cursor.selectionEnd()).blockNumber() + 1;
+    // A selection ending at a line start does not include that line.
+    if (last > first && document->findBlock(cursor.selectionEnd()).position() == cursor.selectionEnd()) --last;
+    const QString file = QDir(m_agent->directory()).relativeFilePath(editor->property("path").toString());
+    const QString where = first == last ? QString("%1 line %2").arg(file).arg(first) : QString("%1 lines %2-%3").arg(file).arg(first).arg(last);
+    bool ok = false;
+    const QString question = QInputDialog::getText(this, "Ask agent", "About " + where + ":", QLineEdit::Normal, {}, &ok);
+    if (ok && !question.trimmed().isEmpty()) askAgent("In " + where + ": " + question.trimmed());
+}
+
+void Window::fixWithAgent(int index)
+{
+    if (index < 0 || index >= m_problems.size()) return;
+    const Problem &problem = m_problems[index];
+    const QString file = QDir(m_agent->directory()).relativeFilePath(problem.file);
+    const QString root = m_lastRoot.isEmpty() ? problem.file : m_lastRoot;
+    QString flag = m_engine->currentText() == "LuaLaTeX" ? "-lualatex" : m_engine->currentText() == "XeLaTeX" ? "-xelatex" : "-pdf";
+    // -cd: the output folder is the one FoliTeX builds into and watches, next to the root file.
+    askAgent(QString("Fix this LaTeX %1 at %2%3: '%4'. To check, compile with: latexmk -cd %5 -synctex=1 -interaction=nonstopmode -outdir=.folitex-build %6")
+                 .arg(problem.error ? "error" : "warning", file, problem.line > 0 ? ":" + QString::number(problem.line) : QString(),
+                      problem.message.trimmed(), flag, QDir(m_agent->directory()).relativeFilePath(root)));
 }
 
 void Window::goToProblem(int index)

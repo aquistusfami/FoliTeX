@@ -1,0 +1,28 @@
+# Maintainer: aquistusfami
+pkgname=folitex
+pkgver=0.9.0
+pkgrel=1
+pkgdesc='Lean native LaTeX editor with a built-in PDF viewer and a coding-agent panel'
+arch=('x86_64' 'aarch64')
+url='https://github.com/aquistusfami/FoliTeX'
+license=('GPL-3.0-only')
+depends=('gcc-libs' 'glibc' 'qt6-base' 'qt6-svg' 'poppler-qt6' 'qtermwidget' 'texlive-bin' 'texlive-binextra')
+makedepends=('cmake')
+optdepends=('texlive-latexextra: commonly used LaTeX packages'
+            'texlive-fontsrecommended: Latin Modern and other recommended fonts'
+            'texlive-xetex: XeLaTeX engine'
+            'texlive-langother: Vietnamese and other languages'
+            'claude-code: Claude Code in the Agent panel'
+            'openai-codex: Codex in the Agent panel'
+            'gemini-cli: Gemini CLI in the Agent panel')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cmake -S "FoliTeX-$pkgver" -B build -DCMAKE_BUILD_TYPE=None -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_TESTING=OFF -Wno-dev
+    cmake --build build
+}
+
+package() {
+    DESTDIR="$pkgdir" cmake --install build
+}

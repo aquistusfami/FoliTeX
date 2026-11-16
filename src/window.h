@@ -127,6 +127,9 @@ private:
     void toggleMaximizePanel();
     void applyProblems(Editor *editor);
     void goToProblem(int index);
+    void askAgent(const QString &prompt); // saves open files, then hands the prompt to the Agent panel
+    void askAboutSelection();
+    void fixWithAgent(int index);
     Editor *newDocument(const QString &text = {});
     bool save(Editor *editor, bool saveAs = false);
     bool mayClose(Editor *editor);
@@ -158,7 +161,8 @@ private:
     PdfView *m_pdf;
     QWidget *m_pdfPane;
     QPlainTextEdit *m_log;
-    QTabWidget *m_panel; // Problems and Output under the editor
+    QTabWidget *m_panel; // Problems, Output and Agent under the editor
+    class AgentPanel *m_agent;
     QTreeWidget *m_problemsView;
     QToolButton *m_errorCount;
     QToolButton *m_warningCount;

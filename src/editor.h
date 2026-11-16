@@ -80,6 +80,7 @@ public:
     void setWordWrap(bool on);
     // Build problems shown as squiggles with a tooltip: (1-based line, is error, message).
     void setProblems(const QList<std::tuple<int, bool, QString>> &problems);
+    void markChanged(int from, int to); // tints text changed on disk until the next key press
     bool wordWrap() const { return lineWrapMode() != QTextEdit::NoWrap; }
     // The formula around position ($…$, \(…\), \[…\], equation-like environments), or empty.
     QString mathAt(int position) const;
@@ -98,6 +99,7 @@ public:
     void foldAtCursor();
     void unfoldAll();
 signals:
+    void agentRequested(); // the selection bar's Ask agent button
     void wordWrapToggled(bool on);
     void previewReady();
     void fontZoomRequested(int steps); // Ctrl+wheel; the window resizes every editor
@@ -139,6 +141,7 @@ private:
         QString message;
     };
     QList<Mark> m_marks;
+    QTextCursor m_changed;
     QCache<QString, QPixmap> m_previews{16 * 1024}; // key -> image (cost in KiB), null when rendering failed
     QPixmap remember(const QString &key, const QPixmap &pixmap);
     QSet<QString> m_rendering;

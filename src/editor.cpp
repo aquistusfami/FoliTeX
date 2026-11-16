@@ -678,6 +678,12 @@ Editor::Editor(QWidget *parent) : QTextEdit(parent)
         });
         barLayout->addWidget(button);
     }
+    auto *ask = new QToolButton;
+    ask->setText("Ask");
+    ask->setToolTip("Ask the coding agent about the selection · Ctrl+L");
+    ask->setFocusPolicy(Qt::NoFocus);
+    connect(ask, &QToolButton::clicked, this, [this] { m_selectionBar->hide(); emit agentRequested(); });
+    barLayout->addWidget(ask);
     m_selectionBar->hide();
     connect(this, &QTextEdit::selectionChanged, this, [this] { if (!textCursor().hasSelection()) m_selectionBar->hide(); });
     connect(verticalScrollBar(), &QScrollBar::valueChanged, m_selectionBar, &QWidget::hide);
@@ -938,6 +944,7 @@ void Editor::keyPressEvent(QKeyEvent *event)
 {
     m_previewPopup->hide();
     m_selectionBar->hide();
+    if (!m_changed.isNull()) { m_changed = QTextCursor(); updateHighlights(); }
     if (m_completion->popup()->isVisible() &&
         (event->key() == Qt::Key_Enter || event->key() == Qt::Key_Return || event->key() == Qt::Key_Escape || event->key() == Qt::Key_Tab))
     {
@@ -1338,7 +1345,23 @@ void Editor::updateHighlights()
         squiggle.cursor.setPosition(block.position() + block.length() - 1, QTextCursor::KeepAnchor);
         selections << squiggle;
     }
+    if (!m_changed.isNull())
+    {
+        QTextEdit::ExtraSelection changed;
+        changed.format.setBackground(QColor(70, 170, 90, 50)); // translucent, so it reads on both themes
+        changed.format.setProperty(QTextFormat::FullWidthSelection, true);
+        changed.cursor = m_changed;
+        selections << changed;
+    }
     setExtraSelections(selections);
+}
+
+void Editor::markChanged(int from, int to)
+{
+    m_changed = QTextCursor(document());
+    m_changed.setPosition(from);
+    m_changed.setPosition(to, QTextCursor::KeepAnchor);
+    updateHighlights();
 }
 
 void Editor::setProblems(const QList<std::tuple<int, bool, QString>> &problems)

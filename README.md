@@ -7,7 +7,7 @@ Qt 6 Widgets and Poppler. It aims to start fast, stay light on memory, render PD
 sharply at any display scale and scroll smoothly — while covering the everyday
 LaTeX workflow: edit, build, preview, jump between source and PDF.
 
-![FoliTeX 0.8 editing a LaTeX paper next to its PDF, with word wrap, code folding, the explorer and its file actions](docs/screenshot.png)
+![FoliTeX 0.9 editing a LaTeX paper next to its PDF, with Codex running in the Agent panel under the editor](docs/screenshot.png)
 
 > FoliTeX was previously developed as **TeXLite**. Its behaviour was informed by
 > studying TeXstudio and VS Code; it contains no code from either project and is
@@ -40,8 +40,9 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
 - Tab / Shift+Tab indent and outdent the selected lines; TeXstudio's insert shortcuts
   (`\textbf` Ctrl+B, `\emph` Ctrl+Shift+E, `\frac` Alt+Shift+F, …) plus `\underline` Ctrl+U.
 - Files edited by another program — another editor or an AI coding agent — reload
-  silently while the tab has no unsaved edits; the cursor stays put and Ctrl+Z undoes
-  the external change. Unsaved edits are never overwritten.
+  silently while the tab has no unsaved edits; the cursor stays put, the changed text is
+  tinted until your next key press and Ctrl+Z undoes the change. Unsaved edits are never
+  overwritten.
 - Safe saving: atomic writes, BOM / NBSP / CRLF preserved, invalid UTF-8 refused.
 - The open files, cursors and PDF come back on the next start; File → Open Recent.
 
@@ -62,15 +63,38 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
 - Background rendering at the display's native pixel density with a bounded image
   cache; image-heavy pages render in a single Poppler call (≈7× faster than small tiles).
 
+**Coding agents**
+- The Agent tab of the bottom panel runs the coding agent you already use — Claude Code,
+  Codex, Gemini CLI, Antigravity (`agy`) or OpenCode — in the project folder, in an
+  embedded terminal. Nothing to configure: FoliTeX finds the installed CLIs, and each uses
+  its own sign-in, permissions and history.
+- Ctrl+L (or **Ask** on the selection bar) asks the agent about the selected lines.
+- Right-click a build problem → **Fix with agent** sends the error, its location and the
+  build command, like Overleaf's Error Assist; the agent's edits appear in the editor.
+- Open files are saved before a prompt is sent, so the agent reads what you see.
+
 **Workspace and interface**
 - Open a folder as a workspace (Ctrl+Alt+O) to browse TeX/BibTeX/PDF/image files, with
   file-type icons and a collapsible root folder. Create, rename (F2), delete (Del, to the
   trash) and copy the path of files and folders, as in VS Code; open tabs follow renames.
 - Outline of sections, labels, included files and TODOs; click to jump.
 - Dark interface modelled on VS Code: rounded panels, flat tabs that scroll sideways and
-  name the folder when two files share a name, the build log (Ctrl+J) under the editor.
+  name the folder when two files share a name, the bottom panel (Ctrl+J) under the editor.
 
-## Installing on Linux
+## Installing on Arch Linux
+
+The [AUR package](packaging/aur/PKGBUILD) builds the tagged release:
+
+```bash
+git clone https://github.com/aquistusfami/FoliTeX.git
+cd FoliTeX/packaging/aur
+makepkg -si
+```
+
+Add `texlive-latexextra texlive-fontsrecommended` (and `texlive-xetex`, `texlive-langother`
+if you need them) for everyday documents; `makepkg` lists them as optional.
+
+## Installing on Linux from source
 
 FoliTeX needs **Qt 6.5 or newer**, so it installs on Arch Linux and its derivatives
 (Manjaro, EndeavourOS), Debian 13 and Ubuntu 25.04 or newer. Ubuntu 24.04 LTS and
@@ -83,7 +107,7 @@ a successful build.
 Arch Linux, Manjaro, EndeavourOS:
 
 ```bash
-sudo pacman -S --needed base-devel git cmake qt6-base qt6-svg poppler-qt6 \
+sudo pacman -S --needed base-devel git cmake qt6-base qt6-svg poppler-qt6 qtermwidget \
     texlive-bin texlive-binextra texlive-latexextra texlive-langother texlive-xetex texlive-fontsrecommended
 ```
 
@@ -94,6 +118,11 @@ sudo apt install build-essential git cmake pkg-config qt6-base-dev qt6-svg-plugi
     libpoppler-qt6-dev poppler-utils latexmk texlive-latex-extra texlive-lang-other \
     texlive-extra-utils
 ```
+
+`qtermwidget` (optional; in the Arch command above) embeds a terminal in the **Agent** panel, which runs a coding
+agent you already use (Claude Code, Codex, Gemini CLI, Antigravity or OpenCode) in the project folder.
+Without it, the panel opens the agent in your own terminal (`$TERMINAL`). Re-run CMake after
+installing it.
 
 The `texlive-…` packages and `latexmk` are what compile your documents. The
 `langother` / `lang-other` package adds Vietnamese and other languages; skip it if you
@@ -169,6 +198,7 @@ needs a separate Perl (e.g. Strawberry Perl) for `latexmk` and gives no package-
 completion. Known differences on Windows:
 
 - Stopping a build ends `latexmk` but may leave its `pdflatex` child running.
+- The Agent panel opens the agent in its own console window (there is no embedded terminal).
 - There is no installer yet; run `build/folitex.exe` from the MSYS2 shell, or copy the
   Qt and Poppler DLLs next to it (`windeployqt`).
 
@@ -216,7 +246,8 @@ Keyboard shortcuts follow TeXstudio where TeXstudio documents them.
 | Ctrl+PgDown / Ctrl+PgUp | Next / previous tab |
 | Ctrl+= / Ctrl+- / Ctrl+0 | Zoom the PDF in / out / fit width |
 | Shift+F5 | Present the PDF full screen from the current page (Esc ends) |
-| Ctrl+\ / Ctrl+J / Ctrl+Shift+O | Toggle PDF / Problems and Output panel / side bar |
+| Ctrl+\ / Ctrl+J / Ctrl+Shift+O | Toggle PDF / bottom panel (Problems, Output, Agent) / side bar |
+| Ctrl+L | Ask the coding agent about the selected lines |
 | View → Menu Bar, then Alt | Hide the menu bar; a lone Alt shows it until an item is used |
 
 In the PDF, drag to select text, double-click to select a word, Ctrl+C to copy and

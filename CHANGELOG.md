@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.9.0 — 2026-11-16
+
+### Added
+- Agent panel (bottom panel, next to Output): runs Claude Code, Codex, Gemini CLI, Antigravity (`agy`) or OpenCode,
+  whichever is installed, in the project folder. It uses an embedded terminal when built with
+  the optional `qtermwidget`, and your own terminal otherwise.
+- Ask agent (Ctrl+L, or **Ask** on the selection bar): asks the agent about the selected lines,
+  named as `file lines a-b`.
+- Fix with agent (right-click a problem, or Build → Fix problem with agent): sends the error,
+  its location and the `latexmk` command that builds into `.folitex-build`.
+- Open files are saved before a prompt is sent, so the agent reads what you see; text the
+  agent changes is tinted until your next key press. Opening the Agent tab gives the
+  panel at least 45 % of the editor column, so agent TUIs have room.
+- Arch Linux package: `packaging/aur/PKGBUILD`.
+
+### Changed
+- `run.sh` also rebuilds after CMake was re-run (e.g. once `qtermwidget` is installed).
+- Arch Linux CI installs `qtermwidget`, so it tests the embedded terminal; Debian CI tests
+  the external-terminal build.
+
 ## 0.8.3 — 2026-11-16
 
 First published release with the 0.8.2 changes (see 0.8.2 in CHANGELOG.md); the v0.8.2 tag
