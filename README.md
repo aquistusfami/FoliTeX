@@ -83,7 +83,15 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
 
 ## Installing on Arch Linux
 
-The [AUR package](packaging/aur/PKGBUILD) builds the tagged release:
+Install the package attached to the latest
+[release](https://github.com/aquistusfami/FoliTeX/releases/latest); pacman pulls in Qt,
+Poppler, qtermwidget and the TeX Live core:
+
+```bash
+sudo pacman -U https://github.com/aquistusfami/FoliTeX/releases/download/v0.9.0/folitex-0.9.0-1-x86_64.pkg.tar.zst
+```
+
+Or build it yourself from the [PKGBUILD](packaging/aur/PKGBUILD) (also for aarch64):
 
 ```bash
 git clone https://github.com/aquistusfami/FoliTeX.git
