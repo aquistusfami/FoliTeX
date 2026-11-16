@@ -16,7 +16,7 @@ optdepends=('texlive-latexextra: commonly used LaTeX packages'
             'openai-codex: Codex in the Agent panel'
             'gemini-cli: Gemini CLI in the Agent panel')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('a74c4085d8de716f79a14b70ca092f5f2259a5b819e339b34a4cd58c4459f578')
 
 build() {
     cmake -S "FoliTeX-$pkgver" -B build -DCMAKE_BUILD_TYPE=None -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_TESTING=OFF -Wno-dev
