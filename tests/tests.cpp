@@ -132,6 +132,19 @@ private slots:
     void forwardSyncLandingAndHighlight();
     void forwardSyncPendingAndCancelled();
     void goToPageKeepsTopPlacementWithoutMark();
+    // --- Task C ---
+    void pdfFollowsTabDocument();
+    void syncProcessReplacesOlderRun();
+    void outputLogPreservesScroll();
+    void panelKeyboardNavigation();
+    void buildStatusElapsedAndStalePdf();
+    void problemsListColumnsAndColors();
+    void statusBarProblemCountersVisibleAtStart();
+    void narrowWindowHidesProblemFilter();
+    void magicProgramSelectsEngine();
+    void keyboardPdfSourceNavigation();
+    void syncAfterBuildRunsForwardSync();
+    void cleanAuxiliaryFilesKeepsPdf();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -3294,7 +3307,11 @@ void Tests::forwardSyncPendingAndCancelled()
     QVERIFY(QTest::qWaitForWindowExposed(&window));
     QVERIFY(window.openSource(tex));
     QSignalSpy winLoaded(window.pdfView(), &PdfView::documentReady);
-    window.openPdf(a);
+    // forwardSync only syncs against the document's own build output.
+    const QString built = BuildRunner::pdfPath(tex);
+    QVERIFY(QDir().mkpath(QFileInfo(built).absolutePath()));
+    QVERIFY(QFile::copy(a, built));
+    window.openPdf(built);
     QTRY_COMPARE_WITH_TIMEOUT(winLoaded.size(), 1, 5000);
     window.pdfView()->setZoom(2.5);
     QVERIFY(window.pdfView()->horizontalScrollBar()->maximum() > 0);
@@ -3338,4 +3355,564 @@ void Tests::goToPageKeepsTopPlacementWithoutMark()
     QVERIFY2(viewportTop >= 0 && viewportTop <= 40.0,
         qPrintable(QString("page3 viewportTop=%1").arg(viewportTop)));
     QVERIFY(!viewer.syncMarkVisible());
+}
+
+// --- Task C ---
+
+void Tests::pdfFollowsTabDocument()
+{
+    auto makePdf = [](const QString &path, const QString &label)
+    {
+        QVERIFY(QDir().mkpath(QFileInfo(path).absolutePath()));
+        QPdfWriter writer(path);
+        QPainter painter(&writer);
+        painter.drawText(100, 100, label);
+    };
+    QTemporaryDir dirA, dirB, dirC;
+    const QString mainA = dirA.filePath("main.tex");
+    const QString chapterA = dirA.filePath("chapter.tex");
+    const QString mainB = dirB.filePath("main.tex");
+    const QString mainC = dirC.filePath("main.tex");
+    write(mainA, "\\documentclass{article}\n\\begin{document}\nA\n\\end{document}\n");
+    write(chapterA, "% !TeX root = main.tex\nChapter A\n");
+    write(mainB, "\\documentclass{article}\n\\begin{document}\nB\n\\end{document}\n");
+    write(mainC, "\\documentclass{article}\n\\begin{document}\nC\n\\end{document}\n");
+    const QString pdfA = BuildRunner::pdfPath(mainA);
+    const QString pdfB = BuildRunner::pdfPath(mainB);
+    makePdf(pdfA, "Doc A");
+    makePdf(pdfB, "Doc B");
+
+    Window window;
+    QSignalSpy loads(window.pdfView(), &PdfView::loadRequested);
+    QVERIFY(window.openSource(mainA));
+    QCOMPARE(QFileInfo(window.pdfView()->path()), QFileInfo(pdfA));
+    QCOMPARE(loads.size(), 1);
+
+    // Same-root tab does not reopen the PDF.
+    QVERIFY(window.openSource(chapterA));
+    QCOMPARE(QFileInfo(window.pdfView()->path()), QFileInfo(pdfA));
+    QCOMPARE(loads.size(), 1);
+
+    // Switching between same-root tabs does not reopen.
+    window.m_tabs->setCurrentIndex(0);
+    QCOMPARE(loads.size(), 1);
+    window.m_tabs->setCurrentIndex(1);
+    QCOMPARE(loads.size(), 1);
+
+    // Opening a tab from another project switches the PDF.
+    QVERIFY(window.openSource(mainB));
+    QCOMPARE(QFileInfo(window.pdfView()->path()), QFileInfo(pdfB));
+    QCOMPARE(loads.size(), 2);
+
+    // Switching back to project A switches the PDF back.
+    window.m_tabs->setCurrentIndex(0);
+    QCOMPARE(QFileInfo(window.pdfView()->path()), QFileInfo(pdfA));
+    QCOMPARE(loads.size(), 3);
+
+    // A document with no built PDF keeps the previous PDF, and forwardSync refuses to sync against it.
+    QVERIFY(window.openSource(mainC));
+    QCOMPARE(QFileInfo(window.pdfView()->path()), QFileInfo(pdfA));
+    window.forwardSync();
+    QCOMPARE(window.m_status->text(), QString("Build this document first: the PDF shown belongs to another document."));
+}
+
+void Tests::syncProcessReplacesOlderRun()
+{
+#ifdef Q_OS_WIN
+    QSKIP("shell script stand-in for synctex");
+#else
+    QTemporaryDir bin;
+    QFile fake(bin.filePath("synctex"));
+    QVERIFY(fake.open(QIODevice::WriteOnly));
+    fake.write("#!/bin/sh\n"
+               "if [ \"$1\" = slow ]; then sleep 0.4; printf 'FIRST'; else printf 'SECOND'; fi\n");
+    fake.close();
+    fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner);
+
+    const QByteArray oldPath = qgetenv("PATH");
+    auto restore = qScopeGuard([&] { qputenv("PATH", oldPath); });
+    qputenv("PATH", bin.path().toUtf8() + ":" + oldPath);
+
+    Window window;
+    QStringList results;
+    window.syncProcess({"slow"}, [&](const QString &out) { results << "first:" + out; });
+    window.syncProcess({"fast"}, [&](const QString &out) { results << "second:" + out; });
+    QTRY_COMPARE_WITH_TIMEOUT(results.size(), 1, 3000);
+    QCOMPARE(results, QStringList({"second:SECOND"}));
+    QTest::qWait(500);
+    QCOMPARE(results, QStringList({"second:SECOND"}));
+#endif
+}
+
+void Tests::outputLogPreservesScroll()
+{
+    Window window;
+    window.resize(900, 600);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    window.setPanelCollapsed(false);
+    window.m_panel->setCurrentWidget(window.m_log);
+    QCoreApplication::processEvents();
+
+    QString bulk;
+    for (int i = 0; i < 200; ++i) bulk += QString("line %1\n").arg(i);
+    emit window.m_runner.output(bulk);
+    QCoreApplication::processEvents();
+
+    auto *bar = window.m_log->verticalScrollBar();
+    QVERIFY(bar->maximum() > 0);
+    QCOMPARE(bar->value(), bar->maximum());
+
+    // Scrolled to top: new output must not yank the scroll bar.
+    bar->setValue(0);
+    QCOMPARE(bar->value(), 0);
+    emit window.m_runner.output("extra 1\nextra 2\nextra 3\n");
+    QCoreApplication::processEvents();
+    QCOMPARE(bar->value(), 0);
+
+    // At bottom: new output follows to the new maximum.
+    bar->setValue(bar->maximum());
+    const int beforeMax = bar->maximum();
+    emit window.m_runner.output("tail 1\ntail 2\ntail 3\ntail 4\n");
+    QCoreApplication::processEvents();
+    QVERIFY(bar->maximum() > beforeMax);
+    QCOMPARE(bar->value(), bar->maximum());
+}
+
+void Tests::panelKeyboardNavigation()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath("main.tex");
+    write(path, "line 1\nline 2\nline 3\nline 4\nline 5\n");
+
+    Window window;
+    window.resize(1000, 700);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QVERIFY(window.openSource(path));
+    auto *editor = window.currentEditor();
+    QVERIFY(editor);
+
+    window.setProblems({Problem{path, 4, true, "Undefined control sequence"}}, dir.path(), false);
+    window.setPanelCollapsed(false);
+    window.m_panel->setCurrentWidget(window.m_problemsView);
+    QCOMPARE(window.m_problemsView->topLevelItemCount(), 1);
+    auto *group = window.m_problemsView->topLevelItem(0);
+    QCOMPARE(group->childCount(), 1);
+    auto *row = group->child(0);
+
+    // Enter on a problem row jumps to that line and focuses the editor.
+    window.m_problemsView->setFocus();
+    window.m_problemsView->setCurrentItem(row);
+    QTest::keyClick(window.m_problemsView, Qt::Key_Return);
+    QTRY_VERIFY(editor->hasFocus());
+    QCOMPARE(editor->lineNumber(), 4);
+
+    // Escape in Problems returns focus to the editor.
+    window.m_problemsView->setFocus();
+    QTRY_VERIFY(window.m_problemsView->hasFocus());
+    QTest::keyClick(window.m_problemsView, Qt::Key_Escape);
+    QTRY_VERIFY(editor->hasFocus());
+
+    // Escape in Output returns focus to the editor.
+    window.m_panel->setCurrentWidget(window.m_log);
+    window.m_log->setFocus();
+    QTRY_VERIFY(window.m_log->hasFocus());
+    QTest::keyClick(window.m_log, Qt::Key_Escape);
+    QTRY_VERIFY(editor->hasFocus());
+
+    // Escape in PDF view returns focus to the editor.
+    window.m_pdf->setFocus();
+    QTRY_VERIFY(window.m_pdf->hasFocus());
+    QTest::keyClick(window.m_pdf, Qt::Key_Escape);
+    QTRY_VERIFY(editor->hasFocus());
+
+#ifdef FOLITEX_TERMINAL
+    // Escape inside the Agent terminal widget is not intercepted.
+    auto *term = new QTermWidget(0, window.m_agent);
+    QVERIFY(window.isInAgentTerminal(term));
+    QKeyEvent esc(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QVERIFY(!window.eventFilter(term, &esc));
+    delete term;
+#endif
+}
+
+void Tests::buildStatusElapsedAndStalePdf()
+{
+#ifdef Q_OS_WIN
+    QSKIP("shell script stand-in for latexmk");
+#else
+    QTemporaryDir bin, project;
+    const QString main = project.filePath("main.tex");
+    write(main, "\\documentclass{article}\n\\begin{document}\nHello\n\\end{document}\n");
+    const QString pdf = BuildRunner::pdfPath(main);
+    QVERIFY(QDir().mkpath(QFileInfo(pdf).absolutePath()));
+    {
+        QPdfWriter writer(pdf);
+        QPainter painter(&writer);
+        painter.drawText(100, 100, "Good build");
+    }
+
+    QFile fake(bin.filePath("latexmk"));
+    QVERIFY(fake.open(QIODevice::WriteOnly));
+    fake.write("#!/bin/sh\n"
+               "if [ \"$FOLITEX_FAKE_BUILD\" = fail ]; then sleep 2; exit 1; fi\n"
+               "exit 0\n");
+    fake.close();
+    fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner);
+
+    const QByteArray oldPath = qgetenv("PATH");
+    auto restore = qScopeGuard([&]
+    {
+        qputenv("PATH", oldPath);
+        qunsetenv("FOLITEX_FAKE_BUILD");
+    });
+    qputenv("PATH", bin.path().toUtf8() + ":" + oldPath);
+
+    Window window;
+    QSignalSpy ready(window.pdfView(), &PdfView::documentReady);
+    QVERIFY(window.openSource(main));
+    QTRY_COMPARE_WITH_TIMEOUT(ready.size(), 1, 3000);
+    QVERIFY(!window.m_pageCount->text().contains("last good build"));
+
+    // Failing build that sleeps 2 s and leaves the older PDF untouched.
+    qputenv("FOLITEX_FAKE_BUILD", "fail");
+    QSignalSpy done(&window, &Window::buildFinished);
+    window.build();
+    const QRegularExpression elapsed(R"(^Building… \d+ s$)");
+    QTRY_VERIFY_WITH_TIMEOUT(elapsed.match(window.m_status->text()).hasMatch(), 3000);
+    QTRY_COMPARE_WITH_TIMEOUT(done.size(), 1, 5000);
+    QVERIFY(!done.first().first().toBool());
+    QVERIFY(!window.m_buildTimer.isActive());
+    QVERIFY(window.m_pageCount->text().contains("last good build"));
+    QVERIFY(!window.m_pageCount->toolTip().isEmpty());
+
+    // Subsequent successful build clears the stale-PDF marker.
+    qputenv("FOLITEX_FAKE_BUILD", "ok");
+    done.clear();
+    ready.clear();
+    window.build();
+    QTRY_COMPARE_WITH_TIMEOUT(done.size(), 1, 5000);
+    QVERIFY(done.first().first().toBool());
+    QTRY_COMPARE_WITH_TIMEOUT(ready.size(), 1, 3000);
+    QVERIFY(!window.m_pageCount->text().contains("last good build"));
+    QVERIFY(window.m_pageCount->toolTip().isEmpty());
+#endif
+}
+
+void Tests::problemsListColumnsAndColors()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath("paper.tex");
+    write(path, "\\documentclass{article}\n");
+
+    Window window;
+    window.setProblems({Problem{path, 20, true, "Undefined control sequence"}, Problem{path, 0, false, "Overfull hbox"}}, dir.path(), false);
+    QCOMPARE(window.m_problemsView->columnCount(), 2);
+    QVERIFY(window.m_problemsView->isHeaderHidden());
+    QCOMPARE(window.m_problemsView->topLevelItemCount(), 1);
+    auto *group = window.m_problemsView->topLevelItem(0);
+    QCOMPARE(group->childCount(), 2);
+
+    auto *errRow = group->child(0);
+    QCOMPARE(errRow->text(0), QString("Undefined control sequence"));
+    QVERIFY(!errRow->text(0).contains("[Ln"));
+    QCOMPARE(errRow->text(1), QString("Ln 20"));
+    QCOMPARE(errRow->textAlignment(1), int(Qt::AlignRight | Qt::AlignVCenter));
+    QCOMPARE(errRow->foreground(1).color(), themeColor("#8793A2"));
+
+    auto *warnRow = group->child(1);
+    QCOMPARE(warnRow->text(0), QString("Overfull hbox"));
+    QCOMPARE(warnRow->text(1), QString());
+
+    // Filter still matches message text in column 0.
+    window.m_problemFilter->setText("Undefined");
+    QVERIFY(!errRow->isHidden());
+    QVERIFY(warnRow->isHidden());
+    window.m_problemFilter->clear();
+}
+
+void Tests::statusBarProblemCountersVisibleAtStart()
+{
+    Window window;
+    window.resize(1000, 600);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+    QVERIFY(window.m_errorCount->isVisible());
+    QVERIFY(window.m_warningCount->isVisible());
+    QCOMPARE(window.m_errorCount->text(), QString("0"));
+    QCOMPARE(window.m_warningCount->text(), QString("0"));
+    QCOMPARE(window.m_errorCount->toolTip(), QString("Build to check for problems"));
+    QCOMPARE(window.m_warningCount->toolTip(), QString("Build to check for problems"));
+    QVERIFY(!window.m_errorCount->styleSheet().isEmpty());
+    QVERIFY(!window.m_warningCount->styleSheet().isEmpty());
+
+    // After a build, counters switch to normal style and tooltips.
+    window.setProblems({}, "/fake/dir", true);
+    QVERIFY(window.m_errorCount->isVisible());
+    QVERIFY(window.m_warningCount->isVisible());
+    QCOMPARE(window.m_errorCount->toolTip(), QString("Errors · F8"));
+    QCOMPARE(window.m_warningCount->toolTip(), QString("Warnings"));
+    QVERIFY(window.m_errorCount->styleSheet().isEmpty());
+    QVERIFY(window.m_warningCount->styleSheet().isEmpty());
+}
+
+void Tests::narrowWindowHidesProblemFilter()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath("main.tex");
+    write(path, "\\documentclass{article}\n");
+
+    Window window;
+    QVERIFY(window.minimumWidth() >= 640);
+    window.resize(700, 500);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    window.setProblems({Problem{path, 1, true, "Bad command"}}, dir.path(), false);
+    window.setPanelCollapsed(false);
+    QCoreApplication::processEvents();
+
+    auto overlapsTabs = [&]
+    {
+        if (!window.m_problemFilter->isVisible()) return false;
+        const QRect filterRect(window.m_problemFilter->mapTo(window.m_panel, QPoint(0, 0)), window.m_problemFilter->size());
+        const QRect tabsRect(window.m_panel->tabBar()->mapTo(window.m_panel, QPoint(0, 0)), window.m_panel->tabBar()->size());
+        return filterRect.intersects(tabsRect);
+    };
+    QVERIFY(!window.m_problemFilter->isVisible() || !overlapsTabs());
+
+    // Widening to 1400 shows the filter box when problems are present.
+    window.resize(1400, 700);
+    QTRY_VERIFY(window.m_problemFilter->isVisible());
+    QVERIFY(!overlapsTabs());
+}
+
+void Tests::magicProgramSelectsEngine()
+{
+    QTemporaryDir dir;
+    const QString xe = dir.filePath("xe.tex");
+    const QString lua = dir.filePath("lua.tex");
+    const QString pdf = dir.filePath("pdf.tex");
+    const QString late = dir.filePath("late.tex");
+    const QString none = dir.filePath("none.tex");
+    write(xe, "% !TeX program = XeLaTeX\n\\documentclass{article}\n");
+    write(lua, "% !TS-program = lualatex\n\\documentclass{article}\n");
+    write(pdf, "\xef\xbb\xbf% !TeX TS-program = PDFLATEX\n\\documentclass{article}\n");
+    write(late, QByteArray(25, '\n') + "% !TeX program = xelatex\n\\documentclass{article}\n");
+    write(none, "% !TeX program = unknown\n\\documentclass{article}\n");
+
+    QCOMPARE(BuildRunner::magicProgram(xe), QString("XeLaTeX"));
+    QCOMPARE(BuildRunner::magicProgram(lua), QString("LuaLaTeX"));
+    QCOMPARE(BuildRunner::magicProgram(pdf), QString("pdfLaTeX"));
+    QCOMPARE(BuildRunner::magicProgram(late), QString());
+    QCOMPARE(BuildRunner::magicProgram(none), QString());
+
+#ifndef Q_OS_WIN
+    QTemporaryDir bin;
+    const QString argsFile = bin.filePath("args.txt");
+    QFile fake(bin.filePath("latexmk"));
+    QVERIFY(fake.open(QIODevice::WriteOnly));
+    fake.write("#!/bin/sh\n"
+               "printf '%s\\n' \"$@\" > \"$FOLITEX_FAKE_ARGS\"\n"
+               "exit 0\n");
+    fake.close();
+    fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner);
+
+    const QByteArray oldPath = qgetenv("PATH");
+    auto restore = qScopeGuard([&]
+    {
+        qputenv("PATH", oldPath);
+        qunsetenv("FOLITEX_FAKE_ARGS");
+    });
+    qputenv("PATH", bin.path().toUtf8() + ":" + oldPath);
+    qputenv("FOLITEX_FAKE_ARGS", argsFile.toUtf8());
+
+    // BuildRunner passes -xelatex even when asked for pdfLaTeX.
+    BuildRunner runner;
+    QSignalSpy runnerDone(&runner, &BuildRunner::finished);
+    QVERIFY(runner.start(xe, "pdfLaTeX"));
+    QTRY_COMPARE_WITH_TIMEOUT(runnerDone.size(), 1, 5000);
+    QFile recorded(argsFile);
+    QVERIFY(recorded.open(QIODevice::ReadOnly));
+    const QString args = QString::fromUtf8(recorded.readAll());
+    QVERIFY2(args.contains("-xelatex"), qPrintable(args));
+    QVERIFY2(!args.contains("-pdf\n"), qPrintable(args));
+
+    // Window status names the magic-comment engine and leaves the combo untouched.
+    Window window;
+    window.setEngine("pdfLaTeX");
+    QVERIFY(window.openSource(xe));
+    QSignalSpy built(&window, &Window::buildFinished);
+    window.build();
+    QCOMPARE(window.m_buildLabel, QString("Building with XeLaTeX (magic comment)…"));
+    QCOMPARE(window.engine(), QString("pdfLaTeX"));
+    QTRY_COMPARE_WITH_TIMEOUT(built.size(), 1, 5000);
+    QCOMPARE(window.engine(), QString("pdfLaTeX"));
+#endif
+}
+
+void Tests::keyboardPdfSourceNavigation()
+{
+    QTemporaryDir bin, project;
+    const QString main = project.filePath("main.tex");
+    write(main, "line 1\nline 2\nline 3\nline 4\n");
+    const QString pdf = BuildRunner::pdfPath(main);
+    QVERIFY(QDir().mkpath(QFileInfo(pdf).absolutePath()));
+    {
+        QPdfWriter writer(pdf);
+        QPainter painter(&writer);
+        painter.drawText(100, 100, "Page one");
+    }
+
+    Window window;
+    window.resize(1100, 700);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QSignalSpy ready(window.pdfView(), &PdfView::documentReady);
+    QVERIFY(window.openSource(main));
+    QTRY_COMPARE_WITH_TIMEOUT(ready.size(), 1, 3000);
+    auto *editor = window.currentEditor();
+    QVERIFY(editor);
+
+    QAction *focusToggle = nullptr, *jumpSource = nullptr;
+    for (QAction *action : window.actions())
+    {
+        if (action->text() == "Focus PDF / editor") focusToggle = action;
+        if (action->text() == "Jump to source") jumpSource = action;
+    }
+    QVERIFY(focusToggle && jumpSource);
+    QCOMPARE(focusToggle->shortcut(), QKeySequence("Ctrl+Alt+P"));
+    QCOMPARE(jumpSource->shortcut(), QKeySequence("Shift+F7"));
+
+    // Ctrl+Alt+P toggles focus between editor and PDF view.
+    editor->setFocus();
+    QTRY_VERIFY(editor->hasFocus());
+    focusToggle->trigger();
+    QTRY_VERIFY(window.m_pdf->hasFocus());
+    focusToggle->trigger();
+    QTRY_VERIFY(editor->hasFocus());
+
+#ifndef Q_OS_WIN
+    const QString argsFile = bin.filePath("synctex-args.txt");
+    QFile fake(bin.filePath("synctex"));
+    QVERIFY(fake.open(QIODevice::WriteOnly));
+    fake.write(QByteArray("#!/bin/sh\n"
+               "printf '%s\\n' \"$@\" > \"$FOLITEX_SYNC_ARGS\"\n"
+               "printf 'Input:") + main.toUtf8() + QByteArray("\\nLine:3\\n'\n"));
+    fake.close();
+    fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner);
+
+    const QByteArray oldPath = qgetenv("PATH");
+    auto restore = qScopeGuard([&]
+    {
+        qputenv("PATH", oldPath);
+        qunsetenv("FOLITEX_SYNC_ARGS");
+    });
+    qputenv("PATH", bin.path().toUtf8() + ":" + oldPath);
+    qputenv("FOLITEX_SYNC_ARGS", argsFile.toUtf8());
+
+    jumpSource->trigger();
+    QTRY_COMPARE_WITH_TIMEOUT(editor->lineNumber(), 3, 3000);
+    QFile recorded(argsFile);
+    QVERIFY(recorded.open(QIODevice::ReadOnly));
+    const QString args = QString::fromUtf8(recorded.readAll());
+    QVERIFY2(args.contains("edit\n-o\n1:"), qPrintable(args));
+    QVERIFY2(args.contains(pdf), qPrintable(args));
+#endif
+}
+
+void Tests::syncAfterBuildRunsForwardSync()
+{
+#ifdef Q_OS_WIN
+    QSKIP("shell script stand-ins for latexmk and synctex");
+#else
+    QTemporaryDir bin, project;
+    const QString main = project.filePath("main.tex");
+    write(main, "\\documentclass{article}\n\\begin{document}\nHello.\n\\end{document}\n");
+    const QString pdf = BuildRunner::pdfPath(main);
+    QVERIFY(QDir().mkpath(QFileInfo(pdf).absolutePath()));
+    {
+        QPdfWriter writer(pdf);
+        QPainter painter(&writer);
+        painter.drawText(100, 100, "Built");
+    }
+
+    QFile fakeLatexmk(bin.filePath("latexmk"));
+    QVERIFY(fakeLatexmk.open(QIODevice::WriteOnly));
+    fakeLatexmk.write("#!/bin/sh\nexit 0\n");
+    fakeLatexmk.close();
+    fakeLatexmk.setPermissions(fakeLatexmk.permissions() | QFileDevice::ExeOwner);
+
+    const QString syncLog = bin.filePath("sync-calls.txt");
+    QFile fakeSynctex(bin.filePath("synctex"));
+    QVERIFY(fakeSynctex.open(QIODevice::WriteOnly));
+    fakeSynctex.write("#!/bin/sh\n"
+                      "printf '%s\\n' \"$*\" >> \"$FOLITEX_SYNC_LOG\"\n"
+                      "printf 'Page:1\\ny:100\\n'\n");
+    fakeSynctex.close();
+    fakeSynctex.setPermissions(fakeSynctex.permissions() | QFileDevice::ExeOwner);
+
+    const QByteArray oldPath = qgetenv("PATH");
+    auto restore = qScopeGuard([&]
+    {
+        qputenv("PATH", oldPath);
+        qunsetenv("FOLITEX_SYNC_LOG");
+    });
+    qputenv("PATH", bin.path().toUtf8() + ":" + oldPath);
+    qputenv("FOLITEX_SYNC_LOG", syncLog.toUtf8());
+
+    auto readLines = [&]
+    {
+        QFile file(syncLog);
+        return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()).split('\n', Qt::SkipEmptyParts) : QStringList();
+    };
+
+    Window window;
+    QVERIFY(!window.syncAfterBuild());
+    window.setSyncAfterBuild(true);
+    QVERIFY(window.syncAfterBuild());
+    QVERIFY(window.openSource(main));
+    QSignalSpy built(&window, &Window::buildFinished);
+    window.build();
+    QTRY_COMPARE_WITH_TIMEOUT(built.size(), 1, 5000);
+    QVERIFY(built.first().first().toBool());
+    QTRY_COMPARE_WITH_TIMEOUT(readLines().size(), 1, 5000);
+    QVERIFY(readLines().first().startsWith("view -i "));
+    QVERIFY(readLines().first().contains(pdf));
+    QTest::qWait(350);
+    QCOMPARE(readLines().size(), 1); // exactly one forward sync per build
+#endif
+}
+
+void Tests::cleanAuxiliaryFilesKeepsPdf()
+{
+    if (QStandardPaths::findExecutable("latexmk").isEmpty()) QSKIP("latexmk unavailable");
+    QTemporaryDir dir;
+    const QString main = dir.filePath("main.tex");
+    write(main, "\\documentclass{article}\n\\begin{document}\nHello clean.\n\\end{document}\n");
+
+    Window window;
+    QVERIFY(window.openSource(main));
+    QSignalSpy built(&window, &Window::buildFinished);
+    window.build();
+    QTRY_COMPARE_WITH_TIMEOUT(built.size(), 1, 30000);
+    QVERIFY(built.first().first().toBool());
+
+    const QString pdf = BuildRunner::pdfPath(main);
+    const QString aux = dir.filePath(".folitex-build/main.aux");
+    const QString log = dir.filePath(".folitex-build/main.log");
+    QVERIFY(QFileInfo::exists(pdf));
+    QVERIFY(QFileInfo::exists(aux));
+    QVERIFY(QFileInfo::exists(log));
+
+    QAction *clean = nullptr;
+    for (QAction *action : window.actions())
+        if (action->text() == "Clean auxiliary files") { clean = action; break; }
+    QVERIFY(clean);
+    clean->trigger();
+    QTRY_COMPARE_WITH_TIMEOUT(window.m_status->text(), QString("Cleaned auxiliary files"), 10000);
+    QVERIFY(QFileInfo::exists(pdf));
+    QVERIFY(!QFileInfo::exists(aux));
+    QVERIFY(!QFileInfo::exists(log));
 }

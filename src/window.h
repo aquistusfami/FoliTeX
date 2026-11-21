@@ -26,6 +26,7 @@ class Editor;
 #include <QFileSystemWatcher>
 #include <QTimer>
 #include <QDateTime>
+#include <QElapsedTimer>
 #include "editor.h"
 #include "pdfview.h"
 
@@ -49,6 +50,7 @@ public:
     bool cancelled() const { return m_cancelRequested; }
     void stop();
     static QString rootFile(const QString &source);
+    static QString magicProgram(const QString &root);
     static QString includingFile(const QString &path);
     static QString pdfPath(const QString &source);
     // Errors (file:line: from -file-line-error), LaTeX/package warnings and over/underfull boxes.
@@ -92,6 +94,8 @@ public:
     void setRecentFiles(const QStringList &files) { m_recent = files; delete m_welcome; updateWelcome(); } // the start actions list them
     bool buildOnSave() const { return m_buildOnSaveAction->isChecked(); }
     void setBuildOnSave(bool on) { m_buildOnSaveAction->setChecked(on); }
+    bool syncAfterBuild() const { return m_syncAfterBuildAction->isChecked(); }
+    void setSyncAfterBuild(bool on) { m_syncAfterBuildAction->setChecked(on); }
     void addRecent(const QString &path);
     QFont editorFont() const { return m_editorFont; }
     void setEditorFont(const QFont &font);
@@ -136,6 +140,7 @@ private:
     void closeTab(int index);
     void setTabTitle(Editor *editor);
     void keepStatus(const QString &text);
+    void syncPdfToTab(Editor *editor);
     void forwardSync();
     void inverseSync(int page, double x, double y, const QStringList &words, int clicked);
     void reloadSource(Editor *editor);
@@ -146,6 +151,7 @@ private:
     void syncOutline();
     void syncProcess(QStringList arguments, std::function<void(QString)> complete);
     void countWords();
+    void cleanAuxFiles();
     void entryRenamed(const QString &from, const QString &to);
     void explorerMenu(const QPoint &position);
     QString m_newFile; // created from the explorer, opened once its name is confirmed
@@ -159,6 +165,8 @@ private:
     QString m_statusKeep; // a message that outlives cursor moves: build result, disk conflict
     QString m_lastRoot; // root of the last build; what saving a .bib or .sty rebuilds
     QAction *m_buildOnSaveAction;
+    QAction *m_syncAfterBuildAction;
+    bool m_pendingSyncAfterBuild = false;
     PdfView *m_pdf;
     QWidget *m_pdfPane;
     QPlainTextEdit *m_log;
@@ -170,6 +178,12 @@ private:
     QList<Problem> m_problems;
     int m_problemIndex = -1;
     QDateTime m_buildStarted;
+    QTimer m_buildTimer;
+    QElapsedTimer m_buildElapsed;
+    QString m_buildLabel;
+    bool m_buildPdfExisted = false;
+    QDateTime m_buildPdfMtime;
+    qint64 m_buildPdfSize = -1;
     QDateTime m_problemsTime; // when m_problems were read
     QComboBox *m_engine;
     QPushButton *m_build;
@@ -205,6 +219,9 @@ private:
     void setPanelCollapsed(bool on); // only the Problems | Output strip while there is nothing to report
     QWidget *m_pdfBar;
     void setPdfLoaded(bool loaded);
+    void updatePageCountLabel();
+    int m_pdfPages = 0;
+    bool m_pdfStale = false;
     class QSpinBox *m_zoomBox;
     double m_pdfScale = 0;
     QMenu *m_templatesMenu;
@@ -238,6 +255,7 @@ private:
     QCheckBox *m_pdfCase;
     QCheckBox *m_pdfWord;
     BuildRunner m_runner;
+    QPointer<QProcess> m_syncProcess;
     QFileSystemWatcher m_watcher;
     QTimer m_reload;
     QFileSystemWatcher m_sourceWatcher;

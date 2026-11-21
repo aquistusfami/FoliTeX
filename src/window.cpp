@@ -54,6 +54,7 @@
 #include <QStackedWidget>
 #include <QImageReader>
 #include <QBuffer>
+#include <QScrollBar>
 #ifdef Q_OS_UNIX
 #include <unistd.h>
 #include <signal.h>
@@ -143,6 +144,28 @@ QString BuildRunner::rootFile(const QString &source)
         QString includer = includingFile(root);
         if (includer.isEmpty()) return root;
         root = includer;
+    }
+    return {};
+}
+
+QString BuildRunner::magicProgram(const QString &root)
+{
+    if (root.isEmpty()) return {};
+    QFile file(root);
+    if (!file.open(QIODevice::ReadOnly)) return {};
+    static const QRegularExpression magic(
+        R"(^\s*%\s*!\s*(?:(?:TeX\s+)?TS-program|TeX\s+program)\s*=\s*(\S+)\s*$)",
+        QRegularExpression::CaseInsensitiveOption);
+    for (int line = 0; line < 20 && !file.atEnd(); ++line)
+    {
+        QString text = QString::fromUtf8(file.readLine(4096));
+        if (line == 0 && text.startsWith(QChar(0xFEFF))) text.remove(0, 1);
+        auto match = magic.match(text);
+        if (!match.hasMatch()) continue;
+        const QString value = match.captured(1).toLower();
+        if (value == "pdflatex") return "pdfLaTeX";
+        if (value == "lualatex") return "LuaLaTeX";
+        if (value == "xelatex") return "XeLaTeX";
     }
     return {};
 }
@@ -343,12 +366,14 @@ bool BuildRunner::start(const QString &source, const QString &engine)
     environment.insert("error_line", "254");
     environment.insert("half_error_line", "238");
     m_process.setProcessEnvironment(environment);
-    QString flag = engine == "LuaLaTeX" ? "-lualatex" : engine == "XeLaTeX" ? "-xelatex" : "-pdf";
+    const QString magic = magicProgram(root);
+    const QString effective = magic.isEmpty() ? engine : magic;
+    QString flag = effective == "LuaLaTeX" ? "-lualatex" : effective == "XeLaTeX" ? "-xelatex" : "-pdf";
     // Light PDF compression: images that cannot be copied as-is (e.g. PNGs with alpha) are
     // re-deflated on every run, at level 9 by default. Level 1 cut a screenshot-heavy report
     // from 3.0 s to 1.2 s per rebuild for ~12 % more PDF size; documents may still set their own.
-    QString compression = engine == "LuaLaTeX" ? R"(\pdfvariable compresslevel=1)"
-                        : engine == "XeLaTeX" ? R"(\special{dvipdfmx:config z 1})" : R"(\pdfcompresslevel=1)";
+    QString compression = effective == "LuaLaTeX" ? R"(\pdfvariable compresslevel=1)"
+                        : effective == "XeLaTeX" ? R"(\special{dvipdfmx:config z 1})" : R"(\pdfcompresslevel=1)";
     // Arguments are passed directly, so spaces, Unicode and shell metacharacters stay filenames.
     m_process.start("latexmk", {flag, "-interaction=nonstopmode", "-file-line-error", "-synctex=1", "-usepretex=" + compression,
         "-outdir=.folitex-build", "./" + QFileInfo(root).fileName()});
@@ -392,6 +417,22 @@ static QPixmap svgPixmap(const char *svg, const char *color, int size)
     QPixmap pixmap = QPixmap::fromImage(reader.read());
     pixmap.setDevicePixelRatio(3);
     return pixmap;
+}
+
+static void styleProblemCounters(QToolButton *errorCount, QToolButton *warningCount, bool built)
+{
+    static const char *errorSvg = R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M5.8 5.8l4.4 4.4m0-4.4l-4.4 4.4"/></svg>)";
+    static const char *warningSvg = R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3.2m0 1.6v.1"/></svg>)";
+    const QByteArray mutedHex = themeColor("#8793A2").name().toUtf8();
+    const QByteArray errHex = built ? themeColor("#F14C4C").name().toUtf8() : mutedHex;
+    const QByteArray warnHex = built ? themeColor("#CCA700").name().toUtf8() : mutedHex;
+    errorCount->setIcon(QIcon(svgPixmap(errorSvg, errHex.constData(), 14)));
+    warningCount->setIcon(QIcon(svgPixmap(warningSvg, warnHex.constData(), 14)));
+    const QString style = built ? QString() : themed("color:#8793A2;");
+    errorCount->setStyleSheet(style);
+    warningCount->setStyleSheet(style);
+    errorCount->setToolTip(built ? "Errors · F8" : "Build to check for problems");
+    warningCount->setToolTip(built ? "Warnings" : "Build to check for problems");
 }
 
 // Glyphs and colours in the style of VS Code's Seti icon theme (drawn for FoliTeX, not copied).
@@ -476,7 +517,7 @@ Window::Window() : m_runner(this)
 {
     setWindowTitle("FoliTeX");
     resize(1280, 820);
-    setMinimumSize(680, 420);
+    setMinimumSize(640, 420);
     auto *central = new QWidget(this);
     auto *layout = new QVBoxLayout(central);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -656,6 +697,34 @@ Window::Window() : m_runner(this)
     menu = menuBar->addMenu("&Build");
     add("Build / stop", QKeySequence("F5"), [this] { build(); })->setShortcuts({QKeySequence("F5"), QKeySequence("F6")});
     add("Source → PDF", QKeySequence("F7"), [this] { forwardSync(); });
+    add("Jump to source", QKeySequence("Shift+F7"), [this]
+    {
+        if (m_pdf->path().isEmpty() || m_pdf->pageCount() <= 0)
+        {
+            m_status->setText("Open or build a PDF to jump to source.");
+            return;
+        }
+        const int page = m_pdf->currentPage();
+        double x = 300.0, y = 400.0;
+        if (m_pdfScale > 0)
+        {
+            const double pageWidthPts = std::max(32, m_pdf->viewport()->width() - 48) * m_pdf->zoom() / m_pdfScale;
+            x = pageWidthPts / 2.0;
+            const int maxScroll = m_pdf->verticalScrollBar()->maximum();
+            if (maxScroll > 0)
+            {
+                const double totalH = maxScroll + m_pdf->viewport()->height();
+                const double pitch = std::max(1.0, (totalH - 32.0) / m_pdf->pageCount());
+                const double pageH = std::max(1.0, pitch - 16.0);
+                const double viewCenterY = m_pdf->verticalScrollBar()->value() + m_pdf->viewport()->height() / 2.0;
+                const double pageTop = 24.0 + (page - 1) * pitch;
+                y = std::clamp(viewCenterY - pageTop, 0.0, pageH) / m_pdfScale;
+            }
+            else
+                y = std::max(0.0, (m_pdf->viewport()->height() / 2.0 - 24.0) / m_pdfScale);
+        }
+        inverseSync(page, x, y, {}, -1);
+    });
     add("Next problem", QKeySequence("F8"), [this] { if (!m_problems.isEmpty()) goToProblem((m_problemIndex + 1) % m_problems.size()); });
     add("Previous problem", QKeySequence("Shift+F8"), [this]
     {
@@ -669,6 +738,9 @@ Window::Window() : m_runner(this)
     menu->addSeparator();
     m_buildOnSaveAction = add("Build on save", QKeySequence(), [] {});
     m_buildOnSaveAction->setCheckable(true);
+    m_syncAfterBuildAction = add("Sync PDF after Build", QKeySequence(), [] {});
+    m_syncAfterBuildAction->setCheckable(true);
+    add("Clean auxiliary files", QKeySequence(), [this] { cleanAuxFiles(); });
     add("Word count", QKeySequence(), [this] { countWords(); });
     menu = menuBar->addMenu("&View");
     add("Command palette…", QKeySequence("Ctrl+K"), [this] { showPalette(false); })->setShortcuts({QKeySequence("Ctrl+K"), QKeySequence("Ctrl+Shift+P")});
@@ -679,6 +751,18 @@ Window::Window() : m_runner(this)
     menu->addSeparator();
     add("Toggle side bar", QKeySequence("Ctrl+Shift+O"), [this] { showSide(m_outlineButton->isChecked() ? m_outline : m_files); });
     add("Toggle PDF", QKeySequence("Ctrl+\\"), [this] { m_pdfPane->setVisible(!m_pdfPane->isVisible()); });
+    add("Focus PDF / editor", QKeySequence("Ctrl+Alt+P"), [this]
+    {
+        if (m_pdfPane->isAncestorOf(QApplication::focusWidget()))
+        {
+            if (auto *editor = currentEditor()) editor->setFocus();
+        }
+        else
+        {
+            if (!m_pdfPane->isVisible()) m_pdfPane->show();
+            m_pdf->setFocus();
+        }
+    });
     add("Toggle panel", QKeySequence("Ctrl+J"), [this]
     {
         if (m_panel->isVisible())
@@ -745,26 +829,26 @@ Window::Window() : m_runner(this)
     connect(m_build, &QPushButton::clicked, this, &Window::build);
     m_pdf = new PdfView;
     m_status = new QLabel;
-    // VS Code's problem counters: click to open the Problems panel.
-    auto counter = [this](const char *svg, const char *color, const QString &tip)
+    // VS Code's problem counters: visible from start (muted until the first build), click to open Problems.
+    auto counter = [this]
     {
         auto *button = new QToolButton;
         button->setObjectName("problemCount");
-        button->setIcon(QIcon(svgPixmap(svg, color, 14)));
         button->setIconSize(QSize(14, 14));
         button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-        button->setToolTip(tip);
-        button->hide(); // until the first build
+        button->setText("0");
         connect(button, &QToolButton::clicked, this, [this]
         {
             m_panel->setCurrentWidget(m_problemsView);
             m_panel->show();
+            if (m_panelCollapsed) setPanelCollapsed(false);
         });
         statusBar()->addWidget(button);
         return button;
     };
-    m_errorCount = counter(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M5.8 5.8l4.4 4.4m0-4.4l-4.4 4.4"/></svg>)", "#F14C4C", "Errors · F8");
-    m_warningCount = counter(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3.2m0 1.6v.1"/></svg>)", "#CCA700", "Warnings");
+    m_errorCount = counter();
+    m_warningCount = counter();
+    styleProblemCounters(m_errorCount, m_warningCount, false);
     statusBar()->addWidget(m_status, 1);
     m_position = new QLabel;
     m_position->setToolTip("Cursor position · line ending");
@@ -1035,7 +1119,7 @@ Window::Window() : m_runner(this)
     m_forwardButton = navButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>)", "Go forward · Alt+Right", true);
     m_tabs->setCornerWidget(navCorner, Qt::TopLeftCorner);
     m_palette = new Palette(this);
-    connect(m_tabs, &QTabWidget::currentChanged, this, [this] { if (currentEditor()) setTabTitle(currentEditor()); refreshOutline(); updateTabButtons(); updatePosition(); noteLocation(); updateWelcome(); });
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this] { if (currentEditor()) setTabTitle(currentEditor()); refreshOutline(); updateTabButtons(); updatePosition(); noteLocation(); updateWelcome(); syncPdfToTab(currentEditor()); });
     m_outline = new QTreeWidget;
     m_outline->setHeaderHidden(true);
     m_outline->setIndentation(16);
@@ -1247,7 +1331,11 @@ Window::Window() : m_runner(this)
     m_log->setFont(QFont("monospace", 10));
     m_problemsView = new QTreeWidget;
     m_problemsView->setObjectName("problems");
+    m_problemsView->setColumnCount(2);
     m_problemsView->setHeaderHidden(true);
+    m_problemsView->header()->setStretchLastSection(false);
+    m_problemsView->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_problemsView->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     m_problemsView->setIndentation(16);
     m_problemsView->setFrameShape(QFrame::NoFrame);
     // Until the first build the list is empty: say what will appear and offer the build.
@@ -1282,11 +1370,14 @@ Window::Window() : m_runner(this)
         menu.addAction("Fix with agent", this, [this, index = item->data(0, Qt::UserRole).toInt()] { fixWithAgent(index); });
         menu.exec(m_problemsView->viewport()->mapToGlobal(at));
     });
-    connect(m_problemsView, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item)
+    auto openProblem = [this](QTreeWidgetItem *item)
     {
+        if (!item) return;
         if (item->data(0, Qt::UserRole).isValid()) goToProblem(item->data(0, Qt::UserRole).toInt());
         else item->setExpanded(!item->isExpanded());
-    });
+    };
+    connect(m_problemsView, &QTreeWidget::itemClicked, this, openProblem);
+    connect(m_problemsView, &QTreeWidget::itemActivated, this, openProblem);
     m_panel = new QTabWidget;
     m_panel->setObjectName("bottomPanel");
     m_panel->setAttribute(Qt::WA_StyledBackground); // its corner (filter, buttons) would show the window gap colour
@@ -1389,15 +1480,26 @@ Window::Window() : m_runner(this)
     qApp->installEventFilter(this); // last: eventFilter uses the widgets built above
     connect(&m_runner, &BuildRunner::output, this, [this](const QString &text)
     {
-        auto cursor = m_log->textCursor(); cursor.movePosition(QTextCursor::End); cursor.insertText(text);
-        m_log->setTextCursor(cursor);
+        auto *bar = m_log->verticalScrollBar();
+        const bool atBottom = bar->value() >= bar->maximum();
+        QTextCursor cursor(m_log->document());
+        cursor.movePosition(QTextCursor::End);
+        cursor.insertText(text);
+        if (atBottom) bar->setValue(bar->maximum());
+    });
+    m_buildTimer.setInterval(1000);
+    connect(&m_buildTimer, &QTimer::timeout, this, [this]
+    {
+        const qint64 seconds = std::max<qint64>(1, qRound(m_buildElapsed.elapsed() / 1000.0));
+        m_status->setText(QString("%1 %2 s").arg(m_buildLabel).arg(seconds));
     });
     connect(&m_runner, &BuildRunner::finished, this, [this](bool success, const QString &pdf)
     {
+        m_buildTimer.stop();
         m_build->setIcon(m_runIcon);
         m_build->setText("Build");
         m_build->setToolTip("Build · F5");
-        if (m_runner.cancelled()) { keepStatus("Build stopped"); return; }
+        if (m_runner.cancelled()) { m_pendingSyncAfterBuild = false; keepStatus("Build stopped"); return; }
         // Always the latest log: when nothing changed, latexmk does not rerun and keeps the old
         // one, which still describes the document.
         QList<Problem> problems;
@@ -1406,8 +1508,7 @@ Window::Window() : m_runner(this)
         if (!pdf.isEmpty() && log.open(QIODevice::ReadOnly))
             problems = BuildRunner::parseLog(QString::fromUtf8(log.readAll()), directory);
         setProblems(problems, directory, success);
-        m_errorCount->show();
-        m_warningCount->show();
+        styleProblemCounters(m_errorCount, m_warningCount, true);
         int errors = int(std::count_if(problems.cbegin(), problems.cend(), [](const Problem &p) { return p.error; }));
         int warnings = int(problems.size()) - errors;
         m_status->setStyleSheet(success ? QString() : themed("color:#F48771;"));
@@ -1417,7 +1518,17 @@ Window::Window() : m_runner(this)
             keepStatus(errors ? QString("Build failed: %1 error%2 · F8 to go to the first").arg(errors).arg(errors == 1 ? "" : "s")
                                      : "Build failed: see Output");
         // nonstopmode still writes a PDF after most errors; show it so the edits are visible.
-        if (success || (QFileInfo::exists(pdf) && (m_pdf->path().isEmpty() || QFileInfo(pdf).lastModified() >= m_buildStarted.addSecs(-1)))) openPdf(pdf);
+        const QFileInfo pdfInfo(pdf);
+        const bool rewritten = pdfInfo.exists()
+            && (!m_buildPdfExisted || pdfInfo.lastModified() != m_buildPdfMtime || pdfInfo.size() != m_buildPdfSize);
+        m_pendingSyncAfterBuild = success && syncAfterBuild();
+        if (success || (pdfInfo.exists() && (m_pdf->path().isEmpty() || rewritten)))
+            openPdf(pdf);
+        else if (!success && !m_pdf->path().isEmpty() && m_pdfPages > 0)
+        {
+            m_pdfStale = true;
+            updatePageCountLabel();
+        }
         if (!success)
         {
             m_panel->setCurrentWidget(errors ? static_cast<QWidget *>(m_problemsView) : m_log);
@@ -1428,14 +1539,16 @@ Window::Window() : m_runner(this)
     });
     connect(m_pdf, &PdfView::documentReady, this, [this](int pages)
     {
+        m_pdfPages = pages;
         setPdfLoaded(pages > 0);
         m_page->setMaximum(std::max(1, pages));
-        m_pageCount->setText("/ " + QString::number(pages));
+        updatePageCountLabel();
         // As wide as its digits, so "1 / 12" reads as one phrase from the left edge, not a box with a gap.
         m_page->setFixedWidth(m_page->fontMetrics().horizontalAdvance(QString(QString::number(std::max(1, pages)).size(), '0')) + 8);
         if (m_pendingPage) { m_pdf->goToPage(m_pendingPage, m_pendingY); m_pendingPage = 0; }
+        if (std::exchange(m_pendingSyncAfterBuild, false)) forwardSync();
     });
-    connect(m_pdf, &PdfView::loadFailed, this, [this](const QString &error) { m_status->setText(error); setPdfLoaded(false); });
+    connect(m_pdf, &PdfView::loadFailed, this, [this](const QString &error) { m_pendingSyncAfterBuild = false; m_status->setText(error); setPdfLoaded(false); });
     connect(m_pdf, &PdfView::pageChanged, this, [this](int page)
     {
         QSignalBlocker blocker(m_page); m_page->setValue(page);
@@ -1683,7 +1796,36 @@ void Window::setPdfLoaded(bool loaded)
 {
     // Without a document the bar says so and nothing else: no page, zoom or toggles to press.
     for (auto *child : m_pdfBar->findChildren<QWidget *>(Qt::FindDirectChildrenOnly)) child->setVisible(loaded || child == m_pageCount);
-    if (!loaded) m_pageCount->setText("No PDF");
+    if (!loaded)
+    {
+        m_pdfPages = 0;
+        m_pdfStale = false;
+        updatePageCountLabel();
+    }
+}
+
+void Window::updatePageCountLabel()
+{
+    if (m_pdfPages <= 0)
+    {
+        m_pageCount->setTextFormat(Qt::PlainText);
+        m_pageCount->setText("No PDF");
+        m_pageCount->setToolTip({});
+        return;
+    }
+    if (m_pdfStale)
+    {
+        m_pageCount->setTextFormat(Qt::RichText);
+        m_pageCount->setText(QString("/ %1<span style=\"color:%2;\"> · last good build</span>")
+            .arg(m_pdfPages).arg(themeColor("#8793A2").name()));
+        m_pageCount->setToolTip("The last build failed; showing the PDF from the last good build.");
+    }
+    else
+    {
+        m_pageCount->setTextFormat(Qt::PlainText);
+        m_pageCount->setText("/ " + QString::number(m_pdfPages));
+        m_pageCount->setToolTip({});
+    }
 }
 
 void Window::openRecent(const QString &path)
@@ -1976,7 +2118,7 @@ bool Window::openSource(const QString &path)
     for (int i = 0; i < m_tabs->count(); ++i)
         if (QString open = m_tabs->widget(i)->property("path").toString(); open == absolute
             || (!canonical.isEmpty() && QFileInfo(open).canonicalFilePath() == canonical))
-        { m_tabs->setCurrentIndex(i); addRecent(absolute); return true; }
+        { m_tabs->setCurrentIndex(i); syncPdfToTab(currentEditor()); addRecent(absolute); return true; }
     QFile file(absolute);
     if (!file.open(QIODevice::ReadOnly)) { m_status->setText("Cannot open file: " + file.errorString()); return false; }
     QByteArray bytes = file.readAll();
@@ -1996,10 +2138,21 @@ bool Window::openSource(const QString &path)
     applyProblems(editor);
     watchSource(absolute);
     addRecent(absolute);
-    // The last build's PDF, when there is one and nothing else is shown; it may be older than the source.
-    const QString built = BuildRunner::pdfPath(BuildRunner::rootFile(absolute));
-    if (m_pdf->path().isEmpty() && QFileInfo::exists(built)) openPdf(built);
+    // Follow this tab's built PDF when one exists and differs from the shown PDF.
+    syncPdfToTab(editor);
     return true;
+}
+
+void Window::syncPdfToTab(Editor *editor)
+{
+    if (!editor) return;
+    const QString path = editor->property("path").toString();
+    if (path.isEmpty()) return;
+    const QString root = BuildRunner::rootFile(path);
+    if (root.isEmpty()) return;
+    const QString built = BuildRunner::pdfPath(root);
+    if (QFileInfo::exists(built) && (m_pdf->path().isEmpty() || QFileInfo(built) != QFileInfo(m_pdf->path())))
+        openPdf(built);
 }
 
 void Window::setEditorFont(const QFont &font)
@@ -2275,6 +2428,33 @@ void Window::countWords()
     process->start("texcount", {"-inc", "-utf8", "-total", QFileInfo(root).fileName()});
 }
 
+void Window::cleanAuxFiles()
+{
+    if (m_runner.running()) { m_status->setText("Stop the running build before cleaning auxiliary files."); return; }
+    auto *editor = currentEditor();
+    const QString path = editor ? editor->property("path").toString() : QString();
+    QString root = path.isEmpty() ? m_lastRoot : BuildRunner::rootFile(path);
+    if (!root.isEmpty() && !QStringList{"tex", "ltx"}.contains(QFileInfo(root).suffix().toLower()))
+        root = m_lastRoot;
+    if (root.isEmpty()) { m_status->setText("Open or save a document to clean its auxiliary files."); return; }
+    auto *process = new QProcess(this);
+    process->setWorkingDirectory(QFileInfo(root).absolutePath());
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+        [this, process](int code, QProcess::ExitStatus status)
+        {
+            const QString out = QString::fromLocal8Bit(process->readAll()).trimmed();
+            process->deleteLater();
+            if (status == QProcess::NormalExit && code == 0) keepStatus("Cleaned auxiliary files");
+            else m_status->setText(out.isEmpty() ? "Failed to clean auxiliary files." : "Clean failed: " + out.section('\n', -1));
+        });
+    connect(process, &QProcess::errorOccurred, this, [this, process](QProcess::ProcessError error)
+    {
+        if (error == QProcess::FailedToStart) { m_status->setText("Cannot start latexmk: " + process->errorString()); process->deleteLater(); }
+    });
+    process->start("latexmk", {"-c", "-outdir=.folitex-build", "./" + QFileInfo(root).fileName()});
+}
+
 bool Window::save(Editor *editor, bool saveAs)
 {
     if (!editor) return false;
@@ -2371,7 +2551,7 @@ void Window::closeEvent(QCloseEvent *event)
 
 void Window::build()
 {
-    if (m_runner.running()) { m_runner.stop(); return; }
+    if (m_runner.running()) { m_buildTimer.stop(); m_runner.stop(); return; }
     auto *editor = currentEditor();
     if (!editor) return;
     if ((editor->property("path").toString().isEmpty() || editor->document()->isModified()) && !save(editor)) return;
@@ -2392,15 +2572,26 @@ void Window::build()
         if (!path.isEmpty() && !root.isEmpty() && BuildRunner::rootFile(path) == root && !save(other)) return;
     }
     m_log->clear();
+    m_pendingSyncAfterBuild = false;
     m_buildStarted = QDateTime::currentDateTime();
+    const QString expectedPdf = root.isEmpty() ? QString() : BuildRunner::pdfPath(root);
+    const QFileInfo pdfInfo(expectedPdf);
+    m_buildPdfExisted = !expectedPdf.isEmpty() && pdfInfo.exists();
+    m_buildPdfMtime = m_buildPdfExisted ? pdfInfo.lastModified() : QDateTime();
+    m_buildPdfSize = m_buildPdfExisted ? pdfInfo.size() : -1;
+    const QString magic = root.isEmpty() ? QString() : BuildRunner::magicProgram(root);
+    m_buildLabel = magic.isEmpty() ? QString("Building…") : QString("Building with %1 (magic comment)…").arg(magic);
+    m_buildElapsed.start();
     m_status->setStyleSheet({});
-    m_status->setText("Building…"); m_build->setIcon(m_stopIcon); m_build->setText("Stop"); m_build->setToolTip("Stop build · F5");
+    m_status->setText(m_buildLabel); m_build->setIcon(m_stopIcon); m_build->setText("Stop"); m_build->setToolTip("Stop build · F5");
     m_lastRoot = root;
-    m_runner.start(source, m_engine->currentText());
+    if (m_runner.start(source, m_engine->currentText())) m_buildTimer.start();
 }
 
 void Window::openPdf(const QString &path)
 {
+    m_pdfStale = false;
+    if (m_pdfPages > 0) updatePageCountLabel();
     if (!m_watcher.files().isEmpty()) m_watcher.removePaths(m_watcher.files());
     m_watcher.addPath(path);
     if (m_zenHidden.isEmpty()) m_pdfPane->show();
@@ -2409,18 +2600,42 @@ void Window::openPdf(const QString &path)
 
 void Window::syncProcess(QStringList arguments, std::function<void(QString)> complete)
 {
+    if (QProcess *old = m_syncProcess)
+    {
+        m_syncProcess = nullptr;
+        old->disconnect(this);
+        if (old->state() != QProcess::NotRunning)
+        {
+            connect(old, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), old, &QObject::deleteLater);
+            old->kill();
+        }
+        else old->deleteLater();
+    }
     auto *process = new QProcess(this);
+    m_syncProcess = process;
     connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
         [this, process, complete](int code, QProcess::ExitStatus status)
         {
-            QString output = QString::fromUtf8(process->readAllStandardOutput());
-            if (code == 0 && status == QProcess::NormalExit) complete(output);
-            else m_status->setText("SyncTeX found no position; rebuild with synctex=1.");
+            if (m_syncProcess == process)
+            {
+                m_syncProcess = nullptr;
+                QString output = QString::fromUtf8(process->readAllStandardOutput());
+                if (code == 0 && status == QProcess::NormalExit) complete(output);
+                else m_status->setText("SyncTeX found no position; rebuild with synctex=1.");
+            }
             process->deleteLater();
         });
     connect(process, &QProcess::errorOccurred, this, [this, process](QProcess::ProcessError error)
     {
-        if (error == QProcess::FailedToStart) { m_status->setText("Cannot start synctex."); process->deleteLater(); }
+        if (error == QProcess::FailedToStart)
+        {
+            if (m_syncProcess == process)
+            {
+                m_syncProcess = nullptr;
+                m_status->setText("Cannot start synctex.");
+            }
+            process->deleteLater();
+        }
     });
     process->start("synctex", arguments);
 }
@@ -2429,6 +2644,13 @@ void Window::forwardSync()
 {
     auto *editor = currentEditor();
     if (!editor || editor->property("path").toString().isEmpty() || m_pdf->path().isEmpty()) return;
+    const QString root = BuildRunner::rootFile(editor->property("path").toString());
+    const QString expected = root.isEmpty() ? QString() : BuildRunner::pdfPath(root);
+    if (expected.isEmpty() || QFileInfo(m_pdf->path()) != QFileInfo(expected))
+    {
+        m_status->setText("Build this document first: the PDF shown belongs to another document.");
+        return;
+    }
     if (editor->document()->isModified()) { m_status->setText("Build first to sync new edits with the PDF."); return; }
     QString input = QString::number(editor->lineNumber()) + ":0:" + editor->property("path").toString();
     syncProcess({"view", "-i", input, "-o", m_pdf->path()}, [this](const QString &text)
@@ -2569,6 +2791,15 @@ void Window::updateTabHints()
 Window::~Window()
 {
     qApp->removeEventFilter(this);
+    if (m_syncProcess)
+    {
+        m_syncProcess->disconnect(this);
+        if (m_syncProcess->state() != QProcess::NotRunning)
+        {
+            m_syncProcess->kill();
+            m_syncProcess->waitForFinished(500);
+        }
+    }
     // An inline rename still open commits while the tree is destroyed; tabs must not react.
     m_files->itemDelegate()->disconnect(this);
     m_fileModel->disconnect(this);
@@ -2577,8 +2808,10 @@ Window::~Window()
 // Problems panel, grouped by file like VS Code's; editors get squiggles for their file.
 void Window::setProblems(const QList<Problem> &problems, const QString &directory, bool success)
 {
-    static const QIcon errorIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M5.8 5.8l4.4 4.4m0-4.4l-4.4 4.4"/></svg>)", "#F14C4C", 16));
-    static const QIcon warningIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3.2m0 1.6v.1"/></svg>)", "#CCA700", 16));
+    const QByteArray errorHex = themeColor("#F14C4C").name().toUtf8();
+    const QByteArray warningHex = themeColor("#CCA700").name().toUtf8();
+    const QIcon errorIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M5.8 5.8l4.4 4.4m0-4.4l-4.4 4.4"/></svg>)", errorHex.constData(), 16));
+    const QIcon warningIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3.2m0 1.6v.1"/></svg>)", warningHex.constData(), 16));
     // Empty: the centred message instead of a list; the filter and list actions only once there is a list.
     m_problemsEmpty->setVisible(problems.isEmpty());
     // Before any build there is nothing to vouch for: say so instead of reporting a clean result.
@@ -2609,6 +2842,7 @@ void Window::setProblems(const QList<Problem> &problems, const QString &director
         if (!group)
         {
             group = new QTreeWidgetItem(m_problemsView);
+            group->setFirstColumnSpanned(true);
             group->setIcon(0, fileIcon(problem.file));
             group->setToolTip(0, problem.file);
             group->setData(0, Qt::UserRole + 1, 0);
@@ -2619,14 +2853,22 @@ void Window::setProblems(const QList<Problem> &problems, const QString &director
             + QString("  (%1)").arg(group->data(0, Qt::UserRole + 1).toInt()));
         auto *item = new QTreeWidgetItem(group);
         item->setIcon(0, problem.error ? errorIcon : warningIcon);
-        item->setText(0, problem.message + (problem.line > 0 ? QString("  [Ln %1]").arg(problem.line) : QString()));
+        item->setText(0, problem.message);
+        if (problem.line > 0)
+        {
+            item->setText(1, QString("Ln %1").arg(problem.line));
+            item->setTextAlignment(1, Qt::AlignRight | Qt::AlignVCenter);
+            item->setForeground(1, themeColor("#8793A2"));
+        }
         item->setToolTip(0, problem.message);
         item->setData(0, Qt::UserRole, i);
     }
     m_problemsView->expandAll();
+    m_problemsView->resizeColumnToContents(1);
     int errors = int(std::count_if(problems.cbegin(), problems.cend(), [](const Problem &p) { return p.error; }));
     m_errorCount->setText(QString::number(errors));
     m_warningCount->setText(QString::number(problems.size() - errors));
+    styleProblemCounters(m_errorCount, m_warningCount, built);
     for (int i = 0; i < m_tabs->count(); ++i)
         if (auto *editor = qobject_cast<Editor *>(m_tabs->widget(i))) applyProblems(editor);
 }
@@ -2719,13 +2961,23 @@ void Window::updatePanelActions()
     if (!m_panel) return;
     const bool onProblems = m_panel->currentIndex() == 0;
     const bool hasProblems = !m_problems.isEmpty();
+    if (m_collapseProblems) m_collapseProblems->setVisible(onProblems && hasProblems);
+    auto *actions = m_panel->cornerWidget(Qt::TopRightCorner);
     if (m_problemFilter)
     {
-        m_problemFilter->setVisible(onProblems && (hasProblems || !m_problemFilter->text().isEmpty()));
-        if (m_panel->width() < 420 && m_problemFilter->text().isEmpty()) m_problemFilter->hide();
+        const bool want = onProblems && (hasProblems || !m_problemFilter->text().isEmpty());
+        int needed = m_panel->tabBar()->sizeHint().width() + m_problemFilter->sizeHint().width() + 12;
+        if (actions)
+            for (auto *button : actions->findChildren<QToolButton *>(Qt::FindDirectChildrenOnly))
+                if (button->isVisibleTo(actions)) needed += button->sizeHint().width() + 2;
+        m_problemFilter->setVisible(want && m_panel->width() >= needed);
     }
-    if (m_collapseProblems) m_collapseProblems->setVisible(onProblems && hasProblems);
-    if (auto *actions = m_panel->cornerWidget(Qt::TopRightCorner)) actions->show();
+    if (actions)
+    {
+        actions->show();
+        actions->adjustSize();
+        actions->updateGeometry();
+    }
 }
 
 void Window::toggleMaximizePanel()
@@ -2777,7 +3029,7 @@ bool Window::eventFilter(QObject *object, QEvent *event)
     // A lone Alt (pressed and released with no other key) shows or hides a hidden menu bar.
     // The application filter may see one key event per receiver, hence the flag reset.
     // Keys bound to shortcuts (Alt+Z) arrive only as ShortcutOverride, never as KeyPress.
-    if (object == m_panel && event->type() == QEvent::Resize) updatePanelActions();
+    if (object == m_panel && (event->type() == QEvent::Resize || event->type() == QEvent::Show)) updatePanelActions();
     if (event->type() == QEvent::KeyPress || event->type() == QEvent::ShortcutOverride)
         m_altAlone = static_cast<QKeyEvent *>(event)->key() == Qt::Key_Alt;
     else if (event->type() == QEvent::KeyRelease && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Alt && m_altAlone)
@@ -2816,6 +3068,22 @@ bool Window::eventFilter(QObject *object, QEvent *event)
     {
         toggleZen();
         return true;
+    }
+    if (event->type() == QEvent::KeyPress && object->isWidgetType())
+    {
+        auto *key = static_cast<QKeyEvent *>(event);
+        auto *target = static_cast<QWidget *>(object);
+        if (key->key() == Qt::Key_Escape && key->modifiers() == Qt::NoModifier && !QApplication::activePopupWidget()
+            && !isInAgentTerminal(target)
+            && (m_problemsView->isAncestorOf(target) || m_log->isAncestorOf(target)
+                || (m_pdf->isAncestorOf(target) && !m_pdf->presenting())))
+        {
+            if (auto *editor = currentEditor())
+            {
+                editor->setFocus();
+                return true;
+            }
+        }
     }
     if (object == this && event->type() == QEvent::Resize && !m_zenHidden.isEmpty()) placeZen();
     if (m_welcome && object == m_welcome->parentWidget() && event->type() == QEvent::Resize) placeWelcome();
