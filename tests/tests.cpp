@@ -123,6 +123,11 @@ private slots:
     void insertTemplateLiteralBulletAndMultiline();
     void beamerEnvironmentCompletion();
     void enterAutoIndentCapAndFoldedHeader();
+    // --- Task A: editor jumps, selection bar labels, Go to definition ---
+    void problemJumpFollowsEdits();
+    void goToLineCentresOffscreen();
+    void selectionBarLabels();
+    void goToDefinition();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -2949,4 +2954,208 @@ void Tests::agentTerminal()
     qputenv("PATH", path);
     qunsetenv("FOLITEX_FAKE_LOG");
 #endif
+}
+
+// --- Task A: editor jumps, selection bar labels, Go to definition ---
+
+void Tests::problemJumpFollowsEdits()
+{
+    QTemporaryDir dir;
+    const QString source = dir.filePath("doc.tex");
+    write(source, "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\n");
+
+    Window window;
+    QVERIFY(window.openSource(source));
+    auto *editor = window.currentEditor();
+    window.setProblems({Problem{source, 5, true, "Undefined control sequence."}}, dir.path(), false);
+    QCOMPARE(editor->markLine(5), 5);
+    QCOMPARE(editor->markLine(99), -1);
+
+    // Insert two lines above line 5; both markLine() and F8 / goToProblem follow the shift.
+    QTextCursor top(editor->document());
+    top.setPosition(0);
+    top.insertText("added 1\nadded 2\n");
+    QCOMPARE(editor->markLine(5), 7);
+    window.goToProblem(0);
+    QCOMPARE(editor->lineNumber(), 7);
+
+    // Without a mark (e.g. file changed on disk since the build), goToProblem falls back to build line.
+    editor->setProblems({});
+    QCOMPARE(editor->markLine(5), -1);
+    window.goToProblem(0);
+    QCOMPARE(editor->lineNumber(), 5);
+}
+
+void Tests::goToLineCentresOffscreen()
+{
+    Editor editor;
+    editor.resize(600, 300);
+    editor.setPlainText(QString("line\n").repeated(300));
+    editor.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&editor));
+    QTest::qWait(20);
+
+    editor.goToLine(200);
+    QCOMPARE(editor.lineNumber(), 200);
+    const int height = editor.viewport()->height();
+    const int centreDown = editor.cursorRect().center().y();
+    QVERIFY2(centreDown >= height / 3 && centreDown <= 2 * height / 3,
+        qPrintable(QString("expected centre in [%1, %2], got %3").arg(height / 3).arg(2 * height / 3).arg(centreDown)));
+
+    // Jumping to a line already inside the viewport leaves the scrollbar untouched.
+    const int scrollBefore = editor.verticalScrollBar()->value();
+    editor.goToLine(201);
+    QCOMPARE(editor.lineNumber(), 201);
+    QCOMPARE(editor.verticalScrollBar()->value(), scrollBefore);
+
+    // Jumping upward to an off-screen line also centres it.
+    editor.goToLine(50);
+    QCOMPARE(editor.lineNumber(), 50);
+    const int centreUp = editor.cursorRect().center().y();
+    QVERIFY2(centreUp >= height / 3 && centreUp <= 2 * height / 3,
+        qPrintable(QString("expected centre in [%1, %2], got %3").arg(height / 3).arg(2 * height / 3).arg(centreUp)));
+}
+
+void Tests::selectionBarLabels()
+{
+    Editor editor;
+    auto *bar = editor.findChild<QFrame *>("selectionBar");
+    QVERIFY(bar);
+    QToolButton *emphasis = nullptr;
+    QToolButton *typewriter = nullptr;
+    for (auto *button : bar->findChildren<QToolButton *>())
+    {
+        QVERIFY(button->text() != "E" && button->text() != "tt");
+        if (button->accessibleName() == "Emphasis · Ctrl+Shift+E") emphasis = button;
+        if (button->accessibleName() == "Typewriter · Ctrl+Shift+T") typewriter = button;
+    }
+    QVERIFY(emphasis && typewriter);
+    QCOMPARE(emphasis->text(), QString("e"));
+    QCOMPARE(emphasis->toolTip(), QString("Emphasis · Ctrl+Shift+E"));
+    QVERIFY(emphasis->font().italic());
+    QCOMPARE(typewriter->text(), QString("T"));
+    QCOMPARE(typewriter->toolTip(), QString("Typewriter · Ctrl+Shift+T"));
+    QVERIFY(typewriter->font().styleHint() == QFont::Monospace && typewriter->font().fixedPitch());
+
+    editor.setPlainText("hello world");
+    auto cursor = editor.textCursor();
+    cursor.setPosition(0);
+    cursor.setPosition(5, QTextCursor::KeepAnchor);
+    editor.setTextCursor(cursor);
+    emphasis->click();
+    QCOMPARE(editor.toPlainText(), QString("\\emph{hello} world"));
+
+    editor.setPlainText("hello world");
+    cursor = editor.textCursor();
+    cursor.setPosition(6);
+    cursor.setPosition(11, QTextCursor::KeepAnchor);
+    editor.setTextCursor(cursor);
+    typewriter->click();
+    QCOMPARE(editor.toPlainText(), QString("hello \\texttt{world}"));
+}
+
+void Tests::goToDefinition()
+{
+    QTemporaryDir dir;
+    const QString rootPath = QDir::cleanPath(dir.filePath("root.tex"));
+    const QString secPath = QDir::cleanPath(dir.filePath("sec.tex"));
+    const QString bibPath = QDir::cleanPath(dir.filePath("refs.bib"));
+    write(rootPath,
+        "\\documentclass{article}\n"
+        "\\bibliography{refs}\n"
+        "\\begin{document}\n"
+        "\\input{sec}\n"
+        "See \\ref{eq:a}, \\eqref{eq:a}, \\autoref{eq:a}, \\cref{eq:a}, \\pageref{eq:a}.\n"
+        "Cite \\cite{x,knuth84}, \\citep[see][p. 2]{knuth84}, \\textcite{knuth84}.\n"
+        "Missing \\ref{no:such} and \\cite{no:bib}.\n"
+        "\\end{document}\n");
+    write(secPath,
+        "\\section{Intro}\n"
+        "\\begin{equation}\n"
+        "  x = 1 \\label{eq:a}\n"
+        "\\end{equation}\n");
+    write(bibPath,
+        "% bibliography\n"
+        "@book{other,\n"
+        "  title={Other}\n"
+        "}\n"
+        "@article{knuth84,\n"
+        "  title={Literate programming}\n"
+        "}\n");
+
+    Window window;
+    QVERIFY(window.openSource(rootPath));
+    auto *rootEditor = window.currentEditor();
+    auto placeOn = [](Editor *ed, const QString &needle, int offset = 0)
+    {
+        const int pos = ed->toPlainText().indexOf(needle);
+        QVERIFY2(pos >= 0, qPrintable("missing needle: " + needle));
+        QTextCursor c(ed->document());
+        c.setPosition(pos + offset);
+        ed->setTextCursor(c);
+    };
+    QAction *goDef = nullptr;
+    for (QAction *action : window.actions())
+        if (action->text() == "Go to definition") goDef = action;
+    QVERIFY(goDef);
+    QCOMPARE(goDef->shortcut(), QKeySequence("F12"));
+
+    // \ref and variants resolve to sec.tex line 3.
+    QString path;
+    int line = 0;
+    for (const QString &needle : {"\\ref{eq:a}", "\\eqref{eq:a}", "\\autoref{eq:a}", "\\cref{eq:a}", "\\pageref{eq:a}"})
+    {
+        placeOn(rootEditor, needle, needle.indexOf("eq:a") + 2);
+        QVERIFY(rootEditor->definitionAt(path, line));
+        QCOMPARE(path, secPath);
+        QCOMPARE(line, 3);
+    }
+
+    // Multi-key \cite{x,knuth84}: caret in knuth84 resolves to refs.bib line 5; caret in x fails.
+    placeOn(rootEditor, "\\cite{x,knuth84}", 10); // inside knuth84
+    QVERIFY(rootEditor->definitionAt(path, line));
+    QCOMPARE(path, bibPath);
+    QCOMPARE(line, 5);
+    placeOn(rootEditor, "\\cite{x,knuth84}", 6); // on x
+    QVERIFY(!rootEditor->definitionAt(path, line));
+
+    // Optional-arg and biblatex cite variants.
+    placeOn(rootEditor, "\\citep[see][p. 2]{knuth84}", 20);
+    QVERIFY(rootEditor->definitionAt(path, line));
+    QCOMPARE(path, bibPath);
+    QCOMPARE(line, 5);
+    placeOn(rootEditor, "\\textcite{knuth84}", 12);
+    QVERIFY(rootEditor->definitionAt(path, line));
+    QCOMPARE(path, bibPath);
+    QCOMPARE(line, 5);
+
+    // Unknown keys return false and F12 reports "No definition found".
+    placeOn(rootEditor, "\\ref{no:such}", 7);
+    QVERIFY(!rootEditor->definitionAt(path, line));
+    goDef->trigger();
+    QCOMPARE(window.currentEditor(), rootEditor);
+    QCOMPARE(window.m_status->text(), QString("No definition found"));
+
+    // F12 opens sec.tex at line 3 and follows unsaved edits in open tabs.
+    placeOn(rootEditor, "\\ref{eq:a}", 7);
+    goDef->trigger();
+    auto *secEditor = window.currentEditor();
+    QCOMPARE(QDir::cleanPath(secEditor->property("path").toString()), secPath);
+    QCOMPARE(secEditor->lineNumber(), 3);
+
+    QTextCursor top(secEditor->document());
+    top.setPosition(0);
+    top.insertText("% extra 1\n% extra 2\n"); // moves \label{eq:a} to line 5 (unsaved)
+    QVERIFY(window.openSource(rootPath));
+    placeOn(rootEditor, "\\ref{eq:a}", 7);
+    goDef->trigger();
+    QCOMPARE(window.currentEditor(), secEditor);
+    QCOMPARE(secEditor->lineNumber(), 5);
+
+    // F12 on \cite{x,knuth84} opens refs.bib at line 5.
+    QVERIFY(window.openSource(rootPath));
+    placeOn(rootEditor, "\\cite{x,knuth84}", 10);
+    goDef->trigger();
+    QCOMPARE(QDir::cleanPath(window.currentEditor()->property("path").toString()), bibPath);
+    QCOMPARE(window.currentEditor()->lineNumber(), 5);
 }

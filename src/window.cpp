@@ -602,6 +602,7 @@ Window::Window() : m_runner(this)
             editor->document()->blockCount(), 1, &ok);
         if (ok) editor->goToLine(line);
     });
+    add("Go to definition", QKeySequence("F12"), [this] { QString path; int line = 0; if (auto *e = currentEditor(); e && e->definitionAt(path, line) && (path.isEmpty() || openSource(path))) currentEditor()->goToLine(line); else if (currentEditor()) m_status->setText("No definition found"); });
     menu->addSeparator();
     add("Toggle comment", QKeySequence("Ctrl+/"), [focusedEditor] { if (auto *editor = focusedEditor()) editor->toggleComment(); });
     menu->addSeparator();
@@ -2693,7 +2694,11 @@ void Window::goToProblem(int index)
     const Problem &problem = m_problems[index];
     if (!openSource(problem.file)) return;
     auto *editor = currentEditor();
-    if (problem.line > 0) editor->goToLine(problem.line);
+    if (problem.line > 0)
+    {
+        const int tracked = editor->markLine(problem.line);
+        editor->goToLine(tracked > 0 ? tracked : problem.line);
+    }
     editor->setFocus();
     for (QTreeWidgetItemIterator it(m_problemsView); *it; ++it)
         if ((*it)->data(0, Qt::UserRole).isValid() && (*it)->data(0, Qt::UserRole).toInt() == index) m_problemsView->setCurrentItem(*it);

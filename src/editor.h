@@ -60,6 +60,8 @@ public:
     // Inverse search: SyncTeX puts everything in a beamer frame on \end{frame}, so find the clicked
     // PDF word (scored by its neighbours) inside the frame around the line; falls back to the line.
     void goToWord(int line, const QStringList &words, int clicked);
+    // Target file and 1-based line for the \ref/\cite key under the caret, or false if none.
+    bool definitionAt(QString &path, int &line) const;
     int lineNumber() const;
     void toggleComment();
     // Undo/redo one text change; the wrap-indent format steps around it go along (see applyWrapIndent).
@@ -81,6 +83,7 @@ public:
     void setWordWrap(bool on);
     // Build problems shown as squiggles with a tooltip: (1-based line, is error, message).
     void setProblems(const QList<std::tuple<int, bool, QString>> &problems);
+    int markLine(int buildLine) const; // current 1-based line of a mark recorded at buildLine, or -1
     void markChanged(int from, int to); // tints text changed on disk until the next key press
     bool wordWrap() const { return lineWrapMode() != QTextEdit::NoWrap; }
     // The formula around position ($…$, \(…\), \[…\], equation-like environments), or empty.
@@ -139,6 +142,7 @@ private:
     void updateHighlights();
     struct Mark
     {
+        int buildLine; // 1-based line when setProblems() recorded the mark
         QTextCursor cursor; // at the start of the line, so it moves with edits above it
         bool error;
         QString message;
