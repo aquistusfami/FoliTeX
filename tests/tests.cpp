@@ -127,6 +127,7 @@ private slots:
     void pdfFollowsTabDocument();
     void syncProcessReplacesOlderRun();
     void outputLogPreservesScroll();
+    void panelKeyboardNavigation();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -3075,4 +3076,62 @@ void Tests::outputLogPreservesScroll()
     QCoreApplication::processEvents();
     QVERIFY(bar->maximum() > beforeMax);
     QCOMPARE(bar->value(), bar->maximum());
+}
+
+void Tests::panelKeyboardNavigation()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath("main.tex");
+    write(path, "line 1\nline 2\nline 3\nline 4\nline 5\n");
+
+    Window window;
+    window.resize(1000, 700);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QVERIFY(window.openSource(path));
+    auto *editor = window.currentEditor();
+    QVERIFY(editor);
+
+    window.setProblems({Problem{path, 4, true, "Undefined control sequence"}}, dir.path(), false);
+    window.setPanelCollapsed(false);
+    window.m_panel->setCurrentWidget(window.m_problemsView);
+    QCOMPARE(window.m_problemsView->topLevelItemCount(), 1);
+    auto *group = window.m_problemsView->topLevelItem(0);
+    QCOMPARE(group->childCount(), 1);
+    auto *row = group->child(0);
+
+    // Enter on a problem row jumps to that line and focuses the editor.
+    window.m_problemsView->setFocus();
+    window.m_problemsView->setCurrentItem(row);
+    QTest::keyClick(window.m_problemsView, Qt::Key_Return);
+    QTRY_VERIFY(editor->hasFocus());
+    QCOMPARE(editor->lineNumber(), 4);
+
+    // Escape in Problems returns focus to the editor.
+    window.m_problemsView->setFocus();
+    QTRY_VERIFY(window.m_problemsView->hasFocus());
+    QTest::keyClick(window.m_problemsView, Qt::Key_Escape);
+    QTRY_VERIFY(editor->hasFocus());
+
+    // Escape in Output returns focus to the editor.
+    window.m_panel->setCurrentWidget(window.m_log);
+    window.m_log->setFocus();
+    QTRY_VERIFY(window.m_log->hasFocus());
+    QTest::keyClick(window.m_log, Qt::Key_Escape);
+    QTRY_VERIFY(editor->hasFocus());
+
+    // Escape in PDF view returns focus to the editor.
+    window.m_pdf->setFocus();
+    QTRY_VERIFY(window.m_pdf->hasFocus());
+    QTest::keyClick(window.m_pdf, Qt::Key_Escape);
+    QTRY_VERIFY(editor->hasFocus());
+
+#ifdef FOLITEX_TERMINAL
+    // Escape inside the Agent terminal widget is not intercepted.
+    auto *term = new QTermWidget(0, window.m_agent);
+    QVERIFY(window.isInAgentTerminal(term));
+    QKeyEvent esc(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QVERIFY(!window.eventFilter(term, &esc));
+    delete term;
+#endif
 }

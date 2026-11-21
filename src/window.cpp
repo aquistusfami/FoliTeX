@@ -1282,11 +1282,14 @@ Window::Window() : m_runner(this)
         menu.addAction("Fix with agent", this, [this, index = item->data(0, Qt::UserRole).toInt()] { fixWithAgent(index); });
         menu.exec(m_problemsView->viewport()->mapToGlobal(at));
     });
-    connect(m_problemsView, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item)
+    auto openProblem = [this](QTreeWidgetItem *item)
     {
+        if (!item) return;
         if (item->data(0, Qt::UserRole).isValid()) goToProblem(item->data(0, Qt::UserRole).toInt());
         else item->setExpanded(!item->isExpanded());
-    });
+    };
+    connect(m_problemsView, &QTreeWidget::itemClicked, this, openProblem);
+    connect(m_problemsView, &QTreeWidget::itemActivated, this, openProblem);
     m_panel = new QTabWidget;
     m_panel->setObjectName("bottomPanel");
     m_panel->setAttribute(Qt::WA_StyledBackground); // its corner (filter, buttons) would show the window gap colour
@@ -2865,6 +2868,22 @@ bool Window::eventFilter(QObject *object, QEvent *event)
     {
         toggleZen();
         return true;
+    }
+    if (event->type() == QEvent::KeyPress && object->isWidgetType())
+    {
+        auto *key = static_cast<QKeyEvent *>(event);
+        auto *target = static_cast<QWidget *>(object);
+        if (key->key() == Qt::Key_Escape && key->modifiers() == Qt::NoModifier && !QApplication::activePopupWidget()
+            && !isInAgentTerminal(target)
+            && (m_problemsView->isAncestorOf(target) || m_log->isAncestorOf(target)
+                || (m_pdf->isAncestorOf(target) && !m_pdf->presenting())))
+        {
+            if (auto *editor = currentEditor())
+            {
+                editor->setFocus();
+                return true;
+            }
+        }
     }
     if (object == this && event->type() == QEvent::Resize && !m_zenHidden.isEmpty()) placeZen();
     if (m_welcome && object == m_welcome->parentWidget() && event->type() == QEvent::Resize) placeWelcome();
