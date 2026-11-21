@@ -2436,7 +2436,7 @@ void Window::forwardSync()
         auto x = QRegularExpression(R"(^x:([\d.eE+\-]+))", QRegularExpression::MultilineOption).match(text);
         auto y = QRegularExpression(R"(y:([\d.eE+\-]+))").match(text);
         if (page.hasMatch())
-            m_pdf->goToPage(page.captured(1).toInt(), y.captured(1).toDouble(), x.hasMatch() ? x.captured(1).toDouble() : -1);
+            m_pdf->syncTo(page.captured(1).toInt(), y.captured(1).toDouble(), x.hasMatch() ? x.captured(1).toDouble() : -1);
     });
 }
 

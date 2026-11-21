@@ -82,7 +82,8 @@ public:
     void setZoom(double zoom);
     bool darkPages() const { return m_dark; }
     void setDarkPages(bool on) { m_dark = on; viewport()->update(); }
-    void goToPage(int page, double yPoints = 0, double xPoints = -1);
+    void goToPage(int page, double yPoints = 0);
+    void syncTo(int page, double yPoints, double xPoints = -1);
     bool syncMarkVisible() const { return m_syncPage >= 0 && m_syncOpacity > 0; }
     int pageCount() const { return m_sizes.size(); }
     int currentPage() const;

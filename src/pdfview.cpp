@@ -170,7 +170,7 @@ PdfView::PdfView(QWidget *parent) : QAbstractScrollArea(parent), m_renderer(new 
         {
             const PendingSync sync = *m_pendingSync;
             m_pendingSync.reset();
-            goToPage(sync.page, sync.y, sync.x);
+            syncTo(sync.page, sync.y, sync.x);
         }
         viewport()->update();
     });
@@ -614,7 +614,15 @@ void PdfView::clearSyncMark()
     if (!dirty.isEmpty()) viewport()->update(dirty);
 }
 
-void PdfView::goToPage(int page, double yPoints, double xPoints)
+void PdfView::goToPage(int page, double yPoints)
+{
+    if (m_presenting) { showSlide(page - 1); return; } // also before the document has loaded
+    if (page < 1 || page > m_pages.size()) return;
+    m_smooth->stop();
+    verticalScrollBar()->setValue(qRound(m_pages[page - 1].top() + yPoints * m_scale - 32));
+}
+
+void PdfView::syncTo(int page, double yPoints, double xPoints)
 {
     if (m_presenting) { showSlide(page - 1); return; } // also before the document has loaded
     if (m_loading)
@@ -772,7 +780,7 @@ void PdfView::copySelection() const
 void PdfView::followLink(const PdfLink &link)
 {
     if (!link.url.isEmpty()) QDesktopServices::openUrl(QUrl(link.url));
-    else goToPage(link.page, link.top);
+    else syncTo(link.page, link.top);
 }
 
 void PdfView::mousePressEvent(QMouseEvent *event)

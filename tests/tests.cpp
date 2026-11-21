@@ -126,6 +126,7 @@ private slots:
     // --- Task B: forward-SyncTeX landing ---
     void forwardSyncLandingAndHighlight();
     void forwardSyncPendingAndCancelled();
+    void goToPageKeepsTopPlacementWithoutMark();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -2979,7 +2980,7 @@ void Tests::forwardSyncLandingAndHighlight()
     const QSizeF a4 = QPageSize(QPageSize::A4).sizePoints();
     const double dpr = viewer.devicePixelRatioF();
 
-    viewer.goToPage(2, 240.0);
+    viewer.syncTo(2, 240.0);
     QCOMPARE(viewer.currentPage(), 2);
     const double pageHeight = qRound(a4.height() * scale * dpr) / dpr;
     const double page2Top = qRound((qRound(24.0 * dpr) / dpr + pageHeight + 16.0) * dpr) / dpr;
@@ -2994,10 +2995,10 @@ void Tests::forwardSyncLandingAndHighlight()
     viewer.setZoom(2.5);
     QVERIFY(viewer.horizontalScrollBar()->maximum() > 0);
     viewer.horizontalScrollBar()->setValue(0);
-    viewer.goToPage(2, 240.0);
+    viewer.syncTo(2, 240.0);
     QCOMPARE(viewer.horizontalScrollBar()->value(), 0);
     const double zoomedScale = scales.last().first().toDouble();
-    viewer.goToPage(2, 240.0, 480.0);
+    viewer.syncTo(2, 240.0, 480.0);
     QVERIFY(viewer.horizontalScrollBar()->value() > 0);
     const double docWidth = std::max(double(viewer.viewport()->width()), a4.width() * zoomedScale + 48.0);
     const double pageWidth = qRound(a4.width() * zoomedScale * dpr) / dpr;
@@ -3014,7 +3015,7 @@ void Tests::forwardSyncLandingAndHighlight()
 
     // Presentation mode keeps its current behaviour without showing a sync band.
     viewer.setPresentation(true);
-    viewer.goToPage(3, 240.0, 100.0);
+    viewer.syncTo(3, 240.0, 100.0);
     QCOMPARE(viewer.currentPage(), 3);
     QVERIFY(!viewer.syncMarkVisible());
 }
@@ -3041,9 +3042,9 @@ void Tests::forwardSyncPendingAndCancelled()
     viewer.show();
     QVERIFY(QTest::qWaitForWindowExposed(&viewer));
 
-    // A goToPage issued before load completion is applied once the document finishes loading.
+    // A syncTo issued before load completion is applied once the document finishes loading.
     viewer.open(a);
-    viewer.goToPage(2, 260.0);
+    viewer.syncTo(2, 260.0);
     QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
     QCOMPARE(viewer.currentPage(), 2);
     QVERIFY(viewer.syncMarkVisible());
@@ -3056,7 +3057,7 @@ void Tests::forwardSyncPendingAndCancelled()
 
     // A pending request is dropped when a newer open() starts.
     viewer.open(a);
-    viewer.goToPage(3, 260.0);
+    viewer.syncTo(3, 260.0);
     viewer.open(b);
     QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 2, 5000);
     QCOMPARE(viewer.currentPage(), 1);
@@ -3093,4 +3094,39 @@ void Tests::forwardSyncPendingAndCancelled()
     QTRY_VERIFY_WITH_TIMEOUT(window.pdfView()->currentPage() == 2 && window.pdfView()->syncMarkVisible(), 3000);
     QVERIFY(window.pdfView()->horizontalScrollBar()->value() > 0);
 #endif
+}
+
+void Tests::goToPageKeepsTopPlacementWithoutMark()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath("pages.pdf");
+    {
+        QPdfWriter writer(path);
+        writer.setPageSize(QPageSize(QPageSize::A4));
+        QPainter painter(&writer);
+        writer.newPage();
+        writer.newPage();
+    }
+    PdfView viewer;
+    viewer.resize(500, 400);
+    QSignalSpy loaded(&viewer, &PdfView::documentReady);
+    QSignalSpy scales(&viewer, &PdfView::scaleChanged);
+    viewer.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&viewer));
+    viewer.open(path);
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
+    QVERIFY(!scales.isEmpty());
+    const double scale = scales.last().first().toDouble();
+    const double dpr = viewer.devicePixelRatioF();
+    const double pageHeight = qRound(QPageSize(QPageSize::A4).sizePoints().height() * scale * dpr) / dpr;
+    double y = qRound(24.0 * dpr) / dpr;
+    y = qRound((y + pageHeight + 16.0) * dpr) / dpr;
+    const double page3Top = qRound((y + pageHeight + 16.0) * dpr) / dpr;
+
+    viewer.goToPage(3);
+    QCOMPARE(viewer.currentPage(), 3);
+    const double viewportTop = page3Top - viewer.verticalScrollBar()->value();
+    QVERIFY2(viewportTop >= 0 && viewportTop <= 40.0,
+        qPrintable(QString("page3 viewportTop=%1").arg(viewportTop)));
+    QVERIFY(!viewer.syncMarkVisible());
 }
