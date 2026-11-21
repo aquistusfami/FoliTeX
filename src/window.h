@@ -151,6 +151,7 @@ private:
     void syncOutline();
     void syncProcess(QStringList arguments, std::function<void(QString)> complete);
     void countWords();
+    void cleanAuxFiles();
     void entryRenamed(const QString &from, const QString &to);
     void explorerMenu(const QPoint &position);
     QString m_newFile; // created from the explorer, opened once its name is confirmed

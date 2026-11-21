@@ -52,7 +52,8 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
   select the engine per document; output goes to `.folitex-build/`.
   Build → Build on Save rebuilds on every Ctrl+S (in a `.bib` or `.sty` it rebuilds the
   last document); Build → Sync PDF after Build runs forward SyncTeX automatically after each
-  successful build; Build → Word Count runs `texcount`.
+  successful build; Build → Clean auxiliary files clears `.aux`/`.log` in `.folitex-build/`
+  while keeping the PDF; Build → Word Count runs `texcount`.
 - Two-way SyncTeX: F7 jumps from the source to the PDF, Shift+F7 or Ctrl+click in the PDF
   jumps back, and Ctrl+Alt+P switches focus between the editor and the PDF.
 - Problems panel after each build: errors with file and line, LaTeX and package warnings,

@@ -739,6 +739,7 @@ Window::Window() : m_runner(this)
     m_buildOnSaveAction->setCheckable(true);
     m_syncAfterBuildAction = add("Sync PDF after Build", QKeySequence(), [] {});
     m_syncAfterBuildAction->setCheckable(true);
+    add("Clean auxiliary files", QKeySequence(), [this] { cleanAuxFiles(); });
     add("Word count", QKeySequence(), [this] { countWords(); });
     menu = menuBar->addMenu("&View");
     add("Command palette…", QKeySequence("Ctrl+K"), [this] { showPalette(false); })->setShortcuts({QKeySequence("Ctrl+K"), QKeySequence("Ctrl+Shift+P")});
@@ -2424,6 +2425,33 @@ void Window::countWords()
     });
     // -inc follows \input/\include from the root, like the build.
     process->start("texcount", {"-inc", "-utf8", "-total", QFileInfo(root).fileName()});
+}
+
+void Window::cleanAuxFiles()
+{
+    if (m_runner.running()) { m_status->setText("Stop the running build before cleaning auxiliary files."); return; }
+    auto *editor = currentEditor();
+    const QString path = editor ? editor->property("path").toString() : QString();
+    QString root = path.isEmpty() ? m_lastRoot : BuildRunner::rootFile(path);
+    if (!root.isEmpty() && !QStringList{"tex", "ltx"}.contains(QFileInfo(root).suffix().toLower()))
+        root = m_lastRoot;
+    if (root.isEmpty()) { m_status->setText("Open or save a document to clean its auxiliary files."); return; }
+    auto *process = new QProcess(this);
+    process->setWorkingDirectory(QFileInfo(root).absolutePath());
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+        [this, process](int code, QProcess::ExitStatus status)
+        {
+            const QString out = QString::fromLocal8Bit(process->readAll()).trimmed();
+            process->deleteLater();
+            if (status == QProcess::NormalExit && code == 0) keepStatus("Cleaned auxiliary files");
+            else m_status->setText(out.isEmpty() ? "Failed to clean auxiliary files." : "Clean failed: " + out.section('\n', -1));
+        });
+    connect(process, &QProcess::errorOccurred, this, [this, process](QProcess::ProcessError error)
+    {
+        if (error == QProcess::FailedToStart) { m_status->setText("Cannot start latexmk: " + process->errorString()); process->deleteLater(); }
+    });
+    process->start("latexmk", {"-c", "-outdir=.folitex-build", "./" + QFileInfo(root).fileName()});
 }
 
 bool Window::save(Editor *editor, bool saveAs)

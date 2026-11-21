@@ -135,6 +135,7 @@ private slots:
     void magicProgramSelectsEngine();
     void keyboardPdfSourceNavigation();
     void syncAfterBuildRunsForwardSync();
+    void cleanAuxiliaryFilesKeepsPdf();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -3489,4 +3490,36 @@ void Tests::syncAfterBuildRunsForwardSync()
     QTest::qWait(350);
     QCOMPARE(readLines().size(), 1); // exactly one forward sync per build
 #endif
+}
+
+void Tests::cleanAuxiliaryFilesKeepsPdf()
+{
+    if (QStandardPaths::findExecutable("latexmk").isEmpty()) QSKIP("latexmk unavailable");
+    QTemporaryDir dir;
+    const QString main = dir.filePath("main.tex");
+    write(main, "\\documentclass{article}\n\\begin{document}\nHello clean.\n\\end{document}\n");
+
+    Window window;
+    QVERIFY(window.openSource(main));
+    QSignalSpy built(&window, &Window::buildFinished);
+    window.build();
+    QTRY_COMPARE_WITH_TIMEOUT(built.size(), 1, 30000);
+    QVERIFY(built.first().first().toBool());
+
+    const QString pdf = BuildRunner::pdfPath(main);
+    const QString aux = dir.filePath(".folitex-build/main.aux");
+    const QString log = dir.filePath(".folitex-build/main.log");
+    QVERIFY(QFileInfo::exists(pdf));
+    QVERIFY(QFileInfo::exists(aux));
+    QVERIFY(QFileInfo::exists(log));
+
+    QAction *clean = nullptr;
+    for (QAction *action : window.actions())
+        if (action->text() == "Clean auxiliary files") { clean = action; break; }
+    QVERIFY(clean);
+    clean->trigger();
+    QTRY_COMPARE_WITH_TIMEOUT(window.m_status->text(), QString("Cleaned auxiliary files"), 10000);
+    QVERIFY(QFileInfo::exists(pdf));
+    QVERIFY(!QFileInfo::exists(aux));
+    QVERIFY(!QFileInfo::exists(log));
 }
