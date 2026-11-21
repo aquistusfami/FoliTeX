@@ -131,6 +131,7 @@ private slots:
     void buildStatusElapsedAndStalePdf();
     void problemsListColumnsAndColors();
     void statusBarProblemCountersVisibleAtStart();
+    void narrowWindowHidesProblemFilter();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -3258,4 +3259,34 @@ void Tests::statusBarProblemCountersVisibleAtStart()
     QCOMPARE(window.m_warningCount->toolTip(), QString("Warnings"));
     QVERIFY(window.m_errorCount->styleSheet().isEmpty());
     QVERIFY(window.m_warningCount->styleSheet().isEmpty());
+}
+
+void Tests::narrowWindowHidesProblemFilter()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath("main.tex");
+    write(path, "\\documentclass{article}\n");
+
+    Window window;
+    QVERIFY(window.minimumWidth() >= 640);
+    window.resize(700, 500);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    window.setProblems({Problem{path, 1, true, "Bad command"}}, dir.path(), false);
+    window.setPanelCollapsed(false);
+    QCoreApplication::processEvents();
+
+    auto overlapsTabs = [&]
+    {
+        if (!window.m_problemFilter->isVisible()) return false;
+        const QRect filterRect(window.m_problemFilter->mapTo(window.m_panel, QPoint(0, 0)), window.m_problemFilter->size());
+        const QRect tabsRect(window.m_panel->tabBar()->mapTo(window.m_panel, QPoint(0, 0)), window.m_panel->tabBar()->size());
+        return filterRect.intersects(tabsRect);
+    };
+    QVERIFY(!window.m_problemFilter->isVisible() || !overlapsTabs());
+
+    // Widening to 1400 shows the filter box when problems are present.
+    window.resize(1400, 700);
+    QTRY_VERIFY(window.m_problemFilter->isVisible());
+    QVERIFY(!overlapsTabs());
 }

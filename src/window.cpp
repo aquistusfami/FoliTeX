@@ -493,7 +493,7 @@ Window::Window() : m_runner(this)
 {
     setWindowTitle("FoliTeX");
     resize(1280, 820);
-    setMinimumSize(680, 420);
+    setMinimumSize(640, 420);
     auto *central = new QWidget(this);
     auto *layout = new QVBoxLayout(central);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -2856,13 +2856,23 @@ void Window::updatePanelActions()
     if (!m_panel) return;
     const bool onProblems = m_panel->currentIndex() == 0;
     const bool hasProblems = !m_problems.isEmpty();
+    if (m_collapseProblems) m_collapseProblems->setVisible(onProblems && hasProblems);
+    auto *actions = m_panel->cornerWidget(Qt::TopRightCorner);
     if (m_problemFilter)
     {
-        m_problemFilter->setVisible(onProblems && (hasProblems || !m_problemFilter->text().isEmpty()));
-        if (m_panel->width() < 420 && m_problemFilter->text().isEmpty()) m_problemFilter->hide();
+        const bool want = onProblems && (hasProblems || !m_problemFilter->text().isEmpty());
+        int needed = m_panel->tabBar()->sizeHint().width() + m_problemFilter->sizeHint().width() + 12;
+        if (actions)
+            for (auto *button : actions->findChildren<QToolButton *>(Qt::FindDirectChildrenOnly))
+                if (button->isVisibleTo(actions)) needed += button->sizeHint().width() + 2;
+        m_problemFilter->setVisible(want && m_panel->width() >= needed);
     }
-    if (m_collapseProblems) m_collapseProblems->setVisible(onProblems && hasProblems);
-    if (auto *actions = m_panel->cornerWidget(Qt::TopRightCorner)) actions->show();
+    if (actions)
+    {
+        actions->show();
+        actions->adjustSize();
+        actions->updateGeometry();
+    }
 }
 
 void Window::toggleMaximizePanel()
@@ -2914,7 +2924,7 @@ bool Window::eventFilter(QObject *object, QEvent *event)
     // A lone Alt (pressed and released with no other key) shows or hides a hidden menu bar.
     // The application filter may see one key event per receiver, hence the flag reset.
     // Keys bound to shortcuts (Alt+Z) arrive only as ShortcutOverride, never as KeyPress.
-    if (object == m_panel && event->type() == QEvent::Resize) updatePanelActions();
+    if (object == m_panel && (event->type() == QEvent::Resize || event->type() == QEvent::Show)) updatePanelActions();
     if (event->type() == QEvent::KeyPress || event->type() == QEvent::ShortcutOverride)
         m_altAlone = static_cast<QKeyEvent *>(event)->key() == Qt::Key_Alt;
     else if (event->type() == QEvent::KeyRelease && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Alt && m_altAlone)
