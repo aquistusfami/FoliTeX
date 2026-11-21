@@ -110,6 +110,19 @@ private slots:
     void largePdfViewport();
     void failedTileDoesNotSpin();
     void cancellationCleansOrphanCompiler();
+    void selfSaveNoFalseConflict();
+    void shortcutGuardsUnfocusedEditor();
+    void buildPreparesReferencedSubdirs();
+    void inverseSyncRelativePath();
+    void presentationPrefetchRespectsCacheBudget();
+    void pdfReloadPreservesViewAndSwitchResets();
+    void programmaticScrollStopsSmoothScroll();
+    void gutterGeometryTracksFontAndLines();
+    void fontZoomDoesNotWipeRedo();
+    void closingBracketSkipWhenBalanced();
+    void insertTemplateLiteralBulletAndMultiline();
+    void beamerEnvironmentCompletion();
+    void enterAutoIndentCapAndFoldedHeader();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -2404,6 +2417,392 @@ void Tests::cancellationCleansOrphanCompiler()
     };
     QTRY_VERIFY_WITH_TIMEOUT(!alive(), 4000);
 #endif
+}
+
+void Tests::selfSaveNoFalseConflict()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath("doc.tex");
+    write(path, "initial\n");
+    Window window;
+    QVERIFY(window.openSource(path));
+    auto *editor = window.currentEditor();
+    QVERIFY(editor);
+
+    // Save and immediately type again before a delayed file-watcher event arrives.
+    editor->moveCursor(QTextCursor::End);
+    editor->insertPlainText("saved\n");
+    QVERIFY(window.save(editor));
+    editor->insertPlainText("unsaved\n");
+    window.m_changedSources.insert(path);
+    window.reloadSource(editor);
+    QVERIFY(!editor->property("conflict").toBool());
+    QCOMPARE(editor->toPlainText(), QString("initial\nsaved\nunsaved\n"));
+
+    // A genuine external edit while modified still marks a conflict.
+    write(path, "external\n");
+    window.reloadSource(editor);
+    QVERIFY(editor->property("conflict").toBool());
+    QCOMPARE(editor->toPlainText(), QString("initial\nsaved\nunsaved\n"));
+}
+
+void Tests::shortcutGuardsUnfocusedEditor()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath("main.tex");
+    write(path, "hello world\n");
+    Window window;
+    window.resize(900, 600);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QVERIFY(window.openSource(path));
+    auto *editor = window.currentEditor();
+    QVERIFY(editor);
+
+    // Focus a non-editor widget and simulate a shortcut-triggered editor action.
+    window.m_pdf->setFocus();
+    QTRY_VERIFY(!editor->hasFocus());
+
+    QAction *toggleComment = nullptr;
+    for (auto *action : window.findChildren<QAction *>())
+        if (action->text() == "Toggle comment") { toggleComment = action; break; }
+    QVERIFY(toggleComment);
+
+    window.m_viaShortcut = true;
+    toggleComment->trigger();
+    window.m_viaShortcut = false;
+    QCOMPARE(editor->toPlainText(), QString("hello world\n"));
+
+    // Menu invocation (not via shortcut) still works.
+    toggleComment->trigger();
+    QCOMPARE(editor->toPlainText(), QString("% hello world\n"));
+
+#ifdef FOLITEX_TERMINAL
+    // ShortcutOverride inside QTermWidget is accepted so control chords reach the terminal.
+    auto *term = new QTermWidget(0, window.m_agent);
+    QKeyEvent overrideEvt(QEvent::ShortcutOverride, Qt::Key_C, Qt::ControlModifier);
+    overrideEvt.ignore();
+    QVERIFY(window.eventFilter(term, &overrideEvt));
+    QVERIFY(overrideEvt.isAccepted());
+    delete term;
+#endif
+}
+
+void Tests::buildPreparesReferencedSubdirs()
+{
+    QTemporaryDir dir;
+    QVERIFY(QDir(dir.path()).mkpath("building"));
+    QVERIFY(QDir(dir.path()).mkpath("sections/sub"));
+    QVERIFY(QDir(dir.path()).mkpath("unrelated/deep"));
+    write(dir.filePath("building/ch1.tex"), "\\input{sections/sub/part}\n");
+    write(dir.filePath("sections/sub/part.tex"), "hello\n");
+    write(dir.filePath("main.tex"), "\\documentclass{article}\n\\begin{document}\n\\include{building/ch1}\n\\end{document}\n");
+
+    BuildRunner runner;
+    QVERIFY(runner.start(dir.filePath("main.tex"), "pdflatex"));
+    runner.stop();
+    QDir buildDir(dir.filePath(".folitex-build"));
+    QVERIFY(buildDir.exists("building"));
+    QVERIFY(buildDir.exists("sections/sub"));
+    QVERIFY(!buildDir.exists("unrelated"));
+}
+
+void Tests::inverseSyncRelativePath()
+{
+#ifdef Q_OS_WIN
+    QSKIP("shell script stand-in for synctex");
+#else
+    QTemporaryDir bin, project;
+    QVERIFY(QDir(project.path()).mkpath("chapters"));
+    QVERIFY(QDir(project.path()).mkpath(".folitex-build"));
+    const QString chapter = project.filePath("chapters/ch1.tex");
+    write(chapter, "line one\nline two\nline three\n");
+    const QString pdfPath = project.filePath(".folitex-build/main.pdf");
+    write(pdfPath, "%PDF-1.4\n");
+
+    QFile fake(bin.filePath("synctex"));
+    QVERIFY(fake.open(QIODevice::WriteOnly));
+    fake.write("#!/bin/sh\nprintf 'Input:chapters/ch1.tex\\nLine:2\\n'\n");
+    fake.close();
+    fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner);
+
+    const QByteArray oldPath = qgetenv("PATH");
+    auto restore = qScopeGuard([&] { qputenv("PATH", oldPath); });
+    qputenv("PATH", bin.path().toUtf8() + ":" + oldPath);
+
+    Window window;
+    window.m_pdf->open(pdfPath);
+    window.inverseSync(1, 10, 10, {}, -1);
+    QTRY_VERIFY_WITH_TIMEOUT(window.currentEditor() && window.currentEditor()->property("path").toString() == QFileInfo(chapter).absoluteFilePath(), 3000);
+    QCOMPARE(window.currentEditor()->textCursor().blockNumber(), 1);
+#endif
+}
+
+void Tests::presentationPrefetchRespectsCacheBudget()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath("slides.pdf");
+    {
+        QPdfWriter writer(path);
+        writer.setPageSize(QPageSize(QSizeF(160, 90), QPageSize::Millimeter));
+        QPainter painter(&writer);
+        writer.newPage();
+        writer.newPage();
+    }
+    PdfView viewer;
+    // 5K-class viewport where 3 slides exceed the 128 MiB cache ceiling; prefetch must not thrash.
+    viewer.resize(5120, 2880);
+    viewer.setPresentation(true);
+    viewer.goToPage(2);
+    QSignalSpy loaded(&viewer, &PdfView::documentReady);
+    viewer.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&viewer));
+    viewer.open(path);
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(viewer.renderingIdle(), 10000);
+    QVERIFY(viewer.cacheKiB() <= viewer.cacheLimitKiB());
+    const quint64 requestsAfterIdle = viewer.renderRequests();
+    viewer.viewport()->update();
+    QTest::qWait(80);
+    QVERIFY(viewer.renderingIdle());
+    QCOMPARE(viewer.renderRequests(), requestsAfterIdle);
+}
+
+void Tests::pdfReloadPreservesViewAndSwitchResets()
+{
+    QTemporaryDir dir;
+    auto makePdf = [](const QString &path, int pages)
+    {
+        QPdfWriter writer(path);
+        writer.setPageSize(QPageSize(QPageSize::A4));
+        QPainter painter(&writer);
+        for (int i = 1; i < pages; ++i) writer.newPage();
+    };
+    const QString a = dir.filePath("a.pdf");
+    const QString b = dir.filePath("b.pdf");
+    makePdf(a, 3);
+    makePdf(b, 2);
+
+    PdfView viewer;
+    viewer.resize(500, 400);
+    QSignalSpy loaded(&viewer, &PdfView::documentReady);
+    QSignalSpy failed(&viewer, &PdfView::loadFailed);
+    viewer.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&viewer));
+    viewer.open(a);
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
+    viewer.goToPage(2);
+    QVERIFY(viewer.verticalScrollBar()->value() > 0);
+    QTRY_VERIFY_WITH_TIMEOUT(viewer.renderingIdle() && viewer.cachedTiles() > 0, 5000);
+
+    // Corrupt same-path reload keeps existing pages and cache intact.
+    write(a, "not a pdf");
+    viewer.open(a);
+    QCOMPARE(viewer.pageCount(), 3);
+    QVERIFY(viewer.cachedTiles() > 0);
+    QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 5000);
+    QCOMPARE(viewer.pageCount(), 3);
+    QVERIFY(viewer.cachedTiles() > 0);
+
+    // Valid same-path reload succeeds cleanly.
+    makePdf(a, 3);
+    viewer.open(a);
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 2, 5000);
+    QCOMPARE(viewer.pageCount(), 3);
+
+    // Switching to a different PDF resets scroll position and presentation slide.
+    viewer.setPresentation(true);
+    viewer.goToPage(3);
+    QCOMPARE(viewer.currentPage(), 3);
+    viewer.setPresentation(false);
+    viewer.goToPage(2);
+    QVERIFY(viewer.verticalScrollBar()->value() > 0);
+    viewer.open(b);
+    QCOMPARE(viewer.verticalScrollBar()->value(), 0);
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 3, 5000);
+    QCOMPARE(viewer.pageCount(), 2);
+    viewer.setPresentation(true);
+    QCOMPARE(viewer.currentPage(), 1);
+}
+
+void Tests::programmaticScrollStopsSmoothScroll()
+{
+    // Editor: goToLine stops an in-flight wheel animation.
+    Editor editor;
+    editor.resize(600, 300);
+    editor.setPlainText(QString("line\n").repeated(500));
+    editor.show();
+    QTest::qWait(30);
+    QWheelEvent wheel(QPointF(30, 30), QPointF(30, 30), QPoint(), QPoint(0, -120), Qt::NoButton,
+        Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(editor.viewport(), &wheel);
+    editor.goToLine(300);
+    const int editorTarget = editor.verticalScrollBar()->value();
+    QVERIFY(editorTarget > 500);
+    QTest::qWait(150);
+    QCOMPARE(editor.verticalScrollBar()->value(), editorTarget);
+
+    // PdfView: goToPage and setZoom stop an in-flight wheel animation.
+    QTemporaryDir dir;
+    const QString path = dir.filePath("multi.pdf");
+    {
+        QPdfWriter writer(path);
+        writer.setPageSize(QPageSize(QPageSize::A4));
+        QPainter painter(&writer);
+        writer.newPage();
+        writer.newPage();
+        writer.newPage();
+    }
+    PdfView viewer;
+    viewer.resize(500, 400);
+    QSignalSpy loaded(&viewer, &PdfView::documentReady);
+    viewer.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&viewer));
+    viewer.open(path);
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
+
+    QApplication::sendEvent(viewer.viewport(), &wheel);
+    viewer.goToPage(3);
+    const int pdfTarget = viewer.verticalScrollBar()->value();
+    QVERIFY(pdfTarget > 400);
+    QTest::qWait(150);
+    QCOMPARE(viewer.verticalScrollBar()->value(), pdfTarget);
+
+    QApplication::sendEvent(viewer.viewport(), &wheel);
+    viewer.setZoom(1.5);
+    const int zoomTarget = viewer.verticalScrollBar()->value();
+    QTest::qWait(150);
+    QCOMPARE(viewer.verticalScrollBar()->value(), zoomTarget);
+}
+
+void Tests::gutterGeometryTracksFontAndLines()
+{
+    Editor editor;
+    editor.resize(500, 300);
+    editor.show();
+    QTest::qWait(20);
+    QWidget *gutter = nullptr;
+    for (auto *child : editor.findChildren<QWidget *>(Qt::FindDirectChildrenOnly))
+        if (child != editor.viewport() && !qobject_cast<QScrollBar *>(child) && child->isVisible()
+            && child->x() == 0 && child->height() == editor.viewport()->height())
+        { gutter = child; break; }
+    QVERIFY(gutter);
+
+    editor.setPlainText("1\n2\n3\n");
+    const int smallWidth = gutter->width();
+    QCOMPARE(smallWidth, editor.viewport()->x());
+
+    editor.setPlainText(QString("x\n").repeated(1200));
+    const int manyLinesWidth = gutter->width();
+    QCOMPARE(manyLinesWidth, editor.viewport()->x());
+    QVERIFY(manyLinesWidth > smallWidth);
+
+    QFont bigger = editor.font();
+    bigger.setPointSize(bigger.pointSize() + 10);
+    editor.setEditorFont(bigger);
+    const int bigFontWidth = gutter->width();
+    QCOMPARE(bigFontWidth, editor.viewport()->x());
+    QVERIFY(bigFontWidth > manyLinesWidth);
+}
+
+void Tests::fontZoomDoesNotWipeRedo()
+{
+    Editor editor;
+    editor.resize(400, 300);
+    editor.setWordWrap(true);
+    editor.show();
+    editor.setPlainText("    first line\nsecond");
+    QTest::qWait(20);
+    editor.moveCursor(QTextCursor::End);
+    QTest::keyClicks(&editor, " edit");
+    QTest::qWait(20);
+    const QString edited = editor.toPlainText();
+
+    editor.undoText();
+    QTest::qWait(20);
+    QVERIFY(editor.document()->isRedoAvailable());
+
+    QFont bigger = editor.font();
+    bigger.setPointSize(bigger.pointSize() + 4);
+    editor.setEditorFont(bigger);
+    QTest::qWait(20);
+    QVERIFY(editor.document()->isRedoAvailable());
+
+    editor.redoText();
+    QCOMPARE(editor.toPlainText(), edited);
+}
+
+void Tests::closingBracketSkipWhenBalanced()
+{
+    Editor editor;
+    editor.setPlainText("\\frac{a{b}");
+    auto cursor = editor.textCursor();
+    cursor.setPosition(9); // before the single '}'
+    editor.setTextCursor(cursor);
+    QTest::keyClicks(&editor, "}");
+    QCOMPARE(editor.toPlainText(), QString("\\frac{a{b}}"));
+
+    editor.setPlainText("\\frac{a}");
+    cursor = editor.textCursor();
+    cursor.setPosition(7); // before balanced '}'
+    editor.setTextCursor(cursor);
+    QTest::keyClicks(&editor, "}");
+    QCOMPARE(editor.toPlainText(), QString("\\frac{a}"));
+    QCOMPARE(editor.textCursor().position(), 8);
+}
+
+void Tests::insertTemplateLiteralBulletAndMultiline()
+{
+    Editor editor;
+    editor.setPlainText("    item • one\n    item • two");
+    editor.selectAll();
+    editor.insertTemplate("\\textbf{•}");
+    QCOMPARE(editor.toPlainText(), QString("\\textbf{    item • one\n    item • two}"));
+
+    // Multi-line selection on an indented line must not be double-indented by template newlines.
+    editor.setPlainText("    first\n    second");
+    auto cursor = editor.textCursor();
+    cursor.setPosition(4);
+    cursor.movePosition(QTextCursor::End, QTextCursor::KeepAnchor);
+    editor.setTextCursor(cursor);
+    editor.insertTemplate("\\begin{quote}\n    •\n\\end{quote}");
+    QCOMPARE(editor.toPlainText(), QString("    \\begin{quote}\n        first\n    second\n    \\end{quote}"));
+}
+
+void Tests::beamerEnvironmentCompletion()
+{
+    Editor editor;
+    editor.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&editor));
+    auto *completer = editor.findChild<QCompleter *>();
+    QVERIFY(completer);
+    editor.setPlainText("\\documentclass{beamer}\n\\begin{itemi");
+    editor.moveCursor(QTextCursor::End);
+    QTest::keyClick(&editor, Qt::Key_Space, Qt::ControlModifier);
+    QVERIFY(completer->popup()->isVisible());
+    emit completer->activated(QString("itemize<%1>").arg(QChar(0x2022)));
+    QCOMPARE(editor.toPlainText(), QString("\\documentclass{beamer}\n\\begin{itemize}<>\n    \n\\end{itemize}"));
+}
+
+void Tests::enterAutoIndentCapAndFoldedHeader()
+{
+    Editor editor;
+    editor.setPlainText("    hello");
+    auto cursor = editor.textCursor();
+    cursor.setPosition(2); // middle of 4 leading spaces
+    editor.setTextCursor(cursor);
+    QTest::keyClick(&editor, Qt::Key_Return);
+    QCOMPARE(editor.toPlainText(), QString("  \n    hello"));
+
+    // Pressing Enter at the end of a folded header unfolds its body instead of orphaning it.
+    editor.setPlainText("\\section{A}\nbody\n\\section{B}\n");
+    editor.toggleFold(0);
+    QVERIFY(!editor.document()->findBlockByNumber(1).isVisible());
+    cursor = editor.textCursor();
+    cursor.setPosition(QString("\\section{A}").size());
+    editor.setTextCursor(cursor);
+    QTest::keyClick(&editor, Qt::Key_Return);
+    QVERIFY(editor.document()->findBlockByNumber(1).isVisible());
 }
 
 QTEST_MAIN(Tests)

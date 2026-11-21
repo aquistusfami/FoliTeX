@@ -6,6 +6,7 @@
 #include <QMessageBox>
 #include <QFileInfo>
 #include <QSaveFile>
+#include <QCryptographicHash>
 #include <QTextStream>
 #include <QRegularExpression>
 #include <QMenu>
@@ -282,6 +283,42 @@ QList<Problem> BuildRunner::parseLog(const QString &log, const QString &director
     return problems;
 }
 
+static void prepareBuildSubdirs(const QString &root, const QDir &projectDir, const QDir &buildDir)
+{
+    static const QRegularExpression comment(R"((?<!\\)%[^\n]*)");
+    static const QRegularExpression include(R"(\\(?:include|input|subfile)\s*\{([^{}]+)\})");
+    QSet<QString> visited;
+    QStringList queue{QDir::cleanPath(root)};
+    for (int qi = 0; qi < queue.size() && visited.size() < 512; ++qi)
+    {
+        const QString filePath = queue[qi];
+        if (visited.contains(filePath)) continue;
+        visited.insert(filePath);
+        QFile file(filePath);
+        if (!file.open(QIODevice::ReadOnly)) continue;
+        QString text = QString::fromUtf8(file.read(1 << 20)).remove(comment);
+        for (auto it = include.globalMatch(text); it.hasNext();)
+        {
+            QString arg = it.next().captured(1).trimmed();
+            if (arg.size() >= 2 && arg.startsWith('"') && arg.endsWith('"')) arg = arg.mid(1, arg.size() - 2).trimmed();
+            if (arg.isEmpty()) continue;
+            QString target = arg;
+            if (QFileInfo(target).suffix().isEmpty()) target += ".tex";
+            QString resolved = QDir::cleanPath(projectDir.absoluteFilePath(target));
+            if (!QFileInfo::exists(resolved))
+            {
+                QString relative = QDir::cleanPath(QDir(QFileInfo(filePath).absolutePath()).absoluteFilePath(target));
+                if (QFileInfo::exists(relative)) resolved = relative;
+            }
+            const QString relDir = QDir::cleanPath(projectDir.relativeFilePath(QFileInfo(resolved).absolutePath()));
+            if (!relDir.isEmpty() && relDir != "." && !relDir.startsWith("..") && !QDir::isAbsolutePath(relDir))
+                buildDir.mkpath(relDir);
+            if (!visited.contains(resolved) && QFileInfo(resolved).isFile())
+                queue << resolved;
+        }
+    }
+}
+
 bool BuildRunner::start(const QString &source, const QString &engine)
 {
     if (running()) return false;
@@ -295,17 +332,11 @@ bool BuildRunner::start(const QString &source, const QString &engine)
     }
     m_pdf = pdfPath(root);
     m_process.setWorkingDirectory(QFileInfo(root).absolutePath());
-    // Ensure all project subdirectories exist in .folitex-build so \include and aux files succeed.
+    // Ensure subdirectories referenced by \include/\input/\subfile exist in .folitex-build so aux files succeed.
     QDir projectDir(QFileInfo(root).absolutePath());
     QDir buildDir(projectDir.filePath(".folitex-build"));
     buildDir.mkpath(".");
-    for (QDirIterator it(projectDir.path(), QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories); it.hasNext();)
-    {
-        it.next();
-        QString rel = projectDir.relativeFilePath(it.filePath());
-        if (!rel.startsWith('.') && !rel.startsWith("build"))
-            buildDir.mkpath(rel);
-    }
+    prepareBuildSubdirs(root, projectDir, buildDir);
     // Unwrapped log lines (TeX folds at 79 characters by default), so messages parse whole.
     auto environment = QProcessEnvironment::systemEnvironment();
     environment.insert("max_print_line", "10000");
@@ -459,13 +490,19 @@ Window::Window() : m_runner(this)
     QMenu *menu = menuBar->addMenu("&File");
     auto add = [this, &menu](const QString &title, const QKeySequence &keys, auto handler)
     {
-        auto *action = menu->addAction(title);
+        auto *action = new QAction(title, menu);
         action->setShortcut(keys);
-        addAction(action);
         connect(action, &QAction::triggered, this, handler);
+        menu->addAction(action);
+        addAction(action);
         return action;
     };
-    auto insert = [this](const QString &text) { return [this, text] { if (auto *editor = currentEditor()) editor->insertTemplate(text); }; };
+    auto focusedEditor = [this]() -> Editor *
+    {
+        auto *editor = currentEditor();
+        return editor && (!m_viaShortcut || editor->hasFocus()) ? editor : nullptr;
+    };
+    auto insert = [focusedEditor](const QString &text) { return [focusedEditor, text] { if (auto *editor = focusedEditor()) editor->insertTemplate(text); }; };
     auto find = [this](bool backwards)
     {
         if (m_pdfFindBar->isVisible() && m_pdfPane->isAncestorOf(QApplication::focusWidget())) findInPdf(backwards);
@@ -550,8 +587,8 @@ Window::Window() : m_runner(this)
     menu->addSeparator();
     add("Settings…", QKeySequence("Ctrl+,"), [this] { showSettings(); });
     menu = menuBar->addMenu("&Edit");
-    add("Undo", QKeySequence::Undo, [this] { if (auto *editor = currentEditor()) editor->undoText(); });
-    add("Redo", QKeySequence::Redo, [this] { if (auto *editor = currentEditor()) editor->redoText(); });
+    add("Undo", QKeySequence::Undo, [focusedEditor] { if (auto *editor = focusedEditor()) editor->undoText(); });
+    add("Redo", QKeySequence::Redo, [focusedEditor] { if (auto *editor = focusedEditor()) editor->redoText(); });
     menu->addSeparator();
     add("Find", QKeySequence::Find, [showFind] { showFind(false); });
     add("Replace", QKeySequence("Ctrl+H"), [showFind] { showFind(true); })->setShortcuts({QKeySequence("Ctrl+H"), QKeySequence("Ctrl+R")});
@@ -566,7 +603,7 @@ Window::Window() : m_runner(this)
         if (ok) editor->goToLine(line);
     });
     menu->addSeparator();
-    add("Toggle comment", QKeySequence("Ctrl+/"), [this] { if (currentEditor()) currentEditor()->toggleComment(); });
+    add("Toggle comment", QKeySequence("Ctrl+/"), [focusedEditor] { if (auto *editor = focusedEditor()) editor->toggleComment(); });
     menu->addSeparator();
     add("Fold", QKeySequence("Ctrl+Shift+["), [this] { if (auto *editor = currentEditor()) editor->foldAtCursor(); });
     add("Unfold", QKeySequence("Ctrl+Shift+]"), [this]
@@ -583,9 +620,9 @@ Window::Window() : m_runner(this)
     add("Italic", QKeySequence("Ctrl+I"), insert("\\textit{\u2022}"));
     add("Underline", QKeySequence("Ctrl+U"), insert("\\underline{\u2022}"));
     // `…' around the selection, which stays selected, so a second press gives ``…''.
-    add("Quotes `\u2026' (twice for ``\u2026'')", QKeySequence("Ctrl+'"), [this]
+    add("Quotes `\u2026' (twice for ``\u2026'')", QKeySequence("Ctrl+'"), [focusedEditor]
     {
-        auto *editor = currentEditor();
+        auto *editor = focusedEditor();
         if (!editor) return;
         auto cursor = editor->textCursor();
         QString inner = cursor.selectedText().replace(QChar::ParagraphSeparator, '\n');
@@ -613,8 +650,8 @@ Window::Window() : m_runner(this)
     add("\\right", QKeySequence("Ctrl+Shift+R"), insert("\\right "));
     menu->addSeparator();
     add("Item", QKeySequence("Ctrl+Shift+I"), insert("\\item "));
-    add("Environment…", QKeySequence("Ctrl+E"), [this] { if (auto *editor = currentEditor()) editor->insertEnvironment(); });
-    add("Close environment", QKeySequence("Alt+Return"), [this] { if (auto *editor = currentEditor()) editor->closeEnvironment(); });
+    add("Environment…", QKeySequence("Ctrl+E"), [focusedEditor] { if (auto *editor = focusedEditor()) editor->insertEnvironment(); });
+    add("Close environment", QKeySequence("Alt+Return"), [focusedEditor] { if (auto *editor = focusedEditor()) editor->closeEnvironment(); });
     menu = menuBar->addMenu("&Build");
     add("Build / stop", QKeySequence("F5"), [this] { build(); })->setShortcuts({QKeySequence("F5"), QKeySequence("F6")});
     add("Source → PDF", QKeySequence("F7"), [this] { forwardSync(); });
@@ -1465,6 +1502,11 @@ static QString lineEndingOf(const QByteArray &bytes)
     return bytes.contains("\r\n") ? "\r\n" : !bytes.contains("\n") && bytes.contains("\r") ? "\r" : "\n";
 }
 
+static QByteArray sourceHash(const QByteArray &bytes)
+{
+    return QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
+}
+
 void Window::setWordWrap(bool on)
 {
     m_wordWrap = on;
@@ -1488,6 +1530,17 @@ void Window::reloadSource(Editor *editor)
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) { m_status->setText(name + " was removed or renamed on disk."); return; }
     QByteArray bytes = file.readAll();
+    const QByteArray hash = sourceHash(bytes);
+    if (hash == editor->property("diskHash").toByteArray())
+    {
+        editor->setProperty("mtime", QFileInfo(path).lastModified());
+        if (editor->property("conflict").toBool())
+        {
+            editor->setProperty("conflict", false);
+            setTabTitle(editor);
+        }
+        return;
+    }
     QString text, error = decodeSource(bytes, text);
     if (!error.isEmpty()) { m_status->setText(name + " changed on disk: " + error); return; }
     text.replace("\r\n", "\n").replace('\r', '\n');
@@ -1498,6 +1551,7 @@ void Window::reloadSource(Editor *editor)
         editor->setProperty("bom", bytes.startsWith("\xef\xbb\xbf"));
         editor->setProperty("lineEnding", lineEndingOf(bytes));
         editor->setProperty("mtime", QFileInfo(path).lastModified());
+        editor->setProperty("diskHash", hash);
         editor->setProperty("conflict", false);
         setTabTitle(editor);
         if (editor == currentEditor()) updatePosition();
@@ -1524,6 +1578,7 @@ void Window::reloadSource(Editor *editor)
     editor->setProperty("bom", bytes.startsWith("\xef\xbb\xbf"));
     editor->setProperty("lineEnding", lineEndingOf(bytes));
     editor->setProperty("mtime", QFileInfo(path).lastModified());
+    editor->setProperty("diskHash", hash);
     editor->document()->setModified(false);
     editor->setProperty("conflict", false);
     setTabTitle(editor);
@@ -1934,6 +1989,7 @@ bool Window::openSource(const QString &path)
     editor->setProperty("lineEnding", lineEndingOf(bytes));
     editor->setProperty("path", absolute);
     editor->setProperty("mtime", info.lastModified());
+    editor->setProperty("diskHash", sourceHash(bytes));
     editor->document()->setModified(false);
     setTabTitle(editor);
     applyProblems(editor);
@@ -2248,14 +2304,21 @@ bool Window::save(Editor *editor, bool saveAs)
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit())
     { QMessageBox::warning(this, "Cannot save", QString("%1 could not be saved: %2").arg(QDir::toNativeSeparators(path), file.errorString())); return false; }
-    editor->setProperty("path", QFileInfo(path).absoluteFilePath());
+    const QString savedPath = QFileInfo(path).absoluteFilePath();
+    editor->setProperty("path", savedPath);
     editor->setProperty("mtime", QFileInfo(path).lastModified());
+    editor->setProperty("diskHash", sourceHash(bytes));
     editor->document()->setModified(false);
     editor->setProperty("conflict", false);
+    m_changedSources.remove(savedPath);
+    if (!current.isEmpty() && current != savedPath)
+    {
+        m_changedSources.remove(current);
+        m_sourceWatcher.removePath(current);
+    }
     setTabTitle(editor);
-    if (!current.isEmpty() && current != editor->property("path").toString()) m_sourceWatcher.removePath(current);
-    watchSource(editor->property("path").toString());
-    addRecent(editor->property("path").toString());
+    watchSource(savedPath);
+    addRecent(savedPath);
     return true;
 }
 
@@ -2384,7 +2447,14 @@ void Window::inverseSync(int page, double x, double y, const QStringList &words,
         auto line = QRegularExpression(R"(^Line:(\d+))", QRegularExpression::MultilineOption).match(text);
         if (!input.hasMatch() || !line.hasMatch()) return;
         QString path = input.captured(1).trimmed();
-        if (QFileInfo(path).isRelative()) path = QDir(QFileInfo(m_pdf->path()).absolutePath()).absoluteFilePath(path);
+        if (QFileInfo(path).isRelative())
+        {
+            QDir pdfDir(QFileInfo(m_pdf->path()).absolutePath());
+            QString candidate = QDir::cleanPath(pdfDir.absoluteFilePath(path));
+            if (!QFileInfo::exists(candidate) && pdfDir.dirName() == ".folitex-build" && pdfDir.cdUp())
+                candidate = QDir::cleanPath(pdfDir.absoluteFilePath(path));
+            path = candidate;
+        }
         if (openSource(QDir::cleanPath(path))) currentEditor()->goToWord(line.captured(1).toInt(), words, clicked);
     });
 }
@@ -2687,6 +2757,14 @@ void Window::toggleMaximizePanel()
     }
 }
 
+bool Window::isInAgentTerminal(QWidget *widget) const
+{
+    if (!m_agent || !widget || !m_agent->isAncestorOf(widget)) return false;
+    for (QWidget *w = widget; w && w != m_agent; w = w->parentWidget())
+        if (w->inherits("QTermWidget")) return true;
+    return false;
+}
+
 bool Window::eventFilter(QObject *object, QEvent *event)
 {
     // A lone Alt (pressed and released with no other key) shows or hides a hidden menu bar.
@@ -2699,6 +2777,19 @@ bool Window::eventFilter(QObject *object, QEvent *event)
     {
         m_altAlone = false;
         if (!m_menuBarShown) m_topBar->setVisible(!m_topBar->isVisible());
+    }
+    // Let the embedded Agent terminal receive Ctrl/Alt control chords instead of window shortcuts.
+    if (event->type() == QEvent::ShortcutOverride && object->isWidgetType())
+    {
+        auto *key = static_cast<QKeyEvent *>(event);
+        const int k = key->key();
+        const bool modifierOnly = k == Qt::Key_Control || k == Qt::Key_Shift || k == Qt::Key_Alt || k == Qt::Key_Meta;
+        if (!modifierOnly && (key->modifiers() & (Qt::ControlModifier | Qt::AltModifier))
+            && isInAgentTerminal(static_cast<QWidget *>(object)))
+        {
+            event->accept();
+            return true;
+        }
     }
     // "Name · Ctrl+K" tooltips show the key as a small chip, like the command palette does.
     if (event->type() == QEvent::ToolTip && object->isWidgetType())

@@ -131,6 +131,7 @@ private slots:
     void tileFinished(Tile tile, QImage image);
 private:
     void layoutPages();
+    void resetDocument();
     void applyDpi();
     void nextTile();
     QPointF offset() const;
@@ -150,6 +151,7 @@ private:
     QString m_error;
     bool m_busy = false;
     int m_generation = 0;
+    int m_loadGeneration = 0;
     int m_dpi1000 = 72000;
     int m_targetDpi1000 = 72000;
     int m_previousDpi1000 = 0;

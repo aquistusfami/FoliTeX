@@ -31,6 +31,7 @@
 #include <QMenu>
 #include <QHelpEvent>
 #include <QAbstractTextDocumentLayout>
+#include <QScopeGuard>
 #include <algorithm>
 #include <cmath>
 
@@ -42,6 +43,28 @@ static bool escaped(const QTextDocument *document, int position)
     int backslashes = 0;
     while (position > 0 && document->characterAt(--position) == '\\') ++backslashes;
     return backslashes % 2 != 0;
+}
+
+// The line without its comment.
+static QString codeOf(const QString &line)
+{
+    for (int i = 0; i < line.size(); ++i)
+        if (line[i] == '\\') ++i;
+        else if (line[i] == '%') return line.left(i);
+    return line;
+}
+
+static bool bracketsBalanced(const QString &line, QChar open, QChar close)
+{
+    QString code = codeOf(line);
+    int balance = 0;
+    for (int i = 0; i < code.size(); ++i)
+    {
+        if (code[i] == '\\') { ++i; continue; }
+        if (code[i] == open) ++balance;
+        else if (code[i] == close) --balance;
+    }
+    return balance <= 0;
 }
 
 static const QStringList builtinCommands = {
@@ -316,6 +339,12 @@ SmoothScroll::SmoothScroll(QAbstractScrollArea *area, int wheelStep, double touc
     area->viewport()->installEventFilter(this);
     auto *bar = area->verticalScrollBar();
     connect(bar, &QScrollBar::sliderPressed, &m_animation, &QPropertyAnimation::stop);
+}
+
+void SmoothScroll::stop()
+{
+    m_animation.stop();
+    m_samples.clear();
 }
 
 bool SmoothScroll::eventFilter(QObject *, QEvent *event)
@@ -620,10 +649,10 @@ Editor::Editor(QWidget *parent) : QTextEdit(parent)
     setFont(mono);
     setTabStopDistance(QFontMetricsF(mono).horizontalAdvance(' ') * 4);
     new LatexHighlighter(document());
-    new SmoothScroll(this);
+    m_smooth = new SmoothScroll(this);
     m_gutter = new QWidget(this);
     m_gutter->installEventFilter(this);
-    auto refreshGutter = [this] { setViewportMargins(gutterWidth(), 0, 0, 0); m_gutter->update(); };
+    auto refreshGutter = [this] { updateGutterGeometry(); m_gutter->update(); };
     connect(document(), &QTextDocument::blockCountChanged, this, refreshGutter);
     connect(verticalScrollBar(), &QScrollBar::valueChanged, m_gutter, qOverload<>(&QWidget::update));
     connect(this, &QTextEdit::textChanged, m_gutter, qOverload<>(&QWidget::update));
@@ -642,8 +671,18 @@ Editor::Editor(QWidget *parent) : QTextEdit(parent)
     // Wrapped lines continue under the first non-blank character; applied after the edit settles.
     connect(document(), &QTextDocument::contentsChange, this, [this](int position, int, int added)
     {
-        int from = document()->findBlock(position).blockNumber();
-        int to = document()->findBlock(position + added).blockNumber();
+        if (m_inUndoRedo || m_inApplyWrapIndent) return;
+        int steps = document()->availableUndoSteps();
+        if (!document()->isRedoAvailable())
+        {
+            int cutoff = std::min(steps, m_undoSteps);
+            m_formatUndoSteps.removeIf([cutoff](int step) { return step > cutoff; });
+        }
+        m_undoSteps = steps;
+        if (document()->isRedoAvailable()) return;
+        int from = m_wrapIndentStale ? 0 : document()->findBlock(position).blockNumber();
+        int to = m_wrapIndentStale ? document()->blockCount() - 1 : document()->findBlock(position + added).blockNumber();
+        m_wrapIndentStale = false;
         if (to < 0) to = document()->blockCount() - 1;
         if (m_indentFrom < 0) QTimer::singleShot(0, this, &Editor::applyWrapIndent);
         m_indentFrom = m_indentFrom < 0 ? from : std::min(m_indentFrom, from);
@@ -721,7 +760,7 @@ void Editor::complete(const QString &text)
     {
         if (closed) cursor.deleteChar();
         setTextCursor(cursor);
-        int arguments = text.indexOf(QRegularExpression(R"([{\[])"));
+        int arguments = text.indexOf(QRegularExpression(R"([{\[<])"));
         QString name = arguments < 0 ? text : text.left(arguments);
         insertTemplate(name + "}" + (arguments < 0 ? QString() : text.mid(arguments)) + "\n    •\n\\end{" + name + "}");
         return;
@@ -735,15 +774,24 @@ void Editor::insertTemplate(QString text)
 {
     auto cursor = textCursor();
     QString selected = cursor.selectedText().replace(QChar::ParagraphSeparator, '\n');
-    if (!selected.isEmpty() && text.contains(placeholderMark)) text.replace(text.indexOf(placeholderMark), 1, selected);
     QString line = document()->findBlock(cursor.selectionStart()).text();
     static const QRegularExpression firstText(R"(\S|$)");
     text.replace('\n', '\n' + line.left(line.indexOf(firstText)));
+    bool filled = false;
     QString plain;
     QList<int> offsets;
     for (QChar c : text)
     {
-        if (c == placeholderMark) offsets << plain.size(); else plain += c;
+        if (c == placeholderMark)
+        {
+            if (!selected.isEmpty() && !filled)
+            {
+                plain += selected;
+                filled = true;
+            }
+            else offsets << plain.size();
+        }
+        else plain += c;
     }
     cursor.insertText(plain);
     int start = cursor.position() - plain.size();
@@ -976,7 +1024,9 @@ void Editor::keyPressEvent(QKeyEvent *event)
     if (typed.size() == 1 && !(event->modifiers() & (Qt::ControlModifier | Qt::AltModifier)))
     {
         int open = opening.indexOf(typed[0]);
-        if (closing.contains(typed[0]) && next == typed[0] && !cursor.hasSelection() && !escaped(document(), cursor.position()))
+        int close = closing.indexOf(typed[0]);
+        if (close >= 0 && next == typed[0] && !cursor.hasSelection() && !escaped(document(), cursor.position())
+            && bracketsBalanced(cursor.block().text(), opening[close], typed[0]))
         {
             moveCursor(QTextCursor::NextCharacter);
             return;
@@ -1037,8 +1087,13 @@ void Editor::keyPressEvent(QKeyEvent *event)
     }
     if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) && !event->modifiers())
     {
+        QTextBlock startBlock = document()->findBlock(cursor.selectionStart());
+        int posInBlock = cursor.selectionStart() - startBlock.position();
+        if (isFolded(startBlock.blockNumber()) && (posInBlock > 0 || cursor.hasSelection()))
+            toggleFold(startBlock.blockNumber());
         static const QRegularExpression indentation(R"(^\s*)");
-        QString indent = indentation.match(cursor.block().text()).captured();
+        QString indent = indentation.match(startBlock.text()).captured();
+        indent.truncate(posInBlock);
         cursor.insertText("\n" + indent);
         setTextCursor(cursor);
         m_completion->popup()->hide();
@@ -1053,6 +1108,14 @@ int Editor::gutterWidth() const
 {
     int digits = std::max(3, int(QString::number(document()->blockCount()).size()));
     return fontMetrics().horizontalAdvance(QString(digits, '9')) + 22; // fold column, then the numbers
+}
+
+void Editor::updateGutterGeometry()
+{
+    int width = gutterWidth();
+    setViewportMargins(width, 0, 0, 0);
+    auto area = contentsRect();
+    m_gutter->setGeometry(area.left(), area.top(), width, area.height());
 }
 
 void Editor::resizeEvent(QResizeEvent *event)
@@ -1073,15 +1136,6 @@ bool Editor::eventFilter(QObject *object, QEvent *event)
         return true;
     }
     return QTextEdit::eventFilter(object, event);
-}
-
-// The line without its comment.
-static QString codeOf(const QString &line)
-{
-    for (int i = 0; i < line.size(); ++i)
-        if (line[i] == '\\') ++i;
-        else if (line[i] == '%') return line.left(i);
-    return line;
 }
 
 static int headingLevel(const QString &code)
@@ -1156,7 +1210,7 @@ void Editor::refreshFold(const QTextBlock &from, const QTextBlock &to)
 {
     // Relayout only; visibility is not part of the text or the undo history.
     document()->markContentsDirty(from.position(), to.position() + to.length() - from.position());
-    setViewportMargins(gutterWidth(), 0, 0, 0);
+    updateGutterGeometry();
     m_gutter->update();
     viewport()->update();
 }
@@ -1247,10 +1301,16 @@ void Editor::setEditorFont(const QFont &font)
 {
     setFont(font);
     setTabStopDistance(QFontMetricsF(font).horizontalAdvance(' ') * 4);
-    setViewportMargins(gutterWidth(), 0, 0, 0);
-    m_indentFrom = 0;
-    m_indentTo = document()->blockCount() - 1;
-    applyWrapIndent();
+    updateGutterGeometry();
+    if (document()->isRedoAvailable())
+        m_wrapIndentStale = true;
+    else
+    {
+        m_wrapIndentStale = false;
+        m_indentFrom = 0;
+        m_indentTo = document()->blockCount() - 1;
+        applyWrapIndent();
+    }
     m_gutter->update();
 }
 
@@ -1691,6 +1751,13 @@ QList<OutlineEntry> Editor::outline(const QString &text)
 // unwrapped lines look unchanged. Block formats never reach the saved text (toPlainText).
 void Editor::applyWrapIndent()
 {
+    if (m_indentFrom < 0) return;
+    if (document()->isRedoAvailable())
+    {
+        m_indentFrom = m_indentTo = -1;
+        m_wrapIndentStale = true;
+        return;
+    }
     int from = m_indentFrom, to = std::min(m_indentTo, document()->blockCount() - 1);
     m_indentFrom = m_indentTo = -1;
     QFontMetricsF metrics(font());
@@ -1698,6 +1765,9 @@ void Editor::applyWrapIndent()
     double cap = metrics.horizontalAdvance(' ') * 40;
     bool modified = document()->isModified();
     bool fresh = !document()->isUndoAvailable() && !document()->isRedoAvailable();
+    int stepsBefore = document()->availableUndoSteps();
+    m_inApplyWrapIndent = true;
+    auto resetGuard = qScopeGuard([this] { m_inApplyWrapIndent = false; });
     QTextCursor cursor(document());
     bool editing = false;
     for (auto block = document()->findBlockByNumber(std::max(0, from)); block.isValid() && block.blockNumber() <= to; block = block.next())
@@ -1723,7 +1793,14 @@ void Editor::applyWrapIndent()
     }
     if (!editing) return;
     cursor.endEditBlock();
-    if (fresh) document()->clearUndoRedoStacks(); // a freshly loaded file starts with an empty undo history
+    if (fresh)
+    {
+        document()->clearUndoRedoStacks(); // a freshly loaded file starts with an empty undo history
+        m_formatUndoSteps.clear();
+    }
+    else if (document()->availableUndoSteps() > stepsBefore)
+        m_formatUndoSteps.insert(document()->availableUndoSteps());
+    m_undoSteps = document()->availableUndoSteps();
     document()->setModified(modified);
 }
 
@@ -1825,6 +1902,7 @@ void Editor::goToLine(int line, int column)
 {
     auto block = document()->findBlockByNumber(std::max(0, line - 1));
     if (!block.isValid()) return;
+    m_smooth->stop();
     QTextCursor cursor(block);
     cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, std::clamp(column, 0, block.length() - 1));
     setTextCursor(cursor);
@@ -1863,20 +1941,32 @@ void Editor::toggleComment()
 // made applyWrapIndent re-add it, which cleared redo and trapped Ctrl+Z.
 void Editor::undoText()
 {
-    const QString before = toPlainText();
-    while (document()->isUndoAvailable() && toPlainText() == before) undo();
+    m_indentFrom = m_indentTo = -1;
+    m_inUndoRedo = true;
+    auto resetGuard = qScopeGuard([this] { m_inUndoRedo = false; });
+    while (document()->isUndoAvailable() && m_formatUndoSteps.contains(document()->availableUndoSteps())) undo();
+    if (document()->isUndoAvailable()) undo();
+    m_undoSteps = document()->availableUndoSteps();
 }
 
 void Editor::redoText()
 {
-    const QString before = toPlainText();
-    while (document()->isRedoAvailable() && toPlainText() == before) redo();
-    // Then the format steps recorded right after that text change; stop before the next one.
-    while (document()->isRedoAvailable())
+    m_indentFrom = m_indentTo = -1;
     {
-        const QString text = toPlainText();
-        redo();
-        if (toPlainText() != text) { undo(); break; }
+        m_inUndoRedo = true;
+        auto resetGuard = qScopeGuard([this] { m_inUndoRedo = false; });
+        while (document()->isRedoAvailable() && m_formatUndoSteps.contains(document()->availableUndoSteps() + 1)) redo();
+        if (document()->isRedoAvailable()) redo();
+        // Then the format steps recorded right after that text change; stop before the next one.
+        while (document()->isRedoAvailable() && m_formatUndoSteps.contains(document()->availableUndoSteps() + 1)) redo();
+        m_undoSteps = document()->availableUndoSteps();
+    }
+    if (m_wrapIndentStale && !document()->isRedoAvailable())
+    {
+        m_wrapIndentStale = false;
+        m_indentFrom = 0;
+        m_indentTo = document()->blockCount() - 1;
+        applyWrapIndent();
     }
 }
 

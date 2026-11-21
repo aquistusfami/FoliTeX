@@ -140,6 +140,7 @@ private:
     void inverseSync(int page, double x, double y, const QStringList &words, int clicked);
     void reloadSource(Editor *editor);
     void watchSource(const QString &path);
+    bool isInAgentTerminal(QWidget *widget) const;
     void refreshOutline();
     void showSide(QWidget *page, bool toggle = true);
     void syncOutline();

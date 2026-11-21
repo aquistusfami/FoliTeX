@@ -22,6 +22,7 @@ class SmoothScroll : public QObject
     Q_OBJECT
 public:
     explicit SmoothScroll(QAbstractScrollArea *area, int wheelStep = 72, double touchpadFactor = 1);
+    void stop();
 protected:
     bool eventFilter(QObject *object, QEvent *event) override;
 private:
@@ -130,8 +131,10 @@ private:
     void updateCompletion(bool request);
     bool jumpPlaceholder(int step);
     void scan();
+    SmoothScroll *m_smooth;
     QWidget *m_gutter;
     int gutterWidth() const;
+    void updateGutterGeometry();
     void paintGutter();
     void updateHighlights();
     struct Mark
@@ -156,4 +159,9 @@ private:
     void applyWrapIndent();
     int m_indentFrom = -1; // block range whose wrap indent is pending, -1 when none
     int m_indentTo = -1;
+    QSet<int> m_formatUndoSteps;
+    int m_undoSteps = 0;
+    bool m_inUndoRedo = false;
+    bool m_inApplyWrapIndent = false;
+    bool m_wrapIndentStale = false;
 };

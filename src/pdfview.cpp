@@ -29,10 +29,6 @@ QString Tile::key() const
 
 void PdfRenderer::open(const QString &path, int generation)
 {
-    m_page.reset();
-    m_document.reset();
-    m_generation = generation;
-    m_pageNumber = -1;
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
     {
@@ -41,23 +37,23 @@ void PdfRenderer::open(const QString &path, int generation)
     }
     // A snapshot lets latexmk replace/rebuild its output without changing an in-flight render.
     // Poppler copies these bytes; do not retain a second whole-document copy.
-    m_document = Poppler::Document::loadFromData(file.readAll());
-    if (!m_document || m_document->isLocked())
+    auto document = Poppler::Document::loadFromData(file.readAll());
+    if (!document || document->isLocked())
     {
         emit loaded(generation, {}, "Invalid or password-protected PDF.");
         return;
     }
-    if (m_document->numPages() == 0)
+    if (document->numPages() == 0)
     {
         emit loaded(generation, {}, "The PDF contains no pages.");
         return;
     }
-    m_document->setRenderHint(Poppler::Document::Antialiasing, true);
-    m_document->setRenderHint(Poppler::Document::TextAntialiasing, true);
+    document->setRenderHint(Poppler::Document::Antialiasing, true);
+    document->setRenderHint(Poppler::Document::TextAntialiasing, true);
     QList<QSizeF> sizes;
-    for (int i = 0; i < m_document->numPages(); ++i)
+    for (int i = 0; i < document->numPages(); ++i)
     {
-        auto page = m_document->page(i);
+        auto page = document->page(i);
         if (!page)
         {
             emit loaded(generation, {}, "Cannot read a PDF page.");
@@ -65,6 +61,10 @@ void PdfRenderer::open(const QString &path, int generation)
         }
         sizes.append(page->pageSizeF());
     }
+    m_page.reset();
+    m_pageNumber = -1;
+    m_document = std::move(document);
+    m_generation = generation;
     emit loaded(generation, sizes, {});
 }
 
@@ -148,8 +148,19 @@ PdfView::PdfView(QWidget *parent) : QAbstractScrollArea(parent), m_renderer(new 
     connect(this, &PdfView::tileRequested, m_renderer, &PdfRenderer::render);
     connect(m_renderer, &PdfRenderer::loaded, this, [this](int generation, QList<QSizeF> sizes, const QString &error)
     {
-        if (generation != m_generation) return;
-        if (!error.isEmpty()) { m_error = error; viewport()->update(); emit loadFailed(error); return; }
+        if (generation != m_loadGeneration) return;
+        if (!error.isEmpty())
+        {
+            if (m_sizes.isEmpty()) { m_error = error; viewport()->update(); }
+            emit loadFailed(error);
+            return;
+        }
+        m_error.clear();
+        if (m_generation != generation)
+        {
+            m_generation = generation;
+            resetDocument();
+        }
         m_sizes = sizes;
         layoutPages();
         emit documentReady(m_sizes.size());
@@ -213,13 +224,8 @@ PdfView::~PdfView()
     m_thread.wait();
 }
 
-void PdfView::open(const QString &path)
+void PdfView::resetDocument()
 {
-    m_path = path;
-    m_error.clear();
-    ++m_generation;
-    m_sizes.clear();
-    m_pages.clear();
     m_pending.clear();
     m_cache.clear();
     m_failedPages.clear();
@@ -228,8 +234,31 @@ void PdfView::open(const QString &path)
     m_textRequested.clear();
     m_selectionPage = m_pressPage = -1;
     clearSearch();
-    emit loadRequested(path, m_generation);
-    viewport()->update();
+}
+
+void PdfView::open(const QString &path)
+{
+    const bool samePath = path == m_path;
+    const bool keepExisting = samePath && !m_sizes.isEmpty();
+    const bool hadPath = !m_path.isEmpty();
+    m_path = path;
+    ++m_loadGeneration;
+    if (!keepExisting)
+    {
+        m_generation = m_loadGeneration;
+        m_error.clear();
+        m_sizes.clear();
+        m_pages.clear();
+        resetDocument();
+        if (!samePath)
+        {
+            verticalScrollBar()->setValue(0);
+            horizontalScrollBar()->setValue(0);
+            if (hadPath) m_slide = 0;
+        }
+        viewport()->update();
+    }
+    emit loadRequested(path, m_loadGeneration);
 }
 
 QPointF PdfView::offset() const
@@ -437,15 +466,29 @@ void PdfView::paintEvent(QPaintEvent *)
         painter.setPen(themeColor("#22272E"));
         painter.drawRect(onScreen);
     }
-    // Slides: render the next and previous page ahead, so stepping shows them at once instead of a blank page.
+    // Slides: render the next and previous page ahead when they fit the cache alongside the current slide.
     // They lie a screen above or below the viewport, so requesting them draws nothing.
-    if (m_presenting && settled)
+    if (m_presenting && settled && m_slide >= 0 && m_slide < m_sizes.size())
+    {
+        auto slideCostKiB = [&](int number)
+        {
+            double w = qCeil(m_sizes[number].width() * m_dpi1000 / 72000.0);
+            double h = qCeil(m_sizes[number].height() * m_dpi1000 / 72000.0);
+            bool whole = w * h <= wholePagePixels;
+            double tiles = whole ? 1.0 : std::ceil(w / tileSize) * std::ceil(h / tileSize);
+            return qCeil(w * h * 4.0 / 1024.0) + int(tiles);
+        };
+        int budget = m_cache.maxCost() - slideCostKiB(m_slide);
         for (int number : {m_slide + 1, m_slide - 1})
-            if (number >= 0 && number < m_pages.size() && !m_failedPages.contains(number))
-            {
-                visible = m_pages[number];
-                drawTiles(number, m_pages[number].translated(-scroll), m_dpi1000, true);
-            }
+        {
+            if (number < 0 || number >= m_pages.size() || m_failedPages.contains(number)) continue;
+            int cost = slideCostKiB(number);
+            if (cost > budget) continue;
+            budget -= cost;
+            visible = m_pages[number];
+            drawTiles(number, m_pages[number].translated(-scroll), m_dpi1000, true);
+        }
+    }
     if (!m_busy && !m_pending.isEmpty()) QTimer::singleShot(0, this, &PdfView::nextTile);
 }
 
@@ -501,6 +544,7 @@ void PdfView::wheelEvent(QWheelEvent *event)
 
 void PdfView::setZoom(double zoom)
 {
+    m_smooth->stop();
     double fraction = verticalScrollBar()->maximum() > 0
         ? double(verticalScrollBar()->value()) / verticalScrollBar()->maximum() : 0;
     m_zoom = std::clamp(zoom, 0.25, 6.0);
@@ -514,6 +558,7 @@ void PdfView::goToPage(int page, double yPoints)
 {
     if (m_presenting) { showSlide(page - 1); return; } // also before the document has loaded
     if (page < 1 || page > m_pages.size()) return;
+    m_smooth->stop();
     verticalScrollBar()->setValue(qRound(m_pages[page - 1].top() + yPoints * m_scale - 32));
 }
 
@@ -555,6 +600,7 @@ void PdfView::showMatch()
     if (m_match < 0) return;
     const auto &match = m_matches[m_match];
     QPointF center = m_pages[match.page].topLeft() + match.box.center() * m_scale;
+    m_smooth->stop();
     verticalScrollBar()->setValue(qRound(center.y() - viewport()->height() / 3.0));
     horizontalScrollBar()->setValue(qRound(center.x() - viewport()->width() / 2.0));
 }
