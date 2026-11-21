@@ -26,6 +26,7 @@ class Editor;
 #include <QFileSystemWatcher>
 #include <QTimer>
 #include <QDateTime>
+#include <QElapsedTimer>
 #include "editor.h"
 #include "pdfview.h"
 
@@ -171,6 +172,12 @@ private:
     QList<Problem> m_problems;
     int m_problemIndex = -1;
     QDateTime m_buildStarted;
+    QTimer m_buildTimer;
+    QElapsedTimer m_buildElapsed;
+    QString m_buildLabel;
+    bool m_buildPdfExisted = false;
+    QDateTime m_buildPdfMtime;
+    qint64 m_buildPdfSize = -1;
     QDateTime m_problemsTime; // when m_problems were read
     QComboBox *m_engine;
     QPushButton *m_build;
@@ -206,6 +213,9 @@ private:
     void setPanelCollapsed(bool on); // only the Problems | Output strip while there is nothing to report
     QWidget *m_pdfBar;
     void setPdfLoaded(bool loaded);
+    void updatePageCountLabel();
+    int m_pdfPages = 0;
+    bool m_pdfStale = false;
     class QSpinBox *m_zoomBox;
     double m_pdfScale = 0;
     QMenu *m_templatesMenu;

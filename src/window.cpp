@@ -1399,8 +1399,15 @@ Window::Window() : m_runner(this)
         cursor.insertText(text);
         if (atBottom) bar->setValue(bar->maximum());
     });
+    m_buildTimer.setInterval(1000);
+    connect(&m_buildTimer, &QTimer::timeout, this, [this]
+    {
+        const qint64 seconds = std::max<qint64>(1, qRound(m_buildElapsed.elapsed() / 1000.0));
+        m_status->setText(QString("%1 %2 s").arg(m_buildLabel).arg(seconds));
+    });
     connect(&m_runner, &BuildRunner::finished, this, [this](bool success, const QString &pdf)
     {
+        m_buildTimer.stop();
         m_build->setIcon(m_runIcon);
         m_build->setText("Build");
         m_build->setToolTip("Build · F5");
@@ -1424,7 +1431,16 @@ Window::Window() : m_runner(this)
             keepStatus(errors ? QString("Build failed: %1 error%2 · F8 to go to the first").arg(errors).arg(errors == 1 ? "" : "s")
                                      : "Build failed: see Output");
         // nonstopmode still writes a PDF after most errors; show it so the edits are visible.
-        if (success || (QFileInfo::exists(pdf) && (m_pdf->path().isEmpty() || QFileInfo(pdf).lastModified() >= m_buildStarted.addSecs(-1)))) openPdf(pdf);
+        const QFileInfo pdfInfo(pdf);
+        const bool rewritten = pdfInfo.exists()
+            && (!m_buildPdfExisted || pdfInfo.lastModified() != m_buildPdfMtime || pdfInfo.size() != m_buildPdfSize);
+        if (success || (pdfInfo.exists() && (m_pdf->path().isEmpty() || rewritten)))
+            openPdf(pdf);
+        else if (!success && !m_pdf->path().isEmpty() && m_pdfPages > 0)
+        {
+            m_pdfStale = true;
+            updatePageCountLabel();
+        }
         if (!success)
         {
             m_panel->setCurrentWidget(errors ? static_cast<QWidget *>(m_problemsView) : m_log);
@@ -1435,9 +1451,10 @@ Window::Window() : m_runner(this)
     });
     connect(m_pdf, &PdfView::documentReady, this, [this](int pages)
     {
+        m_pdfPages = pages;
         setPdfLoaded(pages > 0);
         m_page->setMaximum(std::max(1, pages));
-        m_pageCount->setText("/ " + QString::number(pages));
+        updatePageCountLabel();
         // As wide as its digits, so "1 / 12" reads as one phrase from the left edge, not a box with a gap.
         m_page->setFixedWidth(m_page->fontMetrics().horizontalAdvance(QString(QString::number(std::max(1, pages)).size(), '0')) + 8);
         if (m_pendingPage) { m_pdf->goToPage(m_pendingPage, m_pendingY); m_pendingPage = 0; }
@@ -1690,7 +1707,36 @@ void Window::setPdfLoaded(bool loaded)
 {
     // Without a document the bar says so and nothing else: no page, zoom or toggles to press.
     for (auto *child : m_pdfBar->findChildren<QWidget *>(Qt::FindDirectChildrenOnly)) child->setVisible(loaded || child == m_pageCount);
-    if (!loaded) m_pageCount->setText("No PDF");
+    if (!loaded)
+    {
+        m_pdfPages = 0;
+        m_pdfStale = false;
+        updatePageCountLabel();
+    }
+}
+
+void Window::updatePageCountLabel()
+{
+    if (m_pdfPages <= 0)
+    {
+        m_pageCount->setTextFormat(Qt::PlainText);
+        m_pageCount->setText("No PDF");
+        m_pageCount->setToolTip({});
+        return;
+    }
+    if (m_pdfStale)
+    {
+        m_pageCount->setTextFormat(Qt::RichText);
+        m_pageCount->setText(QString("/ %1<span style=\"color:%2;\"> · last good build</span>")
+            .arg(m_pdfPages).arg(themeColor("#8793A2").name()));
+        m_pageCount->setToolTip("The last build failed; showing the PDF from the last good build.");
+    }
+    else
+    {
+        m_pageCount->setTextFormat(Qt::PlainText);
+        m_pageCount->setText("/ " + QString::number(m_pdfPages));
+        m_pageCount->setToolTip({});
+    }
 }
 
 void Window::openRecent(const QString &path)
@@ -2389,7 +2435,7 @@ void Window::closeEvent(QCloseEvent *event)
 
 void Window::build()
 {
-    if (m_runner.running()) { m_runner.stop(); return; }
+    if (m_runner.running()) { m_buildTimer.stop(); m_runner.stop(); return; }
     auto *editor = currentEditor();
     if (!editor) return;
     if ((editor->property("path").toString().isEmpty() || editor->document()->isModified()) && !save(editor)) return;
@@ -2411,14 +2457,23 @@ void Window::build()
     }
     m_log->clear();
     m_buildStarted = QDateTime::currentDateTime();
+    const QString expectedPdf = root.isEmpty() ? QString() : BuildRunner::pdfPath(root);
+    const QFileInfo pdfInfo(expectedPdf);
+    m_buildPdfExisted = !expectedPdf.isEmpty() && pdfInfo.exists();
+    m_buildPdfMtime = m_buildPdfExisted ? pdfInfo.lastModified() : QDateTime();
+    m_buildPdfSize = m_buildPdfExisted ? pdfInfo.size() : -1;
+    m_buildLabel = "Building…";
+    m_buildElapsed.start();
     m_status->setStyleSheet({});
-    m_status->setText("Building…"); m_build->setIcon(m_stopIcon); m_build->setText("Stop"); m_build->setToolTip("Stop build · F5");
+    m_status->setText(m_buildLabel); m_build->setIcon(m_stopIcon); m_build->setText("Stop"); m_build->setToolTip("Stop build · F5");
     m_lastRoot = root;
-    m_runner.start(source, m_engine->currentText());
+    if (m_runner.start(source, m_engine->currentText())) m_buildTimer.start();
 }
 
 void Window::openPdf(const QString &path)
 {
+    m_pdfStale = false;
+    if (m_pdfPages > 0) updatePageCountLabel();
     if (!m_watcher.files().isEmpty()) m_watcher.removePaths(m_watcher.files());
     m_watcher.addPath(path);
     if (m_zenHidden.isEmpty()) m_pdfPane->show();

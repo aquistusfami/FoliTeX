@@ -128,6 +128,7 @@ private slots:
     void syncProcessReplacesOlderRun();
     void outputLogPreservesScroll();
     void panelKeyboardNavigation();
+    void buildStatusElapsedAndStalePdf();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -3133,5 +3134,68 @@ void Tests::panelKeyboardNavigation()
     QKeyEvent esc(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QVERIFY(!window.eventFilter(term, &esc));
     delete term;
+#endif
+}
+
+void Tests::buildStatusElapsedAndStalePdf()
+{
+#ifdef Q_OS_WIN
+    QSKIP("shell script stand-in for latexmk");
+#else
+    QTemporaryDir bin, project;
+    const QString main = project.filePath("main.tex");
+    write(main, "\\documentclass{article}\n\\begin{document}\nHello\n\\end{document}\n");
+    const QString pdf = BuildRunner::pdfPath(main);
+    QVERIFY(QDir().mkpath(QFileInfo(pdf).absolutePath()));
+    {
+        QPdfWriter writer(pdf);
+        QPainter painter(&writer);
+        painter.drawText(100, 100, "Good build");
+    }
+
+    QFile fake(bin.filePath("latexmk"));
+    QVERIFY(fake.open(QIODevice::WriteOnly));
+    fake.write("#!/bin/sh\n"
+               "if [ \"$FOLITEX_FAKE_BUILD\" = fail ]; then sleep 2; exit 1; fi\n"
+               "exit 0\n");
+    fake.close();
+    fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner);
+
+    const QByteArray oldPath = qgetenv("PATH");
+    auto restore = qScopeGuard([&]
+    {
+        qputenv("PATH", oldPath);
+        qunsetenv("FOLITEX_FAKE_BUILD");
+    });
+    qputenv("PATH", bin.path().toUtf8() + ":" + oldPath);
+
+    Window window;
+    QSignalSpy ready(window.pdfView(), &PdfView::documentReady);
+    QVERIFY(window.openSource(main));
+    QTRY_COMPARE_WITH_TIMEOUT(ready.size(), 1, 3000);
+    QVERIFY(!window.m_pageCount->text().contains("last good build"));
+
+    // Failing build that sleeps 2 s and leaves the older PDF untouched.
+    qputenv("FOLITEX_FAKE_BUILD", "fail");
+    QSignalSpy done(&window, &Window::buildFinished);
+    window.build();
+    const QRegularExpression elapsed(R"(^Building… \d+ s$)");
+    QTRY_VERIFY_WITH_TIMEOUT(elapsed.match(window.m_status->text()).hasMatch(), 3000);
+    QTRY_COMPARE_WITH_TIMEOUT(done.size(), 1, 5000);
+    QVERIFY(!done.first().first().toBool());
+    QVERIFY(!window.m_buildTimer.isActive());
+    QVERIFY(window.m_pageCount->text().contains("last good build"));
+    QVERIFY(!window.m_pageCount->toolTip().isEmpty());
+
+    // Subsequent successful build clears the stale-PDF marker.
+    qputenv("FOLITEX_FAKE_BUILD", "ok");
+    done.clear();
+    ready.clear();
+    window.build();
+    QTRY_COMPARE_WITH_TIMEOUT(done.size(), 1, 5000);
+    QVERIFY(done.first().first().toBool());
+    QTRY_COMPARE_WITH_TIMEOUT(ready.size(), 1, 3000);
+    QVERIFY(!window.m_pageCount->text().contains("last good build"));
+    QVERIFY(window.m_pageCount->toolTip().isEmpty());
 #endif
 }
