@@ -1034,7 +1034,7 @@ Window::Window() : m_runner(this)
     m_forwardButton = navButton(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>)", "Go forward · Alt+Right", true);
     m_tabs->setCornerWidget(navCorner, Qt::TopLeftCorner);
     m_palette = new Palette(this);
-    connect(m_tabs, &QTabWidget::currentChanged, this, [this] { if (currentEditor()) setTabTitle(currentEditor()); refreshOutline(); updateTabButtons(); updatePosition(); noteLocation(); updateWelcome(); });
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this] { if (currentEditor()) setTabTitle(currentEditor()); refreshOutline(); updateTabButtons(); updatePosition(); noteLocation(); updateWelcome(); syncPdfToTab(currentEditor()); });
     m_outline = new QTreeWidget;
     m_outline->setHeaderHidden(true);
     m_outline->setIndentation(16);
@@ -1975,7 +1975,7 @@ bool Window::openSource(const QString &path)
     for (int i = 0; i < m_tabs->count(); ++i)
         if (QString open = m_tabs->widget(i)->property("path").toString(); open == absolute
             || (!canonical.isEmpty() && QFileInfo(open).canonicalFilePath() == canonical))
-        { m_tabs->setCurrentIndex(i); addRecent(absolute); return true; }
+        { m_tabs->setCurrentIndex(i); syncPdfToTab(currentEditor()); addRecent(absolute); return true; }
     QFile file(absolute);
     if (!file.open(QIODevice::ReadOnly)) { m_status->setText("Cannot open file: " + file.errorString()); return false; }
     QByteArray bytes = file.readAll();
@@ -1995,10 +1995,21 @@ bool Window::openSource(const QString &path)
     applyProblems(editor);
     watchSource(absolute);
     addRecent(absolute);
-    // The last build's PDF, when there is one and nothing else is shown; it may be older than the source.
-    const QString built = BuildRunner::pdfPath(BuildRunner::rootFile(absolute));
-    if (m_pdf->path().isEmpty() && QFileInfo::exists(built)) openPdf(built);
+    // Follow this tab's built PDF when one exists and differs from the shown PDF.
+    syncPdfToTab(editor);
     return true;
+}
+
+void Window::syncPdfToTab(Editor *editor)
+{
+    if (!editor) return;
+    const QString path = editor->property("path").toString();
+    if (path.isEmpty()) return;
+    const QString root = BuildRunner::rootFile(path);
+    if (root.isEmpty()) return;
+    const QString built = BuildRunner::pdfPath(root);
+    if (QFileInfo::exists(built) && (m_pdf->path().isEmpty() || QFileInfo(built) != QFileInfo(m_pdf->path())))
+        openPdf(built);
 }
 
 void Window::setEditorFont(const QFont &font)
@@ -2428,6 +2439,13 @@ void Window::forwardSync()
 {
     auto *editor = currentEditor();
     if (!editor || editor->property("path").toString().isEmpty() || m_pdf->path().isEmpty()) return;
+    const QString root = BuildRunner::rootFile(editor->property("path").toString());
+    const QString expected = root.isEmpty() ? QString() : BuildRunner::pdfPath(root);
+    if (expected.isEmpty() || QFileInfo(m_pdf->path()) != QFileInfo(expected))
+    {
+        m_status->setText("Build this document first: the PDF shown belongs to another document.");
+        return;
+    }
     if (editor->document()->isModified()) { m_status->setText("Build first to sync new edits with the PDF."); return; }
     QString input = QString::number(editor->lineNumber()) + ":0:" + editor->property("path").toString();
     syncProcess({"view", "-i", input, "-o", m_pdf->path()}, [this](const QString &text)

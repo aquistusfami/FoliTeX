@@ -136,6 +136,7 @@ private:
     void closeTab(int index);
     void setTabTitle(Editor *editor);
     void keepStatus(const QString &text);
+    void syncPdfToTab(Editor *editor);
     void forwardSync();
     void inverseSync(int page, double x, double y, const QStringList &words, int clicked);
     void reloadSource(Editor *editor);

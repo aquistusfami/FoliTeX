@@ -123,6 +123,8 @@ private slots:
     void insertTemplateLiteralBulletAndMultiline();
     void beamerEnvironmentCompletion();
     void enterAutoIndentCapAndFoldedHeader();
+    // --- Task C ---
+    void pdfFollowsTabDocument();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -2949,4 +2951,63 @@ void Tests::agentTerminal()
     qputenv("PATH", path);
     qunsetenv("FOLITEX_FAKE_LOG");
 #endif
+}
+
+// --- Task C ---
+
+void Tests::pdfFollowsTabDocument()
+{
+    auto makePdf = [](const QString &path, const QString &label)
+    {
+        QVERIFY(QDir().mkpath(QFileInfo(path).absolutePath()));
+        QPdfWriter writer(path);
+        QPainter painter(&writer);
+        painter.drawText(100, 100, label);
+    };
+    QTemporaryDir dirA, dirB, dirC;
+    const QString mainA = dirA.filePath("main.tex");
+    const QString chapterA = dirA.filePath("chapter.tex");
+    const QString mainB = dirB.filePath("main.tex");
+    const QString mainC = dirC.filePath("main.tex");
+    write(mainA, "\\documentclass{article}\n\\begin{document}\nA\n\\end{document}\n");
+    write(chapterA, "% !TeX root = main.tex\nChapter A\n");
+    write(mainB, "\\documentclass{article}\n\\begin{document}\nB\n\\end{document}\n");
+    write(mainC, "\\documentclass{article}\n\\begin{document}\nC\n\\end{document}\n");
+    const QString pdfA = BuildRunner::pdfPath(mainA);
+    const QString pdfB = BuildRunner::pdfPath(mainB);
+    makePdf(pdfA, "Doc A");
+    makePdf(pdfB, "Doc B");
+
+    Window window;
+    QSignalSpy loads(window.pdfView(), &PdfView::loadRequested);
+    QVERIFY(window.openSource(mainA));
+    QCOMPARE(QFileInfo(window.pdfView()->path()), QFileInfo(pdfA));
+    QCOMPARE(loads.size(), 1);
+
+    // Same-root tab does not reopen the PDF.
+    QVERIFY(window.openSource(chapterA));
+    QCOMPARE(QFileInfo(window.pdfView()->path()), QFileInfo(pdfA));
+    QCOMPARE(loads.size(), 1);
+
+    // Switching between same-root tabs does not reopen.
+    window.m_tabs->setCurrentIndex(0);
+    QCOMPARE(loads.size(), 1);
+    window.m_tabs->setCurrentIndex(1);
+    QCOMPARE(loads.size(), 1);
+
+    // Opening a tab from another project switches the PDF.
+    QVERIFY(window.openSource(mainB));
+    QCOMPARE(QFileInfo(window.pdfView()->path()), QFileInfo(pdfB));
+    QCOMPARE(loads.size(), 2);
+
+    // Switching back to project A switches the PDF back.
+    window.m_tabs->setCurrentIndex(0);
+    QCOMPARE(QFileInfo(window.pdfView()->path()), QFileInfo(pdfA));
+    QCOMPARE(loads.size(), 3);
+
+    // A document with no built PDF keeps the previous PDF, and forwardSync refuses to sync against it.
+    QVERIFY(window.openSource(mainC));
+    QCOMPARE(QFileInfo(window.pdfView()->path()), QFileInfo(pdfA));
+    window.forwardSync();
+    QCOMPARE(window.m_status->text(), QString("Build this document first: the PDF shown belongs to another document."));
 }
