@@ -704,26 +704,9 @@ Window::Window() : m_runner(this)
             m_status->setText("Open or build a PDF to jump to source.");
             return;
         }
-        const int page = m_pdf->currentPage();
-        double x = 300.0, y = 400.0;
-        if (m_pdfScale > 0)
-        {
-            const double pageWidthPts = std::max(32, m_pdf->viewport()->width() - 48) * m_pdf->zoom() / m_pdfScale;
-            x = pageWidthPts / 2.0;
-            const int maxScroll = m_pdf->verticalScrollBar()->maximum();
-            if (maxScroll > 0)
-            {
-                const double totalH = maxScroll + m_pdf->viewport()->height();
-                const double pitch = std::max(1.0, (totalH - 32.0) / m_pdf->pageCount());
-                const double pageH = std::max(1.0, pitch - 16.0);
-                const double viewCenterY = m_pdf->verticalScrollBar()->value() + m_pdf->viewport()->height() / 2.0;
-                const double pageTop = 24.0 + (page - 1) * pitch;
-                y = std::clamp(viewCenterY - pageTop, 0.0, pageH) / m_pdfScale;
-            }
-            else
-                y = std::max(0.0, (m_pdf->viewport()->height() / 2.0 - 24.0) / m_pdfScale);
-        }
-        inverseSync(page, x, y, {}, -1);
+        int page = 0;
+        QPointF point;
+        if (m_pdf->viewCentre(page, point)) inverseSync(page, point.x(), point.y(), {}, -1);
     });
     add("Next problem", QKeySequence("F8"), [this] { if (!m_problems.isEmpty()) goToProblem((m_problemIndex + 1) % m_problems.size()); });
     add("Previous problem", QKeySequence("Shift+F8"), [this]

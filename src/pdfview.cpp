@@ -14,6 +14,7 @@
 #include <QUrl>
 #include <cmath>
 #include <algorithm>
+#include <limits>
 
 // Poppler decodes every embedded image again on each render call, so a page is rendered in
 // as few calls as possible: whole when it fits wholePagePixels, else in large tiles.
@@ -698,6 +699,25 @@ int PdfView::currentPage() const
     double y = verticalScrollBar()->value() + viewport()->height() / 3.0;
     for (int i = 0; i < m_pages.size(); ++i) if (m_pages[i].bottom() >= y) return i + 1;
     return std::max(1, int(m_pages.size()));
+}
+
+bool PdfView::viewCentre(int &page, QPointF &points) const
+{
+    if (m_pages.isEmpty() || m_scale <= 0) return false;
+    const QPointF centre = QPointF(viewport()->rect().center()) + offset();
+    int best = 0;
+    double bestDistance = std::numeric_limits<double>::max();
+    for (int i = 0; i < m_pages.size(); ++i)
+    {
+        const double distance = centre.y() < m_pages[i].top() ? m_pages[i].top() - centre.y()
+                              : centre.y() > m_pages[i].bottom() ? centre.y() - m_pages[i].bottom() : 0;
+        if (distance < bestDistance) { bestDistance = distance; best = i; }
+    }
+    const QRectF &rect = m_pages[best];
+    page = best + 1;
+    points = QPointF(std::clamp(centre.x(), rect.left(), rect.right()) - rect.left(),
+                     std::clamp(centre.y(), rect.top(), rect.bottom()) - rect.top()) / m_scale;
+    return true;
 }
 
 int PdfView::pageAt(QPointF position, QPointF *local) const

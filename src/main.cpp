@@ -192,6 +192,7 @@ int main(int argc, char **argv)
     window.setMenuBarShown(QSettings().value("menuBarShown", true).toBool());
     window.setDarkPdf(QSettings().value("darkPdf", false).toBool());
     window.setBuildOnSave(QSettings().value("buildOnSave", false).toBool());
+    window.setSyncAfterBuild(QSettings().value("syncAfterBuild", false).toBool());
     window.setRecentFiles(QSettings().value("recent").toStringList());
     if (QSettings().contains("editorFontChoice")) window.setEditorFont(QSettings().value("editorFontChoice").value<QFont>());
     window.setEngine(QSettings().value("engine").toString());
@@ -201,6 +202,7 @@ int main(int argc, char **argv)
         QSettings().setValue("wordWrap", window.wordWrap());
         QSettings().setValue("menuBarShown", window.menuBarShown());
         QSettings().setValue("buildOnSave", window.buildOnSave());
+        QSettings().setValue("syncAfterBuild", window.syncAfterBuild());
         QSettings().setValue("darkPdf", window.darkPdf());
         QSettings().setValue("recent", window.recentFiles());
         QSettings().setValue("session", window.session());

@@ -3355,6 +3355,15 @@ void Tests::goToPageKeepsTopPlacementWithoutMark()
     QVERIFY2(viewportTop >= 0 && viewportTop <= 40.0,
         qPrintable(QString("page3 viewportTop=%1").arg(viewportTop)));
     QVERIFY(!viewer.syncMarkVisible());
+
+    // Shift+F7 inverse-syncs from the viewport centre: page 3, a point inside it.
+    int page = 0;
+    QPointF centre;
+    QVERIFY(viewer.viewCentre(page, centre));
+    QCOMPARE(page, 3);
+    const QSizeF a4 = QPageSize(QPageSize::A4).sizePoints();
+    QVERIFY(centre.x() > 0 && centre.x() < a4.width());
+    QVERIFY(centre.y() > 0 && centre.y() < a4.height());
 }
 
 // --- Task C ---

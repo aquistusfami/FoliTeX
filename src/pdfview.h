@@ -87,6 +87,8 @@ public:
     bool syncMarkVisible() const { return m_syncPage >= 0 && m_syncOpacity > 0; }
     int pageCount() const { return m_sizes.size(); }
     int currentPage() const;
+    // Page (1-based) and point in PDF points nearest the viewport centre; false without pages.
+    bool viewCentre(int &page, QPointF &points) const;
     int cachedTiles() const { return m_cache.size(); }
     int cacheKiB() const { return m_cache.totalCost(); }
     int cacheLimitKiB() const { return m_cache.maxCost(); }
