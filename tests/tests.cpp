@@ -125,6 +125,7 @@ private slots:
     void enterAutoIndentCapAndFoldedHeader();
     // --- Task A: editor jumps, selection bar labels, Go to definition ---
     void problemJumpFollowsEdits();
+    void goToLineCentresOffscreen();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -2981,4 +2982,34 @@ void Tests::problemJumpFollowsEdits()
     QCOMPARE(editor->markLine(5), -1);
     window.goToProblem(0);
     QCOMPARE(editor->lineNumber(), 5);
+}
+
+void Tests::goToLineCentresOffscreen()
+{
+    Editor editor;
+    editor.resize(600, 300);
+    editor.setPlainText(QString("line\n").repeated(300));
+    editor.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&editor));
+    QTest::qWait(20);
+
+    editor.goToLine(200);
+    QCOMPARE(editor.lineNumber(), 200);
+    const int height = editor.viewport()->height();
+    const int centreDown = editor.cursorRect().center().y();
+    QVERIFY2(centreDown >= height / 3 && centreDown <= 2 * height / 3,
+        qPrintable(QString("expected centre in [%1, %2], got %3").arg(height / 3).arg(2 * height / 3).arg(centreDown)));
+
+    // Jumping to a line already inside the viewport leaves the scrollbar untouched.
+    const int scrollBefore = editor.verticalScrollBar()->value();
+    editor.goToLine(201);
+    QCOMPARE(editor.lineNumber(), 201);
+    QCOMPARE(editor.verticalScrollBar()->value(), scrollBefore);
+
+    // Jumping upward to an off-screen line also centres it.
+    editor.goToLine(50);
+    QCOMPARE(editor.lineNumber(), 50);
+    const int centreUp = editor.cursorRect().center().y();
+    QVERIFY2(centreUp >= height / 3 && centreUp <= 2 * height / 3,
+        qPrintable(QString("expected centre in [%1, %2], got %3").arg(height / 3).arg(2 * height / 3).arg(centreUp)));
 }

@@ -1900,10 +1900,8 @@ void Editor::goToWord(int line, const QStringList &words, int clicked)
         if (score > bestScore) { bestScore = score; best = i; }
     }
     if (best < 0) return;
-    QTextCursor cursor(document());
-    cursor.setPosition(source[best].position);
-    setTextCursor(cursor);
-    ensureCursorVisible();
+    QTextBlock found = document()->findBlock(source[best].position);
+    goToLine(found.blockNumber() + 1, source[best].position - found.position());
 }
 
 void Editor::goToLine(int line, int column)
@@ -1913,8 +1911,16 @@ void Editor::goToLine(int line, int column)
     m_smooth->stop();
     QTextCursor cursor(block);
     cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, std::clamp(column, 0, block.length() - 1));
+    const QRect before = cursorRect(cursor);
+    const bool visible = block.isVisible() && before.top() >= 0 && before.bottom() < viewport()->height();
     setTextCursor(cursor);
-    ensureCursorVisible();
+    if (!visible)
+    {
+        // Centre vertically when jumping off-screen; cursorRect() is in viewport coordinates.
+        const QRect after = cursorRect();
+        auto *bar = verticalScrollBar();
+        bar->setValue(bar->value() + after.center().y() - viewport()->height() / 2);
+    }
     setFocus();
 }
 
