@@ -395,6 +395,22 @@ static QPixmap svgPixmap(const char *svg, const char *color, int size)
     return pixmap;
 }
 
+static void styleProblemCounters(QToolButton *errorCount, QToolButton *warningCount, bool built)
+{
+    static const char *errorSvg = R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M5.8 5.8l4.4 4.4m0-4.4l-4.4 4.4"/></svg>)";
+    static const char *warningSvg = R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3.2m0 1.6v.1"/></svg>)";
+    const QByteArray mutedHex = themeColor("#8793A2").name().toUtf8();
+    const QByteArray errHex = built ? themeColor("#F14C4C").name().toUtf8() : mutedHex;
+    const QByteArray warnHex = built ? themeColor("#CCA700").name().toUtf8() : mutedHex;
+    errorCount->setIcon(QIcon(svgPixmap(errorSvg, errHex.constData(), 14)));
+    warningCount->setIcon(QIcon(svgPixmap(warningSvg, warnHex.constData(), 14)));
+    const QString style = built ? QString() : themed("color:#8793A2;");
+    errorCount->setStyleSheet(style);
+    warningCount->setStyleSheet(style);
+    errorCount->setToolTip(built ? "Errors · F8" : "Build to check for problems");
+    warningCount->setToolTip(built ? "Warnings" : "Build to check for problems");
+}
+
 // Glyphs and colours in the style of VS Code's Seti icon theme (drawn for FoliTeX, not copied).
 static QIcon fileIcon(const QString &fileName)
 {
@@ -745,26 +761,26 @@ Window::Window() : m_runner(this)
     connect(m_build, &QPushButton::clicked, this, &Window::build);
     m_pdf = new PdfView;
     m_status = new QLabel;
-    // VS Code's problem counters: click to open the Problems panel.
-    auto counter = [this](const char *svg, const char *color, const QString &tip)
+    // VS Code's problem counters: visible from start (muted until the first build), click to open Problems.
+    auto counter = [this]
     {
         auto *button = new QToolButton;
         button->setObjectName("problemCount");
-        button->setIcon(QIcon(svgPixmap(svg, color, 14)));
         button->setIconSize(QSize(14, 14));
         button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-        button->setToolTip(tip);
-        button->hide(); // until the first build
+        button->setText("0");
         connect(button, &QToolButton::clicked, this, [this]
         {
             m_panel->setCurrentWidget(m_problemsView);
             m_panel->show();
+            if (m_panelCollapsed) setPanelCollapsed(false);
         });
         statusBar()->addWidget(button);
         return button;
     };
-    m_errorCount = counter(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M5.8 5.8l4.4 4.4m0-4.4l-4.4 4.4"/></svg>)", "#F14C4C", "Errors · F8");
-    m_warningCount = counter(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3.2m0 1.6v.1"/></svg>)", "#CCA700", "Warnings");
+    m_errorCount = counter();
+    m_warningCount = counter();
+    styleProblemCounters(m_errorCount, m_warningCount, false);
     statusBar()->addWidget(m_status, 1);
     m_position = new QLabel;
     m_position->setToolTip("Cursor position · line ending");
@@ -1424,8 +1440,7 @@ Window::Window() : m_runner(this)
         if (!pdf.isEmpty() && log.open(QIODevice::ReadOnly))
             problems = BuildRunner::parseLog(QString::fromUtf8(log.readAll()), directory);
         setProblems(problems, directory, success);
-        m_errorCount->show();
-        m_warningCount->show();
+        styleProblemCounters(m_errorCount, m_warningCount, true);
         int errors = int(std::count_if(problems.cbegin(), problems.cend(), [](const Problem &p) { return p.error; }));
         int warnings = int(problems.size()) - errors;
         m_status->setStyleSheet(success ? QString() : themed("color:#F48771;"));
@@ -2752,6 +2767,7 @@ void Window::setProblems(const QList<Problem> &problems, const QString &director
     int errors = int(std::count_if(problems.cbegin(), problems.cend(), [](const Problem &p) { return p.error; }));
     m_errorCount->setText(QString::number(errors));
     m_warningCount->setText(QString::number(problems.size() - errors));
+    styleProblemCounters(m_errorCount, m_warningCount, built);
     for (int i = 0; i < m_tabs->count(); ++i)
         if (auto *editor = qobject_cast<Editor *>(m_tabs->widget(i))) applyProblems(editor);
 }

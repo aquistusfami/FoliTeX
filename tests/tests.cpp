@@ -130,6 +130,7 @@ private slots:
     void panelKeyboardNavigation();
     void buildStatusElapsedAndStalePdf();
     void problemsListColumnsAndColors();
+    void statusBarProblemCountersVisibleAtStart();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -3231,4 +3232,30 @@ void Tests::problemsListColumnsAndColors()
     QVERIFY(!errRow->isHidden());
     QVERIFY(warnRow->isHidden());
     window.m_problemFilter->clear();
+}
+
+void Tests::statusBarProblemCountersVisibleAtStart()
+{
+    Window window;
+    window.resize(1000, 600);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+    QVERIFY(window.m_errorCount->isVisible());
+    QVERIFY(window.m_warningCount->isVisible());
+    QCOMPARE(window.m_errorCount->text(), QString("0"));
+    QCOMPARE(window.m_warningCount->text(), QString("0"));
+    QCOMPARE(window.m_errorCount->toolTip(), QString("Build to check for problems"));
+    QCOMPARE(window.m_warningCount->toolTip(), QString("Build to check for problems"));
+    QVERIFY(!window.m_errorCount->styleSheet().isEmpty());
+    QVERIFY(!window.m_warningCount->styleSheet().isEmpty());
+
+    // After a build, counters switch to normal style and tooltips.
+    window.setProblems({}, "/fake/dir", true);
+    QVERIFY(window.m_errorCount->isVisible());
+    QVERIFY(window.m_warningCount->isVisible());
+    QCOMPARE(window.m_errorCount->toolTip(), QString("Errors · F8"));
+    QCOMPARE(window.m_warningCount->toolTip(), QString("Warnings"));
+    QVERIFY(window.m_errorCount->styleSheet().isEmpty());
+    QVERIFY(window.m_warningCount->styleSheet().isEmpty());
 }
