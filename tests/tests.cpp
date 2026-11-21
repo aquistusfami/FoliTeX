@@ -123,6 +123,8 @@ private slots:
     void insertTemplateLiteralBulletAndMultiline();
     void beamerEnvironmentCompletion();
     void enterAutoIndentCapAndFoldedHeader();
+    // --- Task A: editor jumps, selection bar labels, Go to definition ---
+    void problemJumpFollowsEdits();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -2949,4 +2951,34 @@ void Tests::agentTerminal()
     qputenv("PATH", path);
     qunsetenv("FOLITEX_FAKE_LOG");
 #endif
+}
+
+// --- Task A: editor jumps, selection bar labels, Go to definition ---
+
+void Tests::problemJumpFollowsEdits()
+{
+    QTemporaryDir dir;
+    const QString source = dir.filePath("doc.tex");
+    write(source, "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\n");
+
+    Window window;
+    QVERIFY(window.openSource(source));
+    auto *editor = window.currentEditor();
+    window.setProblems({Problem{source, 5, true, "Undefined control sequence."}}, dir.path(), false);
+    QCOMPARE(editor->markLine(5), 5);
+    QCOMPARE(editor->markLine(99), -1);
+
+    // Insert two lines above line 5; both markLine() and F8 / goToProblem follow the shift.
+    QTextCursor top(editor->document());
+    top.setPosition(0);
+    top.insertText("added 1\nadded 2\n");
+    QCOMPARE(editor->markLine(5), 7);
+    window.goToProblem(0);
+    QCOMPARE(editor->lineNumber(), 7);
+
+    // Without a mark (e.g. file changed on disk since the build), goToProblem falls back to build line.
+    editor->setProblems({});
+    QCOMPARE(editor->markLine(5), -1);
+    window.goToProblem(0);
+    QCOMPARE(editor->lineNumber(), 5);
 }

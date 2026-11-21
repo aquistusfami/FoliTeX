@@ -2693,7 +2693,11 @@ void Window::goToProblem(int index)
     const Problem &problem = m_problems[index];
     if (!openSource(problem.file)) return;
     auto *editor = currentEditor();
-    if (problem.line > 0) editor->goToLine(problem.line);
+    if (problem.line > 0)
+    {
+        const int tracked = editor->markLine(problem.line);
+        editor->goToLine(tracked > 0 ? tracked : problem.line);
+    }
     editor->setFocus();
     for (QTreeWidgetItemIterator it(m_problemsView); *it; ++it)
         if ((*it)->data(0, Qt::UserRole).isValid() && (*it)->data(0, Qt::UserRole).toInt() == index) m_problemsView->setCurrentItem(*it);

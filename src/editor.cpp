@@ -1430,9 +1430,17 @@ void Editor::setProblems(const QList<std::tuple<int, bool, QString>> &problems)
     for (const auto &[line, error, message] : problems)
     {
         QTextBlock block = document()->findBlockByNumber(line - 1);
-        if (block.isValid()) m_marks << Mark{QTextCursor(block), error, message};
+        if (block.isValid()) m_marks << Mark{line, QTextCursor(block), error, message};
     }
     updateHighlights();
+}
+
+int Editor::markLine(int buildLine) const
+{
+    for (const auto &mark : m_marks)
+        if (mark.buildLine == buildLine && !mark.cursor.isNull() && mark.cursor.block().isValid())
+            return mark.cursor.blockNumber() + 1;
+    return -1;
 }
 
 bool Editor::viewportEvent(QEvent *event)
