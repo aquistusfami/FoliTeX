@@ -48,7 +48,8 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
 
 **Build and preview**
 - One-key asynchronous builds through `latexmk` with pdfLaTeX, LuaLaTeX or XeLaTeX;
-  `% !TeX root = …` for multi-file projects; output goes to `.folitex-build/`.
+  `% !TeX root = …` for multi-file projects and `% !TeX program = …` (`TS-program`) to
+  select the engine per document; output goes to `.folitex-build/`.
   Build → Build on Save rebuilds on every Ctrl+S (in a `.bib` or `.sty` it rebuilds the
   last document); Build → Word Count runs `texcount`.
 - Two-way SyncTeX: F7 jumps from the source to the PDF, Ctrl+click in the PDF jumps back.
@@ -267,7 +268,6 @@ External Viewer.
 FoliTeX is young (0.7) and deliberately smaller than TeXstudio. Known gaps:
 
 - No spell or grammar checking, no full LaTeX parser, no project-wide search.
-- The engine comes from the combo box; `% !TeX program` is not read yet.
 - The outline covers the current file only.
 - Previews use pdfLaTeX and the preamble's math packages; formulas that need other
   packages or beamer commands show no preview.

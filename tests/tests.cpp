@@ -132,6 +132,7 @@ private slots:
     void problemsListColumnsAndColors();
     void statusBarProblemCountersVisibleAtStart();
     void narrowWindowHidesProblemFilter();
+    void magicProgramSelectsEngine();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -3289,4 +3290,68 @@ void Tests::narrowWindowHidesProblemFilter()
     window.resize(1400, 700);
     QTRY_VERIFY(window.m_problemFilter->isVisible());
     QVERIFY(!overlapsTabs());
+}
+
+void Tests::magicProgramSelectsEngine()
+{
+    QTemporaryDir dir;
+    const QString xe = dir.filePath("xe.tex");
+    const QString lua = dir.filePath("lua.tex");
+    const QString pdf = dir.filePath("pdf.tex");
+    const QString late = dir.filePath("late.tex");
+    const QString none = dir.filePath("none.tex");
+    write(xe, "% !TeX program = XeLaTeX\n\\documentclass{article}\n");
+    write(lua, "% !TS-program = lualatex\n\\documentclass{article}\n");
+    write(pdf, "\xef\xbb\xbf% !TeX TS-program = PDFLATEX\n\\documentclass{article}\n");
+    write(late, QByteArray(25, '\n') + "% !TeX program = xelatex\n\\documentclass{article}\n");
+    write(none, "% !TeX program = unknown\n\\documentclass{article}\n");
+
+    QCOMPARE(BuildRunner::magicProgram(xe), QString("XeLaTeX"));
+    QCOMPARE(BuildRunner::magicProgram(lua), QString("LuaLaTeX"));
+    QCOMPARE(BuildRunner::magicProgram(pdf), QString("pdfLaTeX"));
+    QCOMPARE(BuildRunner::magicProgram(late), QString());
+    QCOMPARE(BuildRunner::magicProgram(none), QString());
+
+#ifndef Q_OS_WIN
+    QTemporaryDir bin;
+    const QString argsFile = bin.filePath("args.txt");
+    QFile fake(bin.filePath("latexmk"));
+    QVERIFY(fake.open(QIODevice::WriteOnly));
+    fake.write("#!/bin/sh\n"
+               "printf '%s\\n' \"$@\" > \"$FOLITEX_FAKE_ARGS\"\n"
+               "exit 0\n");
+    fake.close();
+    fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner);
+
+    const QByteArray oldPath = qgetenv("PATH");
+    auto restore = qScopeGuard([&]
+    {
+        qputenv("PATH", oldPath);
+        qunsetenv("FOLITEX_FAKE_ARGS");
+    });
+    qputenv("PATH", bin.path().toUtf8() + ":" + oldPath);
+    qputenv("FOLITEX_FAKE_ARGS", argsFile.toUtf8());
+
+    // BuildRunner passes -xelatex even when asked for pdfLaTeX.
+    BuildRunner runner;
+    QSignalSpy runnerDone(&runner, &BuildRunner::finished);
+    QVERIFY(runner.start(xe, "pdfLaTeX"));
+    QTRY_COMPARE_WITH_TIMEOUT(runnerDone.size(), 1, 5000);
+    QFile recorded(argsFile);
+    QVERIFY(recorded.open(QIODevice::ReadOnly));
+    const QString args = QString::fromUtf8(recorded.readAll());
+    QVERIFY2(args.contains("-xelatex"), qPrintable(args));
+    QVERIFY2(!args.contains("-pdf\n"), qPrintable(args));
+
+    // Window status names the magic-comment engine and leaves the combo untouched.
+    Window window;
+    window.setEngine("pdfLaTeX");
+    QVERIFY(window.openSource(xe));
+    QSignalSpy built(&window, &Window::buildFinished);
+    window.build();
+    QCOMPARE(window.m_buildLabel, QString("Building with XeLaTeX (magic comment)…"));
+    QCOMPARE(window.engine(), QString("pdfLaTeX"));
+    QTRY_COMPARE_WITH_TIMEOUT(built.size(), 1, 5000);
+    QCOMPARE(window.engine(), QString("pdfLaTeX"));
+#endif
 }

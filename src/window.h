@@ -50,6 +50,7 @@ public:
     bool cancelled() const { return m_cancelRequested; }
     void stop();
     static QString rootFile(const QString &source);
+    static QString magicProgram(const QString &root);
     static QString includingFile(const QString &path);
     static QString pdfPath(const QString &source);
     // Errors (file:line: from -file-line-error), LaTeX/package warnings and over/underfull boxes.

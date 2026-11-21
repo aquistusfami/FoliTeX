@@ -148,6 +148,28 @@ QString BuildRunner::rootFile(const QString &source)
     return {};
 }
 
+QString BuildRunner::magicProgram(const QString &root)
+{
+    if (root.isEmpty()) return {};
+    QFile file(root);
+    if (!file.open(QIODevice::ReadOnly)) return {};
+    static const QRegularExpression magic(
+        R"(^\s*%\s*!\s*(?:(?:TeX\s+)?TS-program|TeX\s+program)\s*=\s*(\S+)\s*$)",
+        QRegularExpression::CaseInsensitiveOption);
+    for (int line = 0; line < 20 && !file.atEnd(); ++line)
+    {
+        QString text = QString::fromUtf8(file.readLine(4096));
+        if (line == 0 && text.startsWith(QChar(0xFEFF))) text.remove(0, 1);
+        auto match = magic.match(text);
+        if (!match.hasMatch()) continue;
+        const QString value = match.captured(1).toLower();
+        if (value == "pdflatex") return "pdfLaTeX";
+        if (value == "lualatex") return "LuaLaTeX";
+        if (value == "xelatex") return "XeLaTeX";
+    }
+    return {};
+}
+
 QString BuildRunner::includingFile(const QString &path)
 {
     // shortcut: only the file's folder and 4 ancestors are searched; \import and deeper layouts need a magic comment.
@@ -344,12 +366,14 @@ bool BuildRunner::start(const QString &source, const QString &engine)
     environment.insert("error_line", "254");
     environment.insert("half_error_line", "238");
     m_process.setProcessEnvironment(environment);
-    QString flag = engine == "LuaLaTeX" ? "-lualatex" : engine == "XeLaTeX" ? "-xelatex" : "-pdf";
+    const QString magic = magicProgram(root);
+    const QString effective = magic.isEmpty() ? engine : magic;
+    QString flag = effective == "LuaLaTeX" ? "-lualatex" : effective == "XeLaTeX" ? "-xelatex" : "-pdf";
     // Light PDF compression: images that cannot be copied as-is (e.g. PNGs with alpha) are
     // re-deflated on every run, at level 9 by default. Level 1 cut a screenshot-heavy report
     // from 3.0 s to 1.2 s per rebuild for ~12 % more PDF size; documents may still set their own.
-    QString compression = engine == "LuaLaTeX" ? R"(\pdfvariable compresslevel=1)"
-                        : engine == "XeLaTeX" ? R"(\special{dvipdfmx:config z 1})" : R"(\pdfcompresslevel=1)";
+    QString compression = effective == "LuaLaTeX" ? R"(\pdfvariable compresslevel=1)"
+                        : effective == "XeLaTeX" ? R"(\special{dvipdfmx:config z 1})" : R"(\pdfcompresslevel=1)";
     // Arguments are passed directly, so spaces, Unicode and shell metacharacters stay filenames.
     m_process.start("latexmk", {flag, "-interaction=nonstopmode", "-file-line-error", "-synctex=1", "-usepretex=" + compression,
         "-outdir=.folitex-build", "./" + QFileInfo(root).fileName()});
@@ -2481,7 +2505,8 @@ void Window::build()
     m_buildPdfExisted = !expectedPdf.isEmpty() && pdfInfo.exists();
     m_buildPdfMtime = m_buildPdfExisted ? pdfInfo.lastModified() : QDateTime();
     m_buildPdfSize = m_buildPdfExisted ? pdfInfo.size() : -1;
-    m_buildLabel = "Building…";
+    const QString magic = root.isEmpty() ? QString() : BuildRunner::magicProgram(root);
+    m_buildLabel = magic.isEmpty() ? QString("Building…") : QString("Building with %1 (magic comment)…").arg(magic);
     m_buildElapsed.start();
     m_status->setStyleSheet({});
     m_status->setText(m_buildLabel); m_build->setIcon(m_stopIcon); m_build->setText("Stop"); m_build->setToolTip("Stop build · F5");
