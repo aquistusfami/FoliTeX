@@ -54,6 +54,7 @@
 #include <QStackedWidget>
 #include <QImageReader>
 #include <QBuffer>
+#include <QScrollBar>
 #ifdef Q_OS_UNIX
 #include <unistd.h>
 #include <signal.h>
@@ -1388,8 +1389,12 @@ Window::Window() : m_runner(this)
     qApp->installEventFilter(this); // last: eventFilter uses the widgets built above
     connect(&m_runner, &BuildRunner::output, this, [this](const QString &text)
     {
-        auto cursor = m_log->textCursor(); cursor.movePosition(QTextCursor::End); cursor.insertText(text);
-        m_log->setTextCursor(cursor);
+        auto *bar = m_log->verticalScrollBar();
+        const bool atBottom = bar->value() >= bar->maximum();
+        QTextCursor cursor(m_log->document());
+        cursor.movePosition(QTextCursor::End);
+        cursor.insertText(text);
+        if (atBottom) bar->setValue(bar->maximum());
     });
     connect(&m_runner, &BuildRunner::finished, this, [this](bool success, const QString &pdf)
     {

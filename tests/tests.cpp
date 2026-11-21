@@ -126,6 +126,7 @@ private slots:
     // --- Task C ---
     void pdfFollowsTabDocument();
     void syncProcessReplacesOlderRun();
+    void outputLogPreservesScroll();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -3039,4 +3040,39 @@ void Tests::syncProcessReplacesOlderRun()
     QTest::qWait(500);
     QCOMPARE(results, QStringList({"second:SECOND"}));
 #endif
+}
+
+void Tests::outputLogPreservesScroll()
+{
+    Window window;
+    window.resize(900, 600);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    window.setPanelCollapsed(false);
+    window.m_panel->setCurrentWidget(window.m_log);
+    QCoreApplication::processEvents();
+
+    QString bulk;
+    for (int i = 0; i < 200; ++i) bulk += QString("line %1\n").arg(i);
+    emit window.m_runner.output(bulk);
+    QCoreApplication::processEvents();
+
+    auto *bar = window.m_log->verticalScrollBar();
+    QVERIFY(bar->maximum() > 0);
+    QCOMPARE(bar->value(), bar->maximum());
+
+    // Scrolled to top: new output must not yank the scroll bar.
+    bar->setValue(0);
+    QCOMPARE(bar->value(), 0);
+    emit window.m_runner.output("extra 1\nextra 2\nextra 3\n");
+    QCoreApplication::processEvents();
+    QCOMPARE(bar->value(), 0);
+
+    // At bottom: new output follows to the new maximum.
+    bar->setValue(bar->maximum());
+    const int beforeMax = bar->maximum();
+    emit window.m_runner.output("tail 1\ntail 2\ntail 3\ntail 4\n");
+    QCoreApplication::processEvents();
+    QVERIFY(bar->maximum() > beforeMax);
+    QCOMPARE(bar->value(), bar->maximum());
 }
