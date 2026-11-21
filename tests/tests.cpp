@@ -133,6 +133,7 @@ private slots:
     void statusBarProblemCountersVisibleAtStart();
     void narrowWindowHidesProblemFilter();
     void magicProgramSelectsEngine();
+    void keyboardPdfSourceNavigation();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -3353,5 +3354,75 @@ void Tests::magicProgramSelectsEngine()
     QCOMPARE(window.engine(), QString("pdfLaTeX"));
     QTRY_COMPARE_WITH_TIMEOUT(built.size(), 1, 5000);
     QCOMPARE(window.engine(), QString("pdfLaTeX"));
+#endif
+}
+
+void Tests::keyboardPdfSourceNavigation()
+{
+    QTemporaryDir bin, project;
+    const QString main = project.filePath("main.tex");
+    write(main, "line 1\nline 2\nline 3\nline 4\n");
+    const QString pdf = BuildRunner::pdfPath(main);
+    QVERIFY(QDir().mkpath(QFileInfo(pdf).absolutePath()));
+    {
+        QPdfWriter writer(pdf);
+        QPainter painter(&writer);
+        painter.drawText(100, 100, "Page one");
+    }
+
+    Window window;
+    window.resize(1100, 700);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QSignalSpy ready(window.pdfView(), &PdfView::documentReady);
+    QVERIFY(window.openSource(main));
+    QTRY_COMPARE_WITH_TIMEOUT(ready.size(), 1, 3000);
+    auto *editor = window.currentEditor();
+    QVERIFY(editor);
+
+    QAction *focusToggle = nullptr, *jumpSource = nullptr;
+    for (QAction *action : window.actions())
+    {
+        if (action->text() == "Focus PDF / editor") focusToggle = action;
+        if (action->text() == "Jump to source") jumpSource = action;
+    }
+    QVERIFY(focusToggle && jumpSource);
+    QCOMPARE(focusToggle->shortcut(), QKeySequence("Ctrl+Alt+P"));
+    QCOMPARE(jumpSource->shortcut(), QKeySequence("Shift+F7"));
+
+    // Ctrl+Alt+P toggles focus between editor and PDF view.
+    editor->setFocus();
+    QTRY_VERIFY(editor->hasFocus());
+    focusToggle->trigger();
+    QTRY_VERIFY(window.m_pdf->hasFocus());
+    focusToggle->trigger();
+    QTRY_VERIFY(editor->hasFocus());
+
+#ifndef Q_OS_WIN
+    const QString argsFile = bin.filePath("synctex-args.txt");
+    QFile fake(bin.filePath("synctex"));
+    QVERIFY(fake.open(QIODevice::WriteOnly));
+    fake.write(QByteArray("#!/bin/sh\n"
+               "printf '%s\\n' \"$@\" > \"$FOLITEX_SYNC_ARGS\"\n"
+               "printf 'Input:") + main.toUtf8() + QByteArray("\\nLine:3\\n'\n"));
+    fake.close();
+    fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner);
+
+    const QByteArray oldPath = qgetenv("PATH");
+    auto restore = qScopeGuard([&]
+    {
+        qputenv("PATH", oldPath);
+        qunsetenv("FOLITEX_SYNC_ARGS");
+    });
+    qputenv("PATH", bin.path().toUtf8() + ":" + oldPath);
+    qputenv("FOLITEX_SYNC_ARGS", argsFile.toUtf8());
+
+    jumpSource->trigger();
+    QTRY_COMPARE_WITH_TIMEOUT(editor->lineNumber(), 3, 3000);
+    QFile recorded(argsFile);
+    QVERIFY(recorded.open(QIODevice::ReadOnly));
+    const QString args = QString::fromUtf8(recorded.readAll());
+    QVERIFY2(args.contains("edit\n-o\n1:"), qPrintable(args));
+    QVERIFY2(args.contains(pdf), qPrintable(args));
 #endif
 }

@@ -696,6 +696,34 @@ Window::Window() : m_runner(this)
     menu = menuBar->addMenu("&Build");
     add("Build / stop", QKeySequence("F5"), [this] { build(); })->setShortcuts({QKeySequence("F5"), QKeySequence("F6")});
     add("Source → PDF", QKeySequence("F7"), [this] { forwardSync(); });
+    add("Jump to source", QKeySequence("Shift+F7"), [this]
+    {
+        if (m_pdf->path().isEmpty() || m_pdf->pageCount() <= 0)
+        {
+            m_status->setText("Open or build a PDF to jump to source.");
+            return;
+        }
+        const int page = m_pdf->currentPage();
+        double x = 300.0, y = 400.0;
+        if (m_pdfScale > 0)
+        {
+            const double pageWidthPts = std::max(32, m_pdf->viewport()->width() - 48) * m_pdf->zoom() / m_pdfScale;
+            x = pageWidthPts / 2.0;
+            const int maxScroll = m_pdf->verticalScrollBar()->maximum();
+            if (maxScroll > 0)
+            {
+                const double totalH = maxScroll + m_pdf->viewport()->height();
+                const double pitch = std::max(1.0, (totalH - 32.0) / m_pdf->pageCount());
+                const double pageH = std::max(1.0, pitch - 16.0);
+                const double viewCenterY = m_pdf->verticalScrollBar()->value() + m_pdf->viewport()->height() / 2.0;
+                const double pageTop = 24.0 + (page - 1) * pitch;
+                y = std::clamp(viewCenterY - pageTop, 0.0, pageH) / m_pdfScale;
+            }
+            else
+                y = std::max(0.0, (m_pdf->viewport()->height() / 2.0 - 24.0) / m_pdfScale);
+        }
+        inverseSync(page, x, y, {}, -1);
+    });
     add("Next problem", QKeySequence("F8"), [this] { if (!m_problems.isEmpty()) goToProblem((m_problemIndex + 1) % m_problems.size()); });
     add("Previous problem", QKeySequence("Shift+F8"), [this]
     {
@@ -719,6 +747,18 @@ Window::Window() : m_runner(this)
     menu->addSeparator();
     add("Toggle side bar", QKeySequence("Ctrl+Shift+O"), [this] { showSide(m_outlineButton->isChecked() ? m_outline : m_files); });
     add("Toggle PDF", QKeySequence("Ctrl+\\"), [this] { m_pdfPane->setVisible(!m_pdfPane->isVisible()); });
+    add("Focus PDF / editor", QKeySequence("Ctrl+Alt+P"), [this]
+    {
+        if (m_pdfPane->isAncestorOf(QApplication::focusWidget()))
+        {
+            if (auto *editor = currentEditor()) editor->setFocus();
+        }
+        else
+        {
+            if (!m_pdfPane->isVisible()) m_pdfPane->show();
+            m_pdf->setFocus();
+        }
+    });
     add("Toggle panel", QKeySequence("Ctrl+J"), [this]
     {
         if (m_panel->isVisible())

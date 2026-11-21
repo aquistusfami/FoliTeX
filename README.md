@@ -52,7 +52,8 @@ LaTeX workflow: edit, build, preview, jump between source and PDF.
   select the engine per document; output goes to `.folitex-build/`.
   Build → Build on Save rebuilds on every Ctrl+S (in a `.bib` or `.sty` it rebuilds the
   last document); Build → Word Count runs `texcount`.
-- Two-way SyncTeX: F7 jumps from the source to the PDF, Ctrl+click in the PDF jumps back.
+- Two-way SyncTeX: F7 jumps from the source to the PDF, Shift+F7 or Ctrl+click in the PDF
+  jumps back, and Ctrl+Alt+P switches focus between the editor and the PDF.
 - Problems panel after each build: errors with file and line, LaTeX and package warnings,
   over/underfull boxes. Click one (or F8 / Shift+F8) to jump there; the lines get red or
   yellow squiggles with the message on hover, and the status bar counts them.
@@ -223,7 +224,7 @@ Keyboard shortcuts follow TeXstudio where TeXstudio documents them.
 | Key | Action |
 |---|---|
 | F5 / F6 | Build, or stop a running build |
-| F7 | Show the cursor position in the PDF |
+| F7 / Shift+F7 | Show the cursor position in the PDF / jump to source from the PDF |
 | F8 / Shift+F8 | Next / previous build problem |
 | Ctrl+click in the PDF | Jump to the matching source line |
 | Ctrl+Space | Complete command, environment, package, `\ref` or `\cite` |
@@ -256,6 +257,7 @@ Keyboard shortcuts follow TeXstudio where TeXstudio documents them.
 | Ctrl+= / Ctrl+- / Ctrl+0 | Zoom the PDF in / out / fit width |
 | Shift+F5 | Present the PDF full screen from the current page (Esc ends) |
 | Ctrl+\ / Ctrl+J / Ctrl+Shift+O | Toggle PDF / bottom panel (Problems, Output, Agent) / side bar |
+| Ctrl+Alt+P | Switch keyboard focus between the editor and the PDF |
 | Ctrl+L | Ask the coding agent about the selected lines |
 | View → Menu Bar, then Alt | Hide the menu bar; a lone Alt shows it until an item is used |
 
