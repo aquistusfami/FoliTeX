@@ -125,6 +125,7 @@ private slots:
     void enterAutoIndentCapAndFoldedHeader();
     // --- Task C ---
     void pdfFollowsTabDocument();
+    void syncProcessReplacesOlderRun();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -3010,4 +3011,32 @@ void Tests::pdfFollowsTabDocument()
     QCOMPARE(QFileInfo(window.pdfView()->path()), QFileInfo(pdfA));
     window.forwardSync();
     QCOMPARE(window.m_status->text(), QString("Build this document first: the PDF shown belongs to another document."));
+}
+
+void Tests::syncProcessReplacesOlderRun()
+{
+#ifdef Q_OS_WIN
+    QSKIP("shell script stand-in for synctex");
+#else
+    QTemporaryDir bin;
+    QFile fake(bin.filePath("synctex"));
+    QVERIFY(fake.open(QIODevice::WriteOnly));
+    fake.write("#!/bin/sh\n"
+               "if [ \"$1\" = slow ]; then sleep 0.4; printf 'FIRST'; else printf 'SECOND'; fi\n");
+    fake.close();
+    fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner);
+
+    const QByteArray oldPath = qgetenv("PATH");
+    auto restore = qScopeGuard([&] { qputenv("PATH", oldPath); });
+    qputenv("PATH", bin.path().toUtf8() + ":" + oldPath);
+
+    Window window;
+    QStringList results;
+    window.syncProcess({"slow"}, [&](const QString &out) { results << "first:" + out; });
+    window.syncProcess({"fast"}, [&](const QString &out) { results << "second:" + out; });
+    QTRY_COMPARE_WITH_TIMEOUT(results.size(), 1, 3000);
+    QCOMPARE(results, QStringList({"second:SECOND"}));
+    QTest::qWait(500);
+    QCOMPARE(results, QStringList({"second:SECOND"}));
+#endif
 }

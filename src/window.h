@@ -239,6 +239,7 @@ private:
     QCheckBox *m_pdfCase;
     QCheckBox *m_pdfWord;
     BuildRunner m_runner;
+    QPointer<QProcess> m_syncProcess;
     QFileSystemWatcher m_watcher;
     QTimer m_reload;
     QFileSystemWatcher m_sourceWatcher;

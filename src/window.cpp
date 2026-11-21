@@ -2419,18 +2419,42 @@ void Window::openPdf(const QString &path)
 
 void Window::syncProcess(QStringList arguments, std::function<void(QString)> complete)
 {
+    if (QProcess *old = m_syncProcess)
+    {
+        m_syncProcess = nullptr;
+        old->disconnect(this);
+        if (old->state() != QProcess::NotRunning)
+        {
+            connect(old, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), old, &QObject::deleteLater);
+            old->kill();
+        }
+        else old->deleteLater();
+    }
     auto *process = new QProcess(this);
+    m_syncProcess = process;
     connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
         [this, process, complete](int code, QProcess::ExitStatus status)
         {
-            QString output = QString::fromUtf8(process->readAllStandardOutput());
-            if (code == 0 && status == QProcess::NormalExit) complete(output);
-            else m_status->setText("SyncTeX found no position; rebuild with synctex=1.");
+            if (m_syncProcess == process)
+            {
+                m_syncProcess = nullptr;
+                QString output = QString::fromUtf8(process->readAllStandardOutput());
+                if (code == 0 && status == QProcess::NormalExit) complete(output);
+                else m_status->setText("SyncTeX found no position; rebuild with synctex=1.");
+            }
             process->deleteLater();
         });
     connect(process, &QProcess::errorOccurred, this, [this, process](QProcess::ProcessError error)
     {
-        if (error == QProcess::FailedToStart) { m_status->setText("Cannot start synctex."); process->deleteLater(); }
+        if (error == QProcess::FailedToStart)
+        {
+            if (m_syncProcess == process)
+            {
+                m_syncProcess = nullptr;
+                m_status->setText("Cannot start synctex.");
+            }
+            process->deleteLater();
+        }
     });
     process->start("synctex", arguments);
 }
@@ -2584,6 +2608,15 @@ void Window::updateTabHints()
 Window::~Window()
 {
     qApp->removeEventFilter(this);
+    if (m_syncProcess)
+    {
+        m_syncProcess->disconnect(this);
+        if (m_syncProcess->state() != QProcess::NotRunning)
+        {
+            m_syncProcess->kill();
+            m_syncProcess->waitForFinished(500);
+        }
+    }
     // An inline rename still open commits while the tree is destroyed; tabs must not react.
     m_files->itemDelegate()->disconnect(this);
     m_fileModel->disconnect(this);
