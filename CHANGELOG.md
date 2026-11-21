@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Go to definition (F12): from `\ref`/`\eqref`/`\autoref`/`\cref`/`\pageref` to the `\label`,
+  from `\cite` and friends to the `.bib` entry; Alt+Left goes back.
+- `% !TeX program = xelatex` (also `TS-program`, any case) picks the engine for that build;
+  the status bar names it.
+- Jump to source from the keyboard (Shift+F7, from the centre of the PDF view) and
+  Focus PDF / editor (Ctrl+Alt+P).
+- Build → Sync PDF after Build: forward SyncTeX to the cursor after each successful build
+  (remembered between sessions).
+- Build → Clean auxiliary files: `latexmk -c` in `.folitex-build/`, keeping the PDF.
+
+### Changed
+- Forward SyncTeX places the target a third down the PDF view, scrolls horizontally when
+  zoomed in, marks the line with a band that fades out, and waits for a reloading PDF instead
+  of being dropped. The page box and session restore keep their old placement.
+- Switching to a tab of another document shows that document's built PDF; F7 refuses to sync
+  against a PDF that belongs to another document.
+- Jumps to a problem, a line or a SyncTeX position centre the line when it was off screen.
+- The status bar shows the build's elapsed time; after a failed build that left the old PDF,
+  the PDF bar says "last good build". Error/warning counters are visible from the start.
+- Problems list shows the line in its own column; icons follow the light theme.
+- Selection bar: Emphasis and Typewriter buttons read *e* and a monospace T.
+- Chevrons are readable in the light theme.
+- The window's minimum width is 640 px; the Problems filter hides when the panel is too narrow.
+
+### Fixed
+- F8 / Shift+F8 land on the problem's current line after lines above it were edited.
+- Repeated F7 or Ctrl+click no longer lets an older SyncTeX result move the view back.
+- The Output log no longer jumps to the bottom while you read earlier lines.
+- Enter on a Problems row jumps to it; Escape in Problems, Output or the PDF view returns
+  focus to the editor.
+
 ## 0.9.0 — 2026-11-16
 
 ### Added
