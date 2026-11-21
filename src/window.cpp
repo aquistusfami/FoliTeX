@@ -602,6 +602,7 @@ Window::Window() : m_runner(this)
             editor->document()->blockCount(), 1, &ok);
         if (ok) editor->goToLine(line);
     });
+    add("Go to definition", QKeySequence("F12"), [this] { QString path; int line = 0; if (auto *e = currentEditor(); e && e->definitionAt(path, line) && (path.isEmpty() || openSource(path))) currentEditor()->goToLine(line); else if (currentEditor()) m_status->setText("No definition found"); });
     menu->addSeparator();
     add("Toggle comment", QKeySequence("Ctrl+/"), [focusedEditor] { if (auto *editor = focusedEditor()) editor->toggleComment(); });
     menu->addSeparator();

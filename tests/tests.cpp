@@ -127,6 +127,7 @@ private slots:
     void problemJumpFollowsEdits();
     void goToLineCentresOffscreen();
     void selectionBarLabels();
+    void goToDefinition();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -3051,4 +3052,110 @@ void Tests::selectionBarLabels()
     editor.setTextCursor(cursor);
     typewriter->click();
     QCOMPARE(editor.toPlainText(), QString("hello \\texttt{world}"));
+}
+
+void Tests::goToDefinition()
+{
+    QTemporaryDir dir;
+    const QString rootPath = QDir::cleanPath(dir.filePath("root.tex"));
+    const QString secPath = QDir::cleanPath(dir.filePath("sec.tex"));
+    const QString bibPath = QDir::cleanPath(dir.filePath("refs.bib"));
+    write(rootPath,
+        "\\documentclass{article}\n"
+        "\\bibliography{refs}\n"
+        "\\begin{document}\n"
+        "\\input{sec}\n"
+        "See \\ref{eq:a}, \\eqref{eq:a}, \\autoref{eq:a}, \\cref{eq:a}, \\pageref{eq:a}.\n"
+        "Cite \\cite{x,knuth84}, \\citep[see][p. 2]{knuth84}, \\textcite{knuth84}.\n"
+        "Missing \\ref{no:such} and \\cite{no:bib}.\n"
+        "\\end{document}\n");
+    write(secPath,
+        "\\section{Intro}\n"
+        "\\begin{equation}\n"
+        "  x = 1 \\label{eq:a}\n"
+        "\\end{equation}\n");
+    write(bibPath,
+        "% bibliography\n"
+        "@book{other,\n"
+        "  title={Other}\n"
+        "}\n"
+        "@article{knuth84,\n"
+        "  title={Literate programming}\n"
+        "}\n");
+
+    Window window;
+    QVERIFY(window.openSource(rootPath));
+    auto *rootEditor = window.currentEditor();
+    auto placeOn = [](Editor *ed, const QString &needle, int offset = 0)
+    {
+        const int pos = ed->toPlainText().indexOf(needle);
+        QVERIFY2(pos >= 0, qPrintable("missing needle: " + needle));
+        QTextCursor c(ed->document());
+        c.setPosition(pos + offset);
+        ed->setTextCursor(c);
+    };
+    QAction *goDef = nullptr;
+    for (QAction *action : window.actions())
+        if (action->text() == "Go to definition") goDef = action;
+    QVERIFY(goDef);
+    QCOMPARE(goDef->shortcut(), QKeySequence("F12"));
+
+    // \ref and variants resolve to sec.tex line 3.
+    QString path;
+    int line = 0;
+    for (const QString &needle : {"\\ref{eq:a}", "\\eqref{eq:a}", "\\autoref{eq:a}", "\\cref{eq:a}", "\\pageref{eq:a}"})
+    {
+        placeOn(rootEditor, needle, needle.indexOf("eq:a") + 2);
+        QVERIFY(rootEditor->definitionAt(path, line));
+        QCOMPARE(path, secPath);
+        QCOMPARE(line, 3);
+    }
+
+    // Multi-key \cite{x,knuth84}: caret in knuth84 resolves to refs.bib line 5; caret in x fails.
+    placeOn(rootEditor, "\\cite{x,knuth84}", 10); // inside knuth84
+    QVERIFY(rootEditor->definitionAt(path, line));
+    QCOMPARE(path, bibPath);
+    QCOMPARE(line, 5);
+    placeOn(rootEditor, "\\cite{x,knuth84}", 6); // on x
+    QVERIFY(!rootEditor->definitionAt(path, line));
+
+    // Optional-arg and biblatex cite variants.
+    placeOn(rootEditor, "\\citep[see][p. 2]{knuth84}", 20);
+    QVERIFY(rootEditor->definitionAt(path, line));
+    QCOMPARE(path, bibPath);
+    QCOMPARE(line, 5);
+    placeOn(rootEditor, "\\textcite{knuth84}", 12);
+    QVERIFY(rootEditor->definitionAt(path, line));
+    QCOMPARE(path, bibPath);
+    QCOMPARE(line, 5);
+
+    // Unknown keys return false and F12 reports "No definition found".
+    placeOn(rootEditor, "\\ref{no:such}", 7);
+    QVERIFY(!rootEditor->definitionAt(path, line));
+    goDef->trigger();
+    QCOMPARE(window.currentEditor(), rootEditor);
+    QCOMPARE(window.m_status->text(), QString("No definition found"));
+
+    // F12 opens sec.tex at line 3 and follows unsaved edits in open tabs.
+    placeOn(rootEditor, "\\ref{eq:a}", 7);
+    goDef->trigger();
+    auto *secEditor = window.currentEditor();
+    QCOMPARE(QDir::cleanPath(secEditor->property("path").toString()), secPath);
+    QCOMPARE(secEditor->lineNumber(), 3);
+
+    QTextCursor top(secEditor->document());
+    top.setPosition(0);
+    top.insertText("% extra 1\n% extra 2\n"); // moves \label{eq:a} to line 5 (unsaved)
+    QVERIFY(window.openSource(rootPath));
+    placeOn(rootEditor, "\\ref{eq:a}", 7);
+    goDef->trigger();
+    QCOMPARE(window.currentEditor(), secEditor);
+    QCOMPARE(secEditor->lineNumber(), 5);
+
+    // F12 on \cite{x,knuth84} opens refs.bib at line 5.
+    QVERIFY(window.openSource(rootPath));
+    placeOn(rootEditor, "\\cite{x,knuth84}", 10);
+    goDef->trigger();
+    QCOMPARE(QDir::cleanPath(window.currentEditor()->property("path").toString()), bibPath);
+    QCOMPARE(window.currentEditor()->lineNumber(), 5);
 }

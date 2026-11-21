@@ -215,22 +215,32 @@ static PackageWords scannedPackage(const QString &name, int depth = 0)
 // Source text: the open tab's (unsaved edits included), else the file on disk.
 static QString sourceText(const QString &path, const QList<Editor *> &editors)
 {
-    for (auto *editor : editors)
-        if (editor->property("path").toString() == path) return editor->toPlainText();
+    const QString clean = QDir::cleanPath(path);
+    for (const auto *editor : editors)
+    {
+        const QString open = editor->property("path").toString();
+        if (!open.isEmpty() && QDir::cleanPath(QFileInfo(open).absoluteFilePath()) == clean) return editor->toPlainText();
+    }
     static QHash<QString, QPair<QDateTime, QString>> cache;
-    QFileInfo info(path);
+    QFileInfo info(clean);
     if (!info.isFile()) return {};
-    auto &cached = cache[path];
+    auto &cached = cache[clean];
     if (cached.first != info.lastModified())
     {
-        QFile file(path);
+        QFile file(clean);
         if (!file.open(QIODevice::ReadOnly)) return {};
         cached = {info.lastModified(), QString::fromUtf8(file.readAll())};
     }
     return cached.second;
 }
 
-struct ProjectRefs { QStringList labels, bibFiles; };
+struct RefLocation { QString path; int line; };
+struct ProjectRefs
+{
+    QStringList labels;
+    QHash<QString, RefLocation> labelLocations;
+    QStringList bibFiles;
+};
 
 // Follows \input/\include/\subfile from the root as the build does, collecting labels and bibliographies.
 static ProjectRefs projectRefs(const QString &root, const QList<Editor *> &editors)
@@ -238,9 +248,10 @@ static ProjectRefs projectRefs(const QString &root, const QList<Editor *> &edito
     static const QRegularExpression command(
         R"(\\(input|include|subfile|bibliography|addbibresource|label)\s*(?:\[[^\]]*\])?\{([^{}]+)\})");
     static const QRegularExpression comment(R"((?<!\\)(?:\\\\)*\K%.*$)", QRegularExpression::MultilineOption);
-    QDir base = QFileInfo(root).absoluteDir();
+    const QString cleanRoot = QDir::cleanPath(QFileInfo(root).absoluteFilePath());
+    QDir base = QFileInfo(cleanRoot).absoluteDir();
     ProjectRefs refs;
-    QStringList queue{root};
+    QStringList queue{cleanRoot};
     QSet<QString> seen;
     while (!queue.isEmpty() && seen.size() < 300)
     {
@@ -249,11 +260,20 @@ static ProjectRefs projectRefs(const QString &root, const QList<Editor *> &edito
         seen.insert(path);
         QString text = sourceText(path, editors);
         text.remove(comment);
+        int pos = 0, line = 1;
         for (auto it = command.globalMatch(text); it.hasNext();)
         {
             auto match = it.next();
+            line += int(std::count(text.cbegin() + pos, text.cbegin() + match.capturedStart(), QChar('\n')));
+            pos = match.capturedStart();
             QString kind = match.captured(1);
-            if (kind == "label") { refs.labels << match.captured(2).trimmed(); continue; }
+            if (kind == "label")
+            {
+                QString name = match.captured(2).trimmed();
+                refs.labels << name;
+                if (!refs.labelLocations.contains(name)) refs.labelLocations.insert(name, {path, line});
+                continue;
+            }
             bool bib = kind == "bibliography" || kind == "addbibresource";
             QString suffix = bib ? ".bib" : ".tex";
             for (const auto &name : match.captured(2).split(',', Qt::SkipEmptyParts))
@@ -267,28 +287,53 @@ static ProjectRefs projectRefs(const QString &root, const QList<Editor *> &edito
     return refs;
 }
 
-static QStringList bibKeys(const QStringList &files)
+struct BibEntry { QString key; QString path; int line; };
+
+static QList<BibEntry> bibEntries(const QStringList &files, const QList<Editor *> &editors = {})
 {
-    static QHash<QString, QPair<QDateTime, QStringList>> cache;
+    static QHash<QString, QPair<QDateTime, QList<QPair<QString, int>>>> cache;
     static const QRegularExpression entry(R"(@(?!string|comment|preamble)[A-Za-z]+\s*[{(]\s*([^,\s{}()]+)\s*,)",
         QRegularExpression::CaseInsensitiveOption);
-    QStringList keys;
+    auto parse = [](const QString &text)
+    {
+        QList<QPair<QString, int>> out;
+        int pos = 0, line = 1;
+        for (auto it = entry.globalMatch(text); it.hasNext();)
+        {
+            auto match = it.next();
+            line += int(std::count(text.cbegin() + pos, text.cbegin() + match.capturedStart(), QChar('\n')));
+            pos = match.capturedStart();
+            out << QPair{match.captured(1), line};
+        }
+        return out;
+    };
+    QList<BibEntry> entries;
     for (const auto &path : files)
     {
         QFileInfo info(path);
+        const QString abs = QDir::cleanPath(info.absoluteFilePath());
+        const Editor *open = nullptr;
+        for (const auto *editor : editors)
+        {
+            const QString p = editor->property("path").toString();
+            if (!p.isEmpty() && QDir::cleanPath(QFileInfo(p).absoluteFilePath()) == abs) { open = editor; break; }
+        }
+        if (open)
+        {
+            for (const auto &[key, line] : parse(open->toPlainText())) entries << BibEntry{key, abs, line};
+            continue;
+        }
         if (!info.isFile()) continue;
-        auto &cached = cache[info.absoluteFilePath()];
+        auto &cached = cache[abs];
         if (cached.first != info.lastModified())
         {
-            QFile file(info.absoluteFilePath());
+            QFile file(abs);
             if (!file.open(QIODevice::ReadOnly)) continue;
-            cached = {info.lastModified(), {}};
-            for (auto it = entry.globalMatch(QString::fromUtf8(file.readAll())); it.hasNext();)
-                cached.second << it.next().captured(1);
+            cached = {info.lastModified(), parse(QString::fromUtf8(file.readAll()))};
         }
-        keys += cached.second;
+        for (const auto &[key, line] : cached.second) entries << BibEntry{key, abs, line};
     }
-    return keys;
+    return entries;
 }
 
 static bool &lightFlag()
@@ -960,7 +1005,7 @@ void Editor::updateCompletion(bool request)
                 for (const auto &info : QFileInfo(editor->property("path").toString()).absoluteDir().entryInfoList({"*.bib"}, QDir::Files))
                     files << QDir::cleanPath(info.absoluteFilePath());
         files.removeDuplicates();
-        words = bibKeys(files);
+        for (const auto &entry : bibEntries(files, editors)) words << entry.key;
     }
     else if ((match = package.match(before)).hasMatch())
     {
@@ -1919,6 +1964,111 @@ void Editor::goToWord(int line, const QStringList &words, int clicked)
     if (best < 0) return;
     QTextBlock found = document()->findBlock(source[best].position);
     goToLine(found.blockNumber() + 1, source[best].position - found.position());
+}
+
+bool Editor::definitionAt(QString &path, int &line) const
+{
+    const QTextCursor cursor = textCursor();
+    QString text = cursor.block().text();
+    const int col = cursor.positionInBlock();
+    static const QRegularExpression comment(R"((?<!\\)(?:\\\\)*\K%.*$)");
+    text.remove(comment);
+    if (col > text.size()) return false;
+
+    static const QRegularExpression refOrCite(
+        R"((?<!\\)(?:\\\\)*\K\\(?:(ref|eqref|autoref|cref|Cref|pageref|nameref|vref|subref)|([A-Za-z]*[Cc]ite[A-Za-z]*))\*?(?:\s*\[[^\]]*\])*\{([^{}]*)\})");
+    bool isRef = false;
+    QString key;
+    for (auto it = refOrCite.globalMatch(text); it.hasNext();)
+    {
+        const auto match = it.next();
+        const int argStart = match.capturedStart(3);
+        const int argEnd = match.capturedEnd(3);
+        if (col < argStart || col > argEnd) continue;
+        const QString arg = match.captured(3);
+        const int offset = col - argStart;
+        const int left = offset > 0 ? arg.lastIndexOf(',', offset - 1) : -1;
+        const int right = arg.indexOf(',', offset);
+        key = arg.mid(left + 1, (right < 0 ? arg.size() : right) - (left + 1)).trimmed();
+        isRef = !match.captured(1).isEmpty();
+        break;
+    }
+    if (key.isEmpty()) return false;
+
+    auto editors = window()->findChildren<Editor *>();
+    if (!editors.contains(const_cast<Editor *>(this))) editors << const_cast<Editor *>(this);
+    QStringList roots;
+    auto addRoot = [&](const Editor *editor)
+    {
+        const QString p = editor->property("path").toString();
+        if (p.isEmpty()) return;
+        const QString root = BuildRunner::rootFile(p);
+        if (!root.isEmpty() && !roots.contains(root)) roots << root;
+    };
+    addRoot(this);
+    for (const auto *editor : editors) addRoot(editor);
+
+    if (isRef)
+    {
+        for (const auto &root : roots)
+        {
+            const auto refs = projectRefs(root, editors);
+            if (auto found = refs.labelLocations.constFind(key); found != refs.labelLocations.cend())
+            {
+                path = found->path;
+                line = found->line;
+                return true;
+            }
+        }
+        // Fallback for unsaved/unlinked open buffers (including untitled tabs).
+        static const QRegularExpression labelRe(R"(\\label\s*\{([^{}]+)\})");
+        static const QRegularExpression multiComment(R"((?<!\\)(?:\\\\)*\K%.*$)", QRegularExpression::MultilineOption);
+        QList<const Editor *> ordered{this};
+        for (const auto *editor : editors)
+            if (editor != this && !editor->property("path").toString().isEmpty()) ordered << editor;
+        for (const auto *editor : ordered)
+        {
+            QString body = editor->toPlainText();
+            body.remove(multiComment);
+            int pos = 0, currentLine = 1;
+            for (auto it = labelRe.globalMatch(body); it.hasNext();)
+            {
+                const auto match = it.next();
+                currentLine += int(std::count(body.cbegin() + pos, body.cbegin() + match.capturedStart(), QChar('\n')));
+                pos = match.capturedStart();
+                if (match.captured(1).trimmed() == key)
+                {
+                    path = editor->property("path").toString();
+                    line = currentLine;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    QStringList files;
+    for (const auto &root : roots) files += projectRefs(root, editors).bibFiles;
+    auto addNearbyBibs = [&files](const QString &sourcePath)
+    {
+        if (sourcePath.isEmpty()) return;
+        for (const auto &info : QFileInfo(sourcePath).absoluteDir().entryInfoList({"*.bib"}, QDir::Files))
+            files << QDir::cleanPath(info.absoluteFilePath());
+    };
+    addNearbyBibs(property("path").toString());
+    for (const auto &root : roots) addNearbyBibs(root);
+    for (const auto *editor : editors) addNearbyBibs(editor->property("path").toString());
+    files.removeDuplicates();
+    for (const auto &entry : bibEntries(files, editors))
+    {
+        if (entry.key == key)
+        {
+            path = entry.path;
+            line = entry.line;
+            return true;
+        }
+    }
+    return false;
 }
 
 void Editor::goToLine(int line, int column)

@@ -60,6 +60,8 @@ public:
     // Inverse search: SyncTeX puts everything in a beamer frame on \end{frame}, so find the clicked
     // PDF word (scored by its neighbours) inside the frame around the line; falls back to the line.
     void goToWord(int line, const QStringList &words, int clicked);
+    // Target file and 1-based line for the \ref/\cite key under the caret, or false if none.
+    bool definitionAt(QString &path, int &line) const;
     int lineNumber() const;
     void toggleComment();
     // Undo/redo one text change; the wrap-indent format steps around it go along (see applyWrapIndent).
