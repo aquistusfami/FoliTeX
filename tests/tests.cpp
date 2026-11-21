@@ -134,6 +134,7 @@ private slots:
     void narrowWindowHidesProblemFilter();
     void magicProgramSelectsEngine();
     void keyboardPdfSourceNavigation();
+    void syncAfterBuildRunsForwardSync();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -3424,5 +3425,68 @@ void Tests::keyboardPdfSourceNavigation()
     const QString args = QString::fromUtf8(recorded.readAll());
     QVERIFY2(args.contains("edit\n-o\n1:"), qPrintable(args));
     QVERIFY2(args.contains(pdf), qPrintable(args));
+#endif
+}
+
+void Tests::syncAfterBuildRunsForwardSync()
+{
+#ifdef Q_OS_WIN
+    QSKIP("shell script stand-ins for latexmk and synctex");
+#else
+    QTemporaryDir bin, project;
+    const QString main = project.filePath("main.tex");
+    write(main, "\\documentclass{article}\n\\begin{document}\nHello.\n\\end{document}\n");
+    const QString pdf = BuildRunner::pdfPath(main);
+    QVERIFY(QDir().mkpath(QFileInfo(pdf).absolutePath()));
+    {
+        QPdfWriter writer(pdf);
+        QPainter painter(&writer);
+        painter.drawText(100, 100, "Built");
+    }
+
+    QFile fakeLatexmk(bin.filePath("latexmk"));
+    QVERIFY(fakeLatexmk.open(QIODevice::WriteOnly));
+    fakeLatexmk.write("#!/bin/sh\nexit 0\n");
+    fakeLatexmk.close();
+    fakeLatexmk.setPermissions(fakeLatexmk.permissions() | QFileDevice::ExeOwner);
+
+    const QString syncLog = bin.filePath("sync-calls.txt");
+    QFile fakeSynctex(bin.filePath("synctex"));
+    QVERIFY(fakeSynctex.open(QIODevice::WriteOnly));
+    fakeSynctex.write("#!/bin/sh\n"
+                      "printf '%s\\n' \"$*\" >> \"$FOLITEX_SYNC_LOG\"\n"
+                      "printf 'Page:1\\ny:100\\n'\n");
+    fakeSynctex.close();
+    fakeSynctex.setPermissions(fakeSynctex.permissions() | QFileDevice::ExeOwner);
+
+    const QByteArray oldPath = qgetenv("PATH");
+    auto restore = qScopeGuard([&]
+    {
+        qputenv("PATH", oldPath);
+        qunsetenv("FOLITEX_SYNC_LOG");
+    });
+    qputenv("PATH", bin.path().toUtf8() + ":" + oldPath);
+    qputenv("FOLITEX_SYNC_LOG", syncLog.toUtf8());
+
+    auto readLines = [&]
+    {
+        QFile file(syncLog);
+        return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()).split('\n', Qt::SkipEmptyParts) : QStringList();
+    };
+
+    Window window;
+    QVERIFY(!window.syncAfterBuild());
+    window.setSyncAfterBuild(true);
+    QVERIFY(window.syncAfterBuild());
+    QVERIFY(window.openSource(main));
+    QSignalSpy built(&window, &Window::buildFinished);
+    window.build();
+    QTRY_COMPARE_WITH_TIMEOUT(built.size(), 1, 5000);
+    QVERIFY(built.first().first().toBool());
+    QTRY_COMPARE_WITH_TIMEOUT(readLines().size(), 1, 5000);
+    QVERIFY(readLines().first().startsWith("view -i "));
+    QVERIFY(readLines().first().contains(pdf));
+    QTest::qWait(350);
+    QCOMPARE(readLines().size(), 1); // exactly one forward sync per build
 #endif
 }

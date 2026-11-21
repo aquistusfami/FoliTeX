@@ -94,6 +94,8 @@ public:
     void setRecentFiles(const QStringList &files) { m_recent = files; delete m_welcome; updateWelcome(); } // the start actions list them
     bool buildOnSave() const { return m_buildOnSaveAction->isChecked(); }
     void setBuildOnSave(bool on) { m_buildOnSaveAction->setChecked(on); }
+    bool syncAfterBuild() const { return m_syncAfterBuildAction->isChecked(); }
+    void setSyncAfterBuild(bool on) { m_syncAfterBuildAction->setChecked(on); }
     void addRecent(const QString &path);
     QFont editorFont() const { return m_editorFont; }
     void setEditorFont(const QFont &font);
@@ -162,6 +164,8 @@ private:
     QString m_statusKeep; // a message that outlives cursor moves: build result, disk conflict
     QString m_lastRoot; // root of the last build; what saving a .bib or .sty rebuilds
     QAction *m_buildOnSaveAction;
+    QAction *m_syncAfterBuildAction;
+    bool m_pendingSyncAfterBuild = false;
     PdfView *m_pdf;
     QWidget *m_pdfPane;
     QPlainTextEdit *m_log;

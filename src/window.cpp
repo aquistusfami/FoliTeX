@@ -737,6 +737,8 @@ Window::Window() : m_runner(this)
     menu->addSeparator();
     m_buildOnSaveAction = add("Build on save", QKeySequence(), [] {});
     m_buildOnSaveAction->setCheckable(true);
+    m_syncAfterBuildAction = add("Sync PDF after Build", QKeySequence(), [] {});
+    m_syncAfterBuildAction->setCheckable(true);
     add("Word count", QKeySequence(), [this] { countWords(); });
     menu = menuBar->addMenu("&View");
     add("Command palette…", QKeySequence("Ctrl+K"), [this] { showPalette(false); })->setShortcuts({QKeySequence("Ctrl+K"), QKeySequence("Ctrl+Shift+P")});
@@ -1495,7 +1497,7 @@ Window::Window() : m_runner(this)
         m_build->setIcon(m_runIcon);
         m_build->setText("Build");
         m_build->setToolTip("Build · F5");
-        if (m_runner.cancelled()) { keepStatus("Build stopped"); return; }
+        if (m_runner.cancelled()) { m_pendingSyncAfterBuild = false; keepStatus("Build stopped"); return; }
         // Always the latest log: when nothing changed, latexmk does not rerun and keeps the old
         // one, which still describes the document.
         QList<Problem> problems;
@@ -1517,6 +1519,7 @@ Window::Window() : m_runner(this)
         const QFileInfo pdfInfo(pdf);
         const bool rewritten = pdfInfo.exists()
             && (!m_buildPdfExisted || pdfInfo.lastModified() != m_buildPdfMtime || pdfInfo.size() != m_buildPdfSize);
+        m_pendingSyncAfterBuild = success && syncAfterBuild();
         if (success || (pdfInfo.exists() && (m_pdf->path().isEmpty() || rewritten)))
             openPdf(pdf);
         else if (!success && !m_pdf->path().isEmpty() && m_pdfPages > 0)
@@ -1541,8 +1544,9 @@ Window::Window() : m_runner(this)
         // As wide as its digits, so "1 / 12" reads as one phrase from the left edge, not a box with a gap.
         m_page->setFixedWidth(m_page->fontMetrics().horizontalAdvance(QString(QString::number(std::max(1, pages)).size(), '0')) + 8);
         if (m_pendingPage) { m_pdf->goToPage(m_pendingPage, m_pendingY); m_pendingPage = 0; }
+        if (std::exchange(m_pendingSyncAfterBuild, false)) forwardSync();
     });
-    connect(m_pdf, &PdfView::loadFailed, this, [this](const QString &error) { m_status->setText(error); setPdfLoaded(false); });
+    connect(m_pdf, &PdfView::loadFailed, this, [this](const QString &error) { m_pendingSyncAfterBuild = false; m_status->setText(error); setPdfLoaded(false); });
     connect(m_pdf, &PdfView::pageChanged, this, [this](int page)
     {
         QSignalBlocker blocker(m_page); m_page->setValue(page);
@@ -2539,6 +2543,7 @@ void Window::build()
         if (!path.isEmpty() && !root.isEmpty() && BuildRunner::rootFile(path) == root && !save(other)) return;
     }
     m_log->clear();
+    m_pendingSyncAfterBuild = false;
     m_buildStarted = QDateTime::currentDateTime();
     const QString expectedPdf = root.isEmpty() ? QString() : BuildRunner::pdfPath(root);
     const QFileInfo pdfInfo(expectedPdf);
