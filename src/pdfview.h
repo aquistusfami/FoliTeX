@@ -5,8 +5,10 @@
 #include <QImage>
 #include <QSet>
 #include <QTimer>
+#include <QVariantAnimation>
 #include <poppler-qt6.h>
 #include <memory>
+#include <optional>
 
 class SmoothScroll;
 
@@ -81,6 +83,8 @@ public:
     bool darkPages() const { return m_dark; }
     void setDarkPages(bool on) { m_dark = on; viewport()->update(); }
     void goToPage(int page, double yPoints = 0);
+    void syncTo(int page, double yPoints, double xPoints = -1);
+    bool syncMarkVisible() const { return m_syncPage >= 0 && m_syncOpacity > 0; }
     int pageCount() const { return m_sizes.size(); }
     int currentPage() const;
     int cachedTiles() const { return m_cache.size(); }
@@ -141,6 +145,10 @@ private:
     void requestSource(int page, QPointF local);
     void followLink(const PdfLink &link);
     void showMatch();
+    QRectF syncMarkRect(const QRectF &onScreen) const;
+    QRectF syncMarkRect() const;
+    void updateSyncMark();
+    void clearSyncMark();
     QThread m_thread;
     PdfRenderer *m_renderer;
     QList<QSizeF> m_sizes;
@@ -183,4 +191,17 @@ private:
     bool m_searching = false;
     bool m_searchBackwards = false;
     int m_searchFlags = 0;
+    struct PendingSync
+    {
+        int generation = 0;
+        int page = 0;
+        double y = 0;
+        double x = -1;
+    };
+    bool m_loading = false;
+    std::optional<PendingSync> m_pendingSync;
+    int m_syncPage = -1;
+    double m_syncY = 0;
+    double m_syncOpacity = 0;
+    QVariantAnimation m_syncFade;
 };

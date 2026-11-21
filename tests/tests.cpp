@@ -128,6 +128,10 @@ private slots:
     void goToLineCentresOffscreen();
     void selectionBarLabels();
     void goToDefinition();
+    // --- Task B: forward-SyncTeX landing ---
+    void forwardSyncLandingAndHighlight();
+    void forwardSyncPendingAndCancelled();
+    void goToPageKeepsTopPlacementWithoutMark();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -3158,4 +3162,180 @@ void Tests::goToDefinition()
     goDef->trigger();
     QCOMPARE(QDir::cleanPath(window.currentEditor()->property("path").toString()), bibPath);
     QCOMPARE(window.currentEditor()->lineNumber(), 5);
+}
+
+// --- Task B: forward-SyncTeX landing ---
+void Tests::forwardSyncLandingAndHighlight()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath("sync.pdf");
+    {
+        QPdfWriter writer(path);
+        writer.setPageSize(QPageSize(QPageSize::A4));
+        QPainter painter(&writer);
+        writer.newPage();
+        writer.newPage();
+    }
+    PdfView viewer;
+    viewer.resize(500, 400);
+    QSignalSpy loaded(&viewer, &PdfView::documentReady);
+    QSignalSpy scales(&viewer, &PdfView::scaleChanged);
+    viewer.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&viewer));
+    viewer.open(path);
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
+    QVERIFY(!scales.isEmpty());
+    const double scale = scales.last().first().toDouble();
+    const QSizeF a4 = QPageSize(QPageSize::A4).sizePoints();
+    const double dpr = viewer.devicePixelRatioF();
+
+    viewer.syncTo(2, 240.0);
+    QCOMPARE(viewer.currentPage(), 2);
+    const double pageHeight = qRound(a4.height() * scale * dpr) / dpr;
+    const double page2Top = qRound((qRound(24.0 * dpr) / dpr + pageHeight + 16.0) * dpr) / dpr;
+    const double targetY = page2Top + 240.0 * scale - viewer.verticalScrollBar()->value();
+    QVERIFY2(targetY >= 0 && targetY <= viewer.viewport()->height() / 2.0,
+        qPrintable(QString("targetY=%1 viewportH=%2").arg(targetY).arg(viewer.viewport()->height())));
+    QVERIFY(viewer.syncMarkVisible());
+    viewer.viewport()->repaint();
+    QTRY_VERIFY_WITH_TIMEOUT(!viewer.syncMarkVisible(), 1600);
+
+    // Zoomed wider than the viewport: x >= 0 scrolls horizontally so x is visible; default x < 0 does not.
+    viewer.setZoom(2.5);
+    QVERIFY(viewer.horizontalScrollBar()->maximum() > 0);
+    viewer.horizontalScrollBar()->setValue(0);
+    viewer.syncTo(2, 240.0);
+    QCOMPARE(viewer.horizontalScrollBar()->value(), 0);
+    const double zoomedScale = scales.last().first().toDouble();
+    viewer.syncTo(2, 240.0, 480.0);
+    QVERIFY(viewer.horizontalScrollBar()->value() > 0);
+    const double docWidth = std::max(double(viewer.viewport()->width()), a4.width() * zoomedScale + 48.0);
+    const double pageWidth = qRound(a4.width() * zoomedScale * dpr) / dpr;
+    const double pageLeft = qRound((docWidth - pageWidth) / 2.0 * dpr) / dpr;
+    const double targetX = pageLeft + 480.0 * zoomedScale - viewer.horizontalScrollBar()->value();
+    QVERIFY2(targetX >= 0 && targetX <= viewer.viewport()->width(),
+        qPrintable(QString("targetX=%1 viewportW=%2").arg(targetX).arg(viewer.viewport()->width())));
+    QVERIFY(viewer.syncMarkVisible());
+    {
+        auto restoreTheme = qScopeGuard([] { setLightTheme(false); });
+        setLightTheme(true);
+        viewer.viewport()->repaint();
+    }
+
+    // Presentation mode keeps its current behaviour without showing a sync band.
+    viewer.setPresentation(true);
+    viewer.syncTo(3, 240.0, 100.0);
+    QCOMPARE(viewer.currentPage(), 3);
+    QVERIFY(!viewer.syncMarkVisible());
+}
+
+void Tests::forwardSyncPendingAndCancelled()
+{
+    QTemporaryDir dir;
+    auto makePdf = [](const QString &path, int pages)
+    {
+        QPdfWriter writer(path);
+        writer.setPageSize(QPageSize(QPageSize::A4));
+        QPainter painter(&writer);
+        for (int i = 1; i < pages; ++i) writer.newPage();
+    };
+    const QString a = dir.filePath("a.pdf");
+    const QString b = dir.filePath("b.pdf");
+    makePdf(a, 3);
+    makePdf(b, 3);
+
+    PdfView viewer;
+    viewer.resize(500, 400);
+    QSignalSpy loaded(&viewer, &PdfView::documentReady);
+    QSignalSpy scales(&viewer, &PdfView::scaleChanged);
+    viewer.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&viewer));
+
+    // A syncTo issued before load completion is applied once the document finishes loading.
+    viewer.open(a);
+    viewer.syncTo(2, 260.0);
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
+    QCOMPARE(viewer.currentPage(), 2);
+    QVERIFY(viewer.syncMarkVisible());
+    const double scale = scales.last().first().toDouble();
+    const double dpr = viewer.devicePixelRatioF();
+    const double pageHeight = qRound(QPageSize(QPageSize::A4).sizePoints().height() * scale * dpr) / dpr;
+    const double page2Top = qRound((qRound(24.0 * dpr) / dpr + pageHeight + 16.0) * dpr) / dpr;
+    const double targetY = page2Top + 260.0 * scale - viewer.verticalScrollBar()->value();
+    QVERIFY(targetY >= 0 && targetY <= viewer.viewport()->height() / 2.0);
+
+    // A pending request is dropped when a newer open() starts.
+    viewer.open(a);
+    viewer.syncTo(3, 260.0);
+    viewer.open(b);
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 2, 5000);
+    QCOMPARE(viewer.currentPage(), 1);
+    QCOMPARE(viewer.verticalScrollBar()->value(), 0);
+    QVERIFY(!viewer.syncMarkVisible());
+
+#ifndef Q_OS_WIN
+    // Window::forwardSync parses x: and passes it along with page and y:.
+    QTemporaryDir bin;
+    const QString tex = dir.filePath("doc.tex");
+    write(tex, "\\documentclass{article}\n\\begin{document}\nhello\n\\end{document}\n");
+    QFile fake(bin.filePath("synctex"));
+    QVERIFY(fake.open(QIODevice::WriteOnly));
+    fake.write("#!/bin/sh\nprintf 'Output:a.pdf\\nSyncTeX result begin\\nPage:2\\nx:480\\ny:260\\nSyncTeX result end\\n'\n");
+    fake.close();
+    fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner);
+
+    const QByteArray oldPath = qgetenv("PATH");
+    auto restore = qScopeGuard([&] { qputenv("PATH", oldPath); });
+    qputenv("PATH", bin.path().toUtf8() + ":" + oldPath);
+
+    Window window;
+    window.resize(900, 600);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QVERIFY(window.openSource(tex));
+    QSignalSpy winLoaded(window.pdfView(), &PdfView::documentReady);
+    window.openPdf(a);
+    QTRY_COMPARE_WITH_TIMEOUT(winLoaded.size(), 1, 5000);
+    window.pdfView()->setZoom(2.5);
+    QVERIFY(window.pdfView()->horizontalScrollBar()->maximum() > 0);
+    window.pdfView()->horizontalScrollBar()->setValue(0);
+    window.forwardSync();
+    QTRY_VERIFY_WITH_TIMEOUT(window.pdfView()->currentPage() == 2 && window.pdfView()->syncMarkVisible(), 3000);
+    QVERIFY(window.pdfView()->horizontalScrollBar()->value() > 0);
+#endif
+}
+
+void Tests::goToPageKeepsTopPlacementWithoutMark()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath("pages.pdf");
+    {
+        QPdfWriter writer(path);
+        writer.setPageSize(QPageSize(QPageSize::A4));
+        QPainter painter(&writer);
+        writer.newPage();
+        writer.newPage();
+    }
+    PdfView viewer;
+    viewer.resize(500, 400);
+    QSignalSpy loaded(&viewer, &PdfView::documentReady);
+    QSignalSpy scales(&viewer, &PdfView::scaleChanged);
+    viewer.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&viewer));
+    viewer.open(path);
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
+    QVERIFY(!scales.isEmpty());
+    const double scale = scales.last().first().toDouble();
+    const double dpr = viewer.devicePixelRatioF();
+    const double pageHeight = qRound(QPageSize(QPageSize::A4).sizePoints().height() * scale * dpr) / dpr;
+    double y = qRound(24.0 * dpr) / dpr;
+    y = qRound((y + pageHeight + 16.0) * dpr) / dpr;
+    const double page3Top = qRound((y + pageHeight + 16.0) * dpr) / dpr;
+
+    viewer.goToPage(3);
+    QCOMPARE(viewer.currentPage(), 3);
+    const double viewportTop = page3Top - viewer.verticalScrollBar()->value();
+    QVERIFY2(viewportTop >= 0 && viewportTop <= 40.0,
+        qPrintable(QString("page3 viewportTop=%1").arg(viewportTop)));
+    QVERIFY(!viewer.syncMarkVisible());
 }

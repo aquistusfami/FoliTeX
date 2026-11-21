@@ -149,8 +149,10 @@ PdfView::PdfView(QWidget *parent) : QAbstractScrollArea(parent), m_renderer(new 
     connect(m_renderer, &PdfRenderer::loaded, this, [this](int generation, QList<QSizeF> sizes, const QString &error)
     {
         if (generation != m_loadGeneration) return;
+        m_loading = false;
         if (!error.isEmpty())
         {
+            m_pendingSync.reset();
             if (m_sizes.isEmpty()) { m_error = error; viewport()->update(); }
             emit loadFailed(error);
             return;
@@ -164,6 +166,12 @@ PdfView::PdfView(QWidget *parent) : QAbstractScrollArea(parent), m_renderer(new 
         m_sizes = sizes;
         layoutPages();
         emit documentReady(m_sizes.size());
+        if (m_pendingSync && m_pendingSync->generation == generation)
+        {
+            const PendingSync sync = *m_pendingSync;
+            m_pendingSync.reset();
+            syncTo(sync.page, sync.y, sync.x);
+        }
         viewport()->update();
     });
     connect(m_renderer, &PdfRenderer::rendered, this, &PdfView::tileFinished);
@@ -195,6 +203,16 @@ PdfView::PdfView(QWidget *parent) : QAbstractScrollArea(parent), m_renderer(new 
     m_trimTimer.setSingleShot(true);
     m_trimTimer.setInterval(5000);
     connect(&m_trimTimer, &QTimer::timeout, this, &PdfView::trimCache);
+    m_syncFade.setDuration(1000);
+    m_syncFade.setStartValue(1.0);
+    m_syncFade.setEndValue(0.0);
+    m_syncFade.setEasingCurve(QEasingCurve::InQuad);
+    connect(&m_syncFade, &QVariantAnimation::valueChanged, this, [this](const QVariant &value)
+    {
+        m_syncOpacity = value.toDouble();
+        updateSyncMark();
+    });
+    connect(&m_syncFade, &QVariantAnimation::finished, this, &PdfView::clearSyncMark);
     // A wheel notch moves about a tenth of a page; touchpad travel is doubled for long documents.
     m_smooth = new SmoothScroll(this, 120, 2);
     connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this] { emit pageChanged(currentPage()); });
@@ -233,6 +251,7 @@ void PdfView::resetDocument()
     m_text.clear();
     m_textRequested.clear();
     m_selectionPage = m_pressPage = -1;
+    clearSyncMark();
     clearSearch();
 }
 
@@ -243,6 +262,8 @@ void PdfView::open(const QString &path)
     const bool hadPath = !m_path.isEmpty();
     m_path = path;
     ++m_loadGeneration;
+    m_loading = true;
+    m_pendingSync.reset();
     if (!keepExisting)
     {
         m_generation = m_loadGeneration;
@@ -327,6 +348,7 @@ void PdfView::layoutPages()
 void PdfView::setPresentation(bool on)
 {
     m_presenting = on;
+    if (on) { clearSyncMark(); m_pendingSync.reset(); }
     setVerticalScrollBarPolicy(on ? Qt::ScrollBarAlwaysOff : Qt::ScrollBarAsNeeded);
     setHorizontalScrollBarPolicy(on ? Qt::ScrollBarAlwaysOff : Qt::ScrollBarAsNeeded);
     // Pages step whole; the smooth wheel animation would stop between them.
@@ -462,6 +484,12 @@ void PdfView::paintEvent(QPaintEvent *)
         for (auto match = from; match != to; ++match)
             painter.fillRect(QRectF(onScreen.topLeft() + match->box.topLeft() * m_scale, match->box.size() * m_scale),
                 match - m_matches.cbegin() == m_match ? QColor(255, 140, 0, 150) : QColor(255, 210, 0, 90));
+        if (!m_presenting && number == m_syncPage && m_syncOpacity > 0)
+        {
+            QColor band = themeColor("#7DA6A0");
+            band.setAlphaF(float(0.45 * m_syncOpacity));
+            painter.fillRect(syncMarkRect(onScreen), band);
+        }
         painter.restore();
         painter.setPen(themeColor("#22272E"));
         painter.drawRect(onScreen);
@@ -554,12 +582,71 @@ void PdfView::setZoom(double zoom)
 
 void PdfView::fitWidth() { setZoom(1); }
 
+QRectF PdfView::syncMarkRect(const QRectF &onScreen) const
+{
+    const double band = std::clamp(16.0 * m_scale, 12.0, 28.0);
+    const double y = onScreen.top() + m_syncY * m_scale;
+    return QRectF(onScreen.left(), y - band / 2.0, onScreen.width(), band).intersected(onScreen);
+}
+
+QRectF PdfView::syncMarkRect() const
+{
+    if (m_syncPage < 0 || m_syncPage >= m_pages.size()) return {};
+    return syncMarkRect(m_pages[m_syncPage].translated(-offset()));
+}
+
+void PdfView::updateSyncMark()
+{
+    const QRectF rect = syncMarkRect();
+    if (rect.isEmpty()) return;
+    const QRect dirty = rect.toAlignedRect().adjusted(-1, -1, 1, 1).intersected(viewport()->rect());
+    if (!dirty.isEmpty()) viewport()->update(dirty);
+}
+
+void PdfView::clearSyncMark()
+{
+    m_syncFade.stop();
+    const QRectF old = syncMarkRect();
+    m_syncPage = -1;
+    m_syncOpacity = 0;
+    if (old.isEmpty()) return;
+    const QRect dirty = old.toAlignedRect().adjusted(-1, -1, 1, 1).intersected(viewport()->rect());
+    if (!dirty.isEmpty()) viewport()->update(dirty);
+}
+
 void PdfView::goToPage(int page, double yPoints)
 {
     if (m_presenting) { showSlide(page - 1); return; } // also before the document has loaded
     if (page < 1 || page > m_pages.size()) return;
     m_smooth->stop();
     verticalScrollBar()->setValue(qRound(m_pages[page - 1].top() + yPoints * m_scale - 32));
+}
+
+void PdfView::syncTo(int page, double yPoints, double xPoints)
+{
+    if (m_presenting) { showSlide(page - 1); return; } // also before the document has loaded
+    if (m_loading)
+    {
+        if (page >= 1) m_pendingSync = PendingSync{m_loadGeneration, page, yPoints, xPoints};
+        return;
+    }
+    if (page < 1 || page > m_pages.size()) return;
+    clearSyncMark();
+    const QRectF &rect = m_pages[page - 1];
+    const QSizeF &size = m_sizes[page - 1];
+    const double y = std::clamp(yPoints, 0.0, size.height());
+    m_smooth->stop();
+    verticalScrollBar()->setValue(qRound(rect.top() + y * m_scale - viewport()->height() / 3.0));
+    if (xPoints >= 0 && rect.width() > viewport()->width())
+    {
+        const double x = std::clamp(xPoints, 0.0, size.width());
+        horizontalScrollBar()->setValue(qRound(rect.left() + x * m_scale - viewport()->width() / 2.0));
+    }
+    m_syncPage = page - 1;
+    m_syncY = y;
+    m_syncOpacity = 1.0;
+    m_syncFade.start();
+    updateSyncMark();
 }
 
 void PdfView::find(const QString &query, bool backwards, Poppler::Page::SearchFlags flags)
@@ -693,7 +780,7 @@ void PdfView::copySelection() const
 void PdfView::followLink(const PdfLink &link)
 {
     if (!link.url.isEmpty()) QDesktopServices::openUrl(QUrl(link.url));
-    else goToPage(link.page, link.top);
+    else syncTo(link.page, link.top);
 }
 
 void PdfView::mousePressEvent(QMouseEvent *event)
