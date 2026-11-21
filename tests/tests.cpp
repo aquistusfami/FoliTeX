@@ -129,6 +129,7 @@ private slots:
     void outputLogPreservesScroll();
     void panelKeyboardNavigation();
     void buildStatusElapsedAndStalePdf();
+    void problemsListColumnsAndColors();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -3198,4 +3199,36 @@ void Tests::buildStatusElapsedAndStalePdf()
     QVERIFY(!window.m_pageCount->text().contains("last good build"));
     QVERIFY(window.m_pageCount->toolTip().isEmpty());
 #endif
+}
+
+void Tests::problemsListColumnsAndColors()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath("paper.tex");
+    write(path, "\\documentclass{article}\n");
+
+    Window window;
+    window.setProblems({Problem{path, 20, true, "Undefined control sequence"}, Problem{path, 0, false, "Overfull hbox"}}, dir.path(), false);
+    QCOMPARE(window.m_problemsView->columnCount(), 2);
+    QVERIFY(window.m_problemsView->isHeaderHidden());
+    QCOMPARE(window.m_problemsView->topLevelItemCount(), 1);
+    auto *group = window.m_problemsView->topLevelItem(0);
+    QCOMPARE(group->childCount(), 2);
+
+    auto *errRow = group->child(0);
+    QCOMPARE(errRow->text(0), QString("Undefined control sequence"));
+    QVERIFY(!errRow->text(0).contains("[Ln"));
+    QCOMPARE(errRow->text(1), QString("Ln 20"));
+    QCOMPARE(errRow->textAlignment(1), int(Qt::AlignRight | Qt::AlignVCenter));
+    QCOMPARE(errRow->foreground(1).color(), themeColor("#8793A2"));
+
+    auto *warnRow = group->child(1);
+    QCOMPARE(warnRow->text(0), QString("Overfull hbox"));
+    QCOMPARE(warnRow->text(1), QString());
+
+    // Filter still matches message text in column 0.
+    window.m_problemFilter->setText("Undefined");
+    QVERIFY(!errRow->isHidden());
+    QVERIFY(warnRow->isHidden());
+    window.m_problemFilter->clear();
 }

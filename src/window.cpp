@@ -1247,7 +1247,11 @@ Window::Window() : m_runner(this)
     m_log->setFont(QFont("monospace", 10));
     m_problemsView = new QTreeWidget;
     m_problemsView->setObjectName("problems");
+    m_problemsView->setColumnCount(2);
     m_problemsView->setHeaderHidden(true);
+    m_problemsView->header()->setStretchLastSection(false);
+    m_problemsView->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_problemsView->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     m_problemsView->setIndentation(16);
     m_problemsView->setFrameShape(QFrame::NoFrame);
     // Until the first build the list is empty: say what will appear and offer the build.
@@ -2688,8 +2692,10 @@ Window::~Window()
 // Problems panel, grouped by file like VS Code's; editors get squiggles for their file.
 void Window::setProblems(const QList<Problem> &problems, const QString &directory, bool success)
 {
-    static const QIcon errorIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M5.8 5.8l4.4 4.4m0-4.4l-4.4 4.4"/></svg>)", "#F14C4C", 16));
-    static const QIcon warningIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3.2m0 1.6v.1"/></svg>)", "#CCA700", 16));
+    const QByteArray errorHex = themeColor("#F14C4C").name().toUtf8();
+    const QByteArray warningHex = themeColor("#CCA700").name().toUtf8();
+    const QIcon errorIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M5.8 5.8l4.4 4.4m0-4.4l-4.4 4.4"/></svg>)", errorHex.constData(), 16));
+    const QIcon warningIcon(svgPixmap(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3.2m0 1.6v.1"/></svg>)", warningHex.constData(), 16));
     // Empty: the centred message instead of a list; the filter and list actions only once there is a list.
     m_problemsEmpty->setVisible(problems.isEmpty());
     // Before any build there is nothing to vouch for: say so instead of reporting a clean result.
@@ -2720,6 +2726,7 @@ void Window::setProblems(const QList<Problem> &problems, const QString &director
         if (!group)
         {
             group = new QTreeWidgetItem(m_problemsView);
+            group->setFirstColumnSpanned(true);
             group->setIcon(0, fileIcon(problem.file));
             group->setToolTip(0, problem.file);
             group->setData(0, Qt::UserRole + 1, 0);
@@ -2730,11 +2737,18 @@ void Window::setProblems(const QList<Problem> &problems, const QString &director
             + QString("  (%1)").arg(group->data(0, Qt::UserRole + 1).toInt()));
         auto *item = new QTreeWidgetItem(group);
         item->setIcon(0, problem.error ? errorIcon : warningIcon);
-        item->setText(0, problem.message + (problem.line > 0 ? QString("  [Ln %1]").arg(problem.line) : QString()));
+        item->setText(0, problem.message);
+        if (problem.line > 0)
+        {
+            item->setText(1, QString("Ln %1").arg(problem.line));
+            item->setTextAlignment(1, Qt::AlignRight | Qt::AlignVCenter);
+            item->setForeground(1, themeColor("#8793A2"));
+        }
         item->setToolTip(0, problem.message);
         item->setData(0, Qt::UserRole, i);
     }
     m_problemsView->expandAll();
+    m_problemsView->resizeColumnToContents(1);
     int errors = int(std::count_if(problems.cbegin(), problems.cend(), [](const Problem &p) { return p.error; }));
     m_errorCount->setText(QString::number(errors));
     m_warningCount->setText(QString::number(problems.size() - errors));
