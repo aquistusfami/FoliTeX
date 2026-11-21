@@ -695,7 +695,7 @@ Editor::Editor(QWidget *parent) : QTextEdit(parent)
     barLayout->setSpacing(1);
     // Same templates as the Insert menu, so selected text is wrapped exactly as Ctrl+B and friends do.
     for (const auto &[label, tip, text] : {std::tuple{"B", "Bold · Ctrl+B", "\\textbf{\u2022}"}, {"I", "Italic · Ctrl+I", "\\textit{\u2022}"},
-             {"E", "Emphasis · Ctrl+Shift+E", "\\emph{\u2022}"}, {"tt", "Typewriter · Ctrl+Shift+T", "\\texttt{\u2022}"},
+             {"e", "Emphasis · Ctrl+Shift+E", "\\emph{\u2022}"}, {"T", "Typewriter · Ctrl+Shift+T", "\\texttt{\u2022}"},
              {"$", "Inline math · Ctrl+Shift+M", "$\u2022$"}, {"%", "Toggle comment · Ctrl+/", ""}})
     {
         if (QString(label) == "$")
@@ -708,6 +708,23 @@ Editor::Editor(QWidget *parent) : QTextEdit(parent)
         auto *button = new QToolButton;
         button->setText(label);
         button->setToolTip(tip);
+        button->setAccessibleName(tip);
+        if (QString(label) == "e")
+        {
+            QFont italic = button->font();
+            italic.setItalic(true);
+            button->setFont(italic);
+            button->setStyleSheet("font-style:italic;");
+        }
+        else if (QString(label) == "T")
+        {
+            QFont fixed = button->font();
+            fixed.setFamilies(mono.families());
+            fixed.setStyleHint(QFont::Monospace);
+            fixed.setFixedPitch(true);
+            button->setFont(fixed);
+            button->setStyleSheet("font-family:monospace;");
+        }
         button->setFocusPolicy(Qt::NoFocus); // the selection and focus stay in the editor
         connect(button, &QToolButton::clicked, this, [this, text = QString::fromUtf8(text)]
         {

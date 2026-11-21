@@ -126,6 +126,7 @@ private slots:
     // --- Task A: editor jumps, selection bar labels, Go to definition ---
     void problemJumpFollowsEdits();
     void goToLineCentresOffscreen();
+    void selectionBarLabels();
 };
 
 static void write(const QString &path, const QByteArray &text)
@@ -3012,4 +3013,42 @@ void Tests::goToLineCentresOffscreen()
     const int centreUp = editor.cursorRect().center().y();
     QVERIFY2(centreUp >= height / 3 && centreUp <= 2 * height / 3,
         qPrintable(QString("expected centre in [%1, %2], got %3").arg(height / 3).arg(2 * height / 3).arg(centreUp)));
+}
+
+void Tests::selectionBarLabels()
+{
+    Editor editor;
+    auto *bar = editor.findChild<QFrame *>("selectionBar");
+    QVERIFY(bar);
+    QToolButton *emphasis = nullptr;
+    QToolButton *typewriter = nullptr;
+    for (auto *button : bar->findChildren<QToolButton *>())
+    {
+        QVERIFY(button->text() != "E" && button->text() != "tt");
+        if (button->accessibleName() == "Emphasis · Ctrl+Shift+E") emphasis = button;
+        if (button->accessibleName() == "Typewriter · Ctrl+Shift+T") typewriter = button;
+    }
+    QVERIFY(emphasis && typewriter);
+    QCOMPARE(emphasis->text(), QString("e"));
+    QCOMPARE(emphasis->toolTip(), QString("Emphasis · Ctrl+Shift+E"));
+    QVERIFY(emphasis->font().italic());
+    QCOMPARE(typewriter->text(), QString("T"));
+    QCOMPARE(typewriter->toolTip(), QString("Typewriter · Ctrl+Shift+T"));
+    QVERIFY(typewriter->font().styleHint() == QFont::Monospace && typewriter->font().fixedPitch());
+
+    editor.setPlainText("hello world");
+    auto cursor = editor.textCursor();
+    cursor.setPosition(0);
+    cursor.setPosition(5, QTextCursor::KeepAnchor);
+    editor.setTextCursor(cursor);
+    emphasis->click();
+    QCOMPARE(editor.toPlainText(), QString("\\emph{hello} world"));
+
+    editor.setPlainText("hello world");
+    cursor = editor.textCursor();
+    cursor.setPosition(6);
+    cursor.setPosition(11, QTextCursor::KeepAnchor);
+    editor.setTextCursor(cursor);
+    typewriter->click();
+    QCOMPARE(editor.toPlainText(), QString("hello \\texttt{world}"));
 }
